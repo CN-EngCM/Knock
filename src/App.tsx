@@ -12,6 +12,8 @@ import {
     type TermPatch,
     type ToolAliasPatch,
     type ToolAliases,
+    type TranslateConfig,
+    type TranslateConfigPatch,
 } from "./api/client";
 import { AsciiSplash } from "./components/AsciiSplash";
 import { GroupPanel } from "./components/GroupPanel";
@@ -26,7 +28,7 @@ import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog
 import { GroupDialog } from "./components/dialogs/GroupDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { ImportDialog } from "./components/dialogs/ImportDialog";
-import { SettingsDialog } from "./components/dialogs/SettingsDialog";
+import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
 import { useDragSensors } from "./lib/dnd";
 import { useI18n } from "./i18n/useI18n";
 import { applyTheme, initialTheme, saveTheme, type ThemeMode } from "./theme";
@@ -43,7 +45,8 @@ type DialogState =
     | { kind: "item-delete"; item: Item }
     | { kind: "items-bulk-delete"; ids: number[] }
     | { kind: "import" }
-    | { kind: "settings" };
+    // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
+    | { kind: "settings"; section?: SectionId };
 
 // ── 三区布局状态（v2.2）：侧栏宽度 / 终端高度 / 终端显隐 ──
 // 与主题、语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
@@ -176,6 +179,14 @@ export default function App() {
         });
     }, []);
 
+    // 翻译密钥（有道）：只喂设置页编辑态；翻译请求由主进程现读库，不经这里
+    const [translateCfg, setTranslateCfg] = useState<TranslateConfig | null>(null);
+    useEffect(() => {
+        api.getTranslateConfig().then((r) => {
+            if (r.ok) setTranslateCfg(r.data);
+        });
+    }, []);
+
     async function patchClipSec(s: number): Promise<boolean> {
         try {
             const r = await api.setClipPaste(s);
@@ -210,6 +221,19 @@ export default function App() {
             const r = await api.setToolAliases(p);
             if (!r.ok) throw new Error(r.error.kind);
             setToolAliases(r.data);
+            return true;
+        } catch {
+            toast.error(t("toast.error"));
+            return false;
+        }
+    }
+
+    // 设置页提交翻译密钥：成功则回填编辑态
+    async function patchTranslate(p: TranslateConfigPatch): Promise<boolean> {
+        try {
+            const r = await api.setTranslateConfig(p);
+            if (!r.ok) throw new Error(r.error.kind);
+            setTranslateCfg(r.data);
             return true;
         } catch {
             toast.error(t("toast.error"));
@@ -499,6 +523,7 @@ export default function App() {
                                 active={activeTool}
                                 onActivate={setActiveTool}
                                 onClose={closeTool}
+                                onOpenSettings={() => setDialog({ kind: "settings", section: "translate" })}
                             />
                         )}
                         {openTools.length > 0 && showTerm && (
@@ -601,6 +626,7 @@ export default function App() {
 
             <SettingsDialog
                 open={dialog.kind === "settings"}
+                initialSection={dialog.kind === "settings" ? dialog.section : undefined}
                 onClose={() => setDialog({ kind: "none" })}
                 theme={theme}
                 onTheme={setTheme}
@@ -614,6 +640,8 @@ export default function App() {
                 onToolAlias={patchToolAlias}
                 clipSec={clipSec}
                 onClipSec={patchClipSec}
+                translateCfg={translateCfg}
+                onTranslateCfg={patchTranslate}
             />
 
             <ConfirmDialog

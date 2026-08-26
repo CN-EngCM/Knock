@@ -8,6 +8,7 @@ import { launchItem } from "./launcher";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
 import { scanShortcuts, type Shortcut } from "./shortcuts";
 import { getSetting, setSetting } from "./util/settings";
+import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
@@ -17,6 +18,8 @@ import {
     fileSearchSchema,
     importSchema,
     pathArgSchema,
+    translateConfigPatchSchema,
+    translateSchema,
     HOTKEY_IDS,
     orderSchema,
     ptyResizeSchema,
@@ -36,6 +39,9 @@ import {
     type TermPatch,
     type ToolAliases,
     type ToolAliasPatch,
+    type TranslateConfig,
+    type TranslateConfigPatch,
+    type TranslateInput,
     type UpdateItemInput,
 } from "./schemas";
 
@@ -52,7 +58,9 @@ export type ApiError =
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
     | { kind: "missing"; path: string } // 启动目标路径不存在
     | { kind: "failed"; path: string } // 启动器执行失败
-    | { kind: "everything" }; // Everything 未运行（es.exe 退出码 8）或当前平台不支持
+    | { kind: "everything" } // Everything 未运行（es.exe 退出码 8）或当前平台不支持
+    | { kind: "youdao"; code: string } // 有道接口错误：code 为官方 errorCode，或 network（连不上/超时/响应异常）
+    | { kind: "not-configured" }; // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
@@ -96,6 +104,11 @@ export interface MpApi {
     fileSearch(input: FileSearchInput): Promise<ApiResult<{ hits: FileHit[] }>>;
     openPath(path: string): Promise<ApiResult<null>>;
     revealPath(path: string): Promise<ApiResult<null>>;
+    // ── 有道翻译（工具 translate）：请求在主进程发（渲染进程直连被 CORS 拦，密钥也不进渲染包）；
+    //    密钥存 settings 表，每次翻译现读现签，设置页改完即生效 ──
+    translate(input: TranslateInput): Promise<ApiResult<TranslateResult>>;
+    getTranslateConfig(): Promise<ApiResult<TranslateConfig>>;
+    setTranslateConfig(patch: TranslateConfigPatch): Promise<ApiResult<TranslateConfig>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -409,6 +422,36 @@ export const apiHandlers: ApiHandlers = {
         const arg = /^[A-Za-z]:$/.test(stripped) ? v.path : `/select,${stripped}`;
         spawn("explorer.exe", [arg], { detached: true }).unref();
         return { ok: true, data: null };
+    },
+
+    // ── 有道翻译：失败原因按 youdao(code)/not-configured 交给前端行内释义，不抛异常 ──
+    translate: async (input) => {
+        const v = guard(translateSchema, input);
+        if (!v) return badRequest;
+        const r = await youdaoTranslate(v);
+        if (r.ok) return { ok: true, data: r.data };
+        if (r.error.kind === "not-configured") return { ok: false, error: { kind: "not-configured" } };
+        // 网络类失败折叠成 code="network"，与官方 errorCode 走同一条释义链
+        return {
+            ok: false,
+            error: { kind: "youdao", code: r.error.kind === "network" ? "network" : r.error.code },
+        };
+    },
+
+    // ── 翻译密钥：settings 表键 youdaoAppKey / youdaoAppSecret，空串 = 清除 ──
+    getTranslateConfig: async () => ({
+        ok: true,
+        data: { appKey: getSetting("youdaoAppKey", ""), secret: getSetting("youdaoAppSecret", "") },
+    }),
+    setTranslateConfig: async (patch) => {
+        const v = guard(translateConfigPatchSchema, patch);
+        if (!v) return badRequest;
+        if (v.appKey !== undefined) setSetting("youdaoAppKey", v.appKey);
+        if (v.secret !== undefined) setSetting("youdaoAppSecret", v.secret);
+        return {
+            ok: true,
+            data: { appKey: getSetting("youdaoAppKey", ""), secret: getSetting("youdaoAppSecret", "") },
+        };
     },
 };
 

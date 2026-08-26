@@ -17,7 +17,8 @@ export type ToolMeta = {
     descKey: MessageKey;
     /** 能吃文本素材的工具：搜索框推荐区展示，选中时把素材注入其输入框 */
     acceptsText?: boolean;
-    Component: LazyExoticComponent<ComponentType<{ initialInput?: string | null }>>;
+    /** openSettings：未配置类工具（如翻译缺密钥）引导直达设置页；App 经 ToolsZone 透传 */
+    Component: LazyExoticComponent<ComponentType<{ initialInput?: string | null; openSettings?: () => void }>>;
 };
 
 export const TOOLS: readonly ToolMeta[] = [
@@ -42,6 +43,13 @@ export const TOOLS: readonly ToolMeta[] = [
         descKey: "tool.files.desc",
         acceptsText: true,
         Component: lazy(() => import("./FileSearchTool")),
+    },
+    {
+        id: "translate",
+        nameKey: "tool.translate.name",
+        descKey: "tool.translate.desc",
+        acceptsText: true,
+        Component: lazy(() => import("./TranslateTool")),
     },
 ];
 

@@ -19,10 +19,15 @@ export type {
     ToolAliasPatch,
     FileSearchInput,
     FileSortId,
+    TranslateConfig,
+    TranslateConfigPatch,
+    TranslateInput,
+    YoudaoLangId,
 } from "../../server/schemas";
 export type { ApiResult, ApiError, ImportStats } from "../../server/api";
 export type { Shortcut } from "../../server/shortcuts";
 export type { FileHit } from "../../server/everything";
+export type { TranslateResult } from "../../server/youdao";
 export type { PtyEvent } from "../../server/pty";
 
 declare global {
@@ -77,6 +82,9 @@ export const api: MpApi = {
     fileSearch: (input) => invoke("fileSearch", input),
     openPath: (path) => invoke("openPath", path),
     revealPath: (path) => invoke("revealPath", path),
+    translate: (input) => invoke("translate", input),
+    getTranslateConfig: () => invoke("getTranslateConfig"),
+    setTranslateConfig: (patch) => invoke("setTranslateConfig", patch),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */

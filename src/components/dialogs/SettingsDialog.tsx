@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Eye, EyeOff } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TOOLS } from "@/tools/registry";
+import { youdaoErrKey } from "@/tools/youdaoErr";
 import {
     api,
     type HotkeyId,
@@ -15,6 +17,8 @@ import {
     type ToolAliasPatch,
     type ToolAliases,
     type ToolId,
+    type TranslateConfig,
+    type TranslateConfigPatch,
 } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang, MessageKey } from "@/i18n";
@@ -40,6 +44,11 @@ type Props = {
     /** 剪贴板素材时限（秒，0 = 关闭）：主进程呼出时直接读库，此处仅编辑态 */
     clipSec: number | null;
     onClipSec: (seconds: number) => Promise<boolean>;
+    /** 有道翻译密钥：提交走 onTranslateCfg（App 负责落库与回填） */
+    translateCfg: TranslateConfig | null;
+    onTranslateCfg: (patch: TranslateConfigPatch) => Promise<boolean>;
+    /** 打开时直接定位的分节（工具内「打开设置」引导；缺省回基础设置） */
+    initialSection?: SectionId;
 };
 
 type AutostartStatus = { supported: boolean; enabled: boolean };
@@ -57,8 +66,9 @@ const HOTKEY_LABEL: Record<HotkeyId, MessageKey> = {
 const SECTION_DEFS = [
     { id: "basic", labelKey: "settings.basic" },
     { id: "tools", labelKey: "settings.tools" },
+    { id: "translate", labelKey: "settings.translate" },
 ] as const;
-type SectionId = (typeof SECTION_DEFS)[number]["id"];
+export type SectionId = (typeof SECTION_DEFS)[number]["id"];
 
 // 表单行网格：标签列 + 控件列（与「编辑条目」对话框同一套排版）
 const row = "grid grid-cols-[6rem_1fr] items-center gap-3";
@@ -78,6 +88,9 @@ export function SettingsDialog({
     onToolAlias,
     clipSec,
     onClipSec,
+    translateCfg,
+    onTranslateCfg,
+    initialSection,
 }: Props) {
     const { t } = useI18n();
     const [sec, setSec] = useState<SectionId>("basic");
@@ -92,17 +105,24 @@ export function SettingsDialog({
     const [aliasEdits, setAliasEdits] = useState<Partial<Record<ToolId, string>>>({});
     // 剪贴板时限编辑态（秒）
     const [clipSecEdit, setClipSecEdit] = useState("5");
+    // 翻译密钥编辑态：失焦提交；密钥默认打码，眼睛切换明文便于核对粘贴
+    const [appKeyEdit, setAppKeyEdit] = useState("");
+    const [secretEdit, setSecretEdit] = useState("");
+    const [showSecret, setShowSecret] = useState(false);
+    // 测试连接状态：idle；testing；ok；fail（failMsg 带错误码释义或空密钥提示）
+    const [test, setTest] = useState<"idle" | "testing" | "ok" | "fail">("idle");
+    const [testMsg, setTestMsg] = useState("");
 
-    // 打开时拉一次自启状态与当前热键，并回到第一个分节
+    // 打开时拉一次自启状态与当前热键，并回到定位分节（或第一个分节）
     useEffect(() => {
         if (!open) return;
-        setSec("basic");
+        setSec(initialSection ?? "basic");
         setAutostart(null);
         api.getAutostart().then((r) => setAutostart(r.ok ? r.data : { supported: false, enabled: false }));
         api.getHotkey().then((r) => {
             if (r.ok) setHotkey(r.data.hotkey);
         });
-    }, [open]);
+    }, [open, initialSection]);
 
     // termCfg / toolAliases 变化（含保存回填）时同步本地编辑态
     useEffect(() => {
@@ -120,6 +140,12 @@ export function SettingsDialog({
     useEffect(() => {
         if (clipSec !== null) setClipSecEdit(String(clipSec));
     }, [clipSec]);
+
+    useEffect(() => {
+        if (!translateCfg) return;
+        setAppKeyEdit(translateCfg.appKey);
+        setSecretEdit(translateCfg.secret);
+    }, [translateCfg]);
 
     async function toggleAutostart() {
         if (!autostart) return;
@@ -203,6 +229,50 @@ export function SettingsDialog({
         }
         const ok = await onClipSec(clamped);
         if (!ok && clipSec !== null) setClipSecEdit(String(clipSec));
+    }
+
+    /** 翻译密钥失焦提交：空串 = 清除（工具随之进入未配置态）；没改动不请求；失败回滚 */
+    async function commitTranslateKey(field: "appKey" | "secret") {
+        if (!translateCfg) return;
+        const v = (field === "appKey" ? appKeyEdit : secretEdit).trim();
+        if (v === translateCfg[field]) return;
+        const ok = await onTranslateCfg({ [field]: v });
+        if (!ok) {
+            if (field === "appKey") setAppKeyEdit(translateCfg.appKey);
+            else setSecretEdit(translateCfg.secret);
+        }
+    }
+
+    /** 测试连接：先落库（translate 每次现读 settings），再发一次 mini 翻译请求 */
+    async function testTranslate() {
+        const appKey = appKeyEdit.trim();
+        const secret = secretEdit.trim();
+        if (!appKey || !secret) {
+            setTest("fail");
+            setTestMsg(t("settings.translate.testEmpty"));
+            return;
+        }
+        setTest("testing");
+        setTestMsg("");
+        if (!(await onTranslateCfg({ appKey, secret }))) {
+            setTest("fail");
+            setTestMsg(t("toast.error"));
+            return;
+        }
+        const r = await api.translate({ text: "hello", from: "auto", to: "zh-CHS" });
+        if (r.ok) {
+            setTest("ok");
+            return;
+        }
+        setTest("fail");
+        if (r.error.kind === "youdao") {
+            const k = youdaoErrKey(r.error.code);
+            setTestMsg(k ? t(k) : `${t("translate.errFallback")}: ${r.error.code}`);
+        } else if (r.error.kind === "not-configured") {
+            setTestMsg(t("settings.translate.testEmpty"));
+        } else {
+            setTestMsg(t("toast.error"));
+        }
     }
 
     return (
@@ -430,6 +500,77 @@ export function SettingsDialog({
                                 <div className="-mt-1 px-1 text-[11.5px] text-muted">
                                     {t("settings.tools.aliasHint")}
                                 </div>
+                            </>
+                        )}
+
+                        {sec === "translate" && translateCfg !== null && (
+                            <>
+                                <div className={row}>
+                                    <Label htmlFor="youdao-key">{t("settings.translate.appKey")}</Label>
+                                    <Input
+                                        id="youdao-key"
+                                        type="text"
+                                        value={appKeyEdit}
+                                        maxLength={64}
+                                        onChange={(e) => setAppKeyEdit(e.target.value)}
+                                        onBlur={() => void commitTranslateKey("appKey")}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") e.currentTarget.blur();
+                                        }}
+                                    />
+                                </div>
+
+                                <div className={row}>
+                                    <Label htmlFor="youdao-secret">{t("settings.translate.secret")}</Label>
+                                    <span className="flex items-center gap-1.5">
+                                        <Input
+                                            id="youdao-secret"
+                                            type={showSecret ? "text" : "password"}
+                                            value={secretEdit}
+                                            maxLength={128}
+                                            onChange={(e) => setSecretEdit(e.target.value)}
+                                            onBlur={() => void commitTranslateKey("secret")}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") e.currentTarget.blur();
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="tbtn flex-none"
+                                            aria-pressed={showSecret}
+                                            title={t("settings.translate.toggleSecret")}
+                                            onClick={() => setShowSecret((v) => !v)}
+                                        >
+                                            {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                                        </button>
+                                    </span>
+                                </div>
+                                <div className="-mt-1 px-1 text-[11.5px] text-muted">
+                                    {t("settings.translate.hint")}
+                                </div>
+
+                                <div className={row}>
+                                    <Label>{t("settings.translate.test")}</Label>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="justify-start font-normal"
+                                        disabled={test === "testing"}
+                                        onClick={() => void testTranslate()}
+                                    >
+                                        {test === "testing"
+                                            ? t("settings.translate.testing")
+                                            : t("settings.translate.testBtn")}
+                                    </Button>
+                                </div>
+                                {test === "ok" && (
+                                    <div className="-mt-1 px-1 text-[11.5px] text-dim">
+                                        {t("settings.translate.testOk")}
+                                    </div>
+                                )}
+                                {test === "fail" && testMsg && (
+                                    <div className="-mt-1 px-1 text-[11.5px] text-dim">{testMsg}</div>
+                                )}
                             </>
                         )}
                     </div>

@@ -13,9 +13,11 @@ type Props = {
     active: ToolId | null;
     onActivate: (id: ToolId) => void;
     onClose: (id: ToolId) => void;
+    /** 工具内引导直达设置页（如翻译缺密钥）；App 负责带定位分节打开对话框 */
+    onOpenSettings: () => void;
 };
 
-export function ToolsZone({ open, active, onActivate, onClose }: Props) {
+export function ToolsZone({ open, active, onActivate, onClose, onOpenSettings }: Props) {
     const { t } = useI18n();
 
     return (
@@ -55,7 +57,7 @@ export function ToolsZone({ open, active, onActivate, onClose }: Props) {
                             style={{ display: active === id ? undefined : "none" }}
                         >
                             <Suspense fallback={<div className="p-3 text-[12px] text-muted">…</div>}>
-                                <C />
+                                <C openSettings={onOpenSettings} />
                             </Suspense>
                         </div>
                     );

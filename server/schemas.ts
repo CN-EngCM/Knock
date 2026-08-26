@@ -82,7 +82,7 @@ export type TermConfig = { shell: ShellId; font: string; fontSize: number; shell
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = ["json", "qr", "scan", "files"] as const;
+export const TOOL_IDS = ["json", "qr", "scan", "files", "translate"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配
@@ -112,6 +112,44 @@ export type FileSearchInput = z.infer<typeof fileSearchSchema>;
 
 // 打开/定位动作的目标路径（文件搜索结果的行级动作，不走 DB 条目）
 export const pathArgSchema = z.object({ path: z.string().trim().min(1).max(1000) });
+
+// ── 有道文本翻译（工具 translate）──
+// 语言代码取有道常用子集（官方完整表 100+，个人使用足够）；渲染端下拉的
+// 词汇表在 src/tools/TranslateTool.tsx 手工对齐（渲染进程禁止运行时 import server/ 的值）。
+export const YOUDAO_LANG_IDS = [
+    "zh-CHS",
+    "zh-CHT",
+    "en",
+    "ja",
+    "ko",
+    "fr",
+    "de",
+    "ru",
+    "es",
+    "pt",
+    "it",
+    "ar",
+    "th",
+    "vi",
+] as const;
+export type YoudaoLangId = (typeof YOUDAO_LANG_IDS)[number];
+
+// 单次上限 5000 字符是接口硬限制（超长报 103）；from 额外允许 auto（服务端检测），to 不允许
+export const translateSchema = z.object({
+    text: z.string().trim().min(1).max(5000),
+    from: z.enum(["auto", ...YOUDAO_LANG_IDS]),
+    to: z.enum(YOUDAO_LANG_IDS),
+});
+export type TranslateInput = z.infer<typeof translateSchema>;
+
+// 密钥补丁：两字段可选只更新传入部分；空串 = 清除（工具随之进入未配置态）
+export const translateConfigPatchSchema = z.object({
+    appKey: z.string().trim().max(64).optional(),
+    secret: z.string().trim().max(128).optional(),
+});
+export type TranslateConfigPatch = z.infer<typeof translateConfigPatchSchema>;
+/** 密钥读回形状（设置页编辑态用；是否已配置由「两者非空」判断） */
+export type TranslateConfig = { appKey: string; secret: string };
 
 // ── 呼出热键预设（需求 §3.7 v2.0）──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的
