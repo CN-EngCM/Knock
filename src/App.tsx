@@ -21,7 +21,7 @@ import { ToolsMenu } from "./components/ToolsMenu";
 import { ToolsZone } from "./components/ToolsZone";
 import { TerminalZone } from "./components/TerminalZone";
 import type { ToolId } from "./tools/registry";
-import { dispatchToolInput } from "./tools/toolInput";
+import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
 import { GroupDialog } from "./components/dialogs/GroupDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
@@ -337,18 +337,13 @@ export default function App() {
     }, []);
 
     // ── 工具生命周期：菜单/搜索候选打开 / 点 tab 切换 / 点 × 关闭（卸载释放）──
-    // input 非空 = 带素材打开：pending 给首次挂载作初值，事件覆盖已开的 tab
-    // （双通道的时序问题见 tools/toolInput.ts 注释）
-    const [pendingInput, setPendingInput] = useState<{ tool: ToolId; text: string } | null>(null);
-    const consumePendingInput = useCallback(() => setPendingInput(null), []);
-
+    // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
+    // 已开的 tab（双通道与时序问题见 tools/toolInput.ts 注释）；裸开则清残留素材
     function openTool(id: ToolId, input?: string | null) {
         setOpenTools((cur) => (cur.includes(id) ? cur : [...cur, id]));
         setActiveTool(id);
-        if (input != null) {
-            setPendingInput({ tool: id, text: input });
-            dispatchToolInput({ tool: id, text: input });
-        }
+        if (input != null) dispatchToolInput({ tool: id, text: input });
+        else clearToolInput(id);
     }
 
     function closeTool(id: ToolId) {
@@ -504,8 +499,6 @@ export default function App() {
                                 active={activeTool}
                                 onActivate={setActiveTool}
                                 onClose={closeTool}
-                                pendingInput={pendingInput}
-                                onInputConsumed={consumePendingInput}
                             />
                         )}
                         {openTools.length > 0 && showTerm && (

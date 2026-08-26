@@ -1,17 +1,22 @@
 import db from "./db";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
 import { parseNetscapeBookmarks } from "./bookmarks";
+import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { loadFavicon } from "./favicon";
 import { applyHotkey, currentHotkey } from "../electron/hotkey";
 import { launchItem } from "./launcher";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
 import { scanShortcuts, type Shortcut } from "./shortcuts";
 import { getSetting, setSetting } from "./util/settings";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
     clipPasteSchema,
     createGroupSchema,
     createItemSchema,
+    fileSearchSchema,
     importSchema,
+    pathArgSchema,
     HOTKEY_IDS,
     orderSchema,
     ptyResizeSchema,
@@ -25,6 +30,7 @@ import {
     type HotkeyId,
     type Item,
     type CreateItemInput,
+    type FileSearchInput,
     type OrderInput,
     type TermConfig,
     type TermPatch,
@@ -45,7 +51,8 @@ export type ApiError =
     | { kind: "not-found" } // 目标分组/条目不存在，或 favicon 未命中
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
     | { kind: "missing"; path: string } // 启动目标路径不存在
-    | { kind: "failed"; path: string }; // 启动器执行失败
+    | { kind: "failed"; path: string } // 启动器执行失败
+    | { kind: "everything" }; // Everything 未运行（es.exe 退出码 8）或当前平台不支持
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
@@ -85,6 +92,10 @@ export interface MpApi {
     // ── 剪贴板素材时限（v2.3）：呼出时最近一次复制落在时限内才自动进搜索框 ──
     getClipPaste(): Promise<ApiResult<{ seconds: number }>>;
     setClipPaste(seconds: number): Promise<ApiResult<{ seconds: number }>>;
+    // ── 文件搜索（工具 files）：es.exe 查询 Everything；打开/定位是结果行的动作，不经 DB 条目 ──
+    fileSearch(input: FileSearchInput): Promise<ApiResult<{ hits: FileHit[] }>>;
+    openPath(path: string): Promise<ApiResult<null>>;
+    revealPath(path: string): Promise<ApiResult<null>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -356,6 +367,48 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         setSetting("clipPasteWindow", String(v.seconds));
         return { ok: true, data: { seconds: v.seconds } };
+    },
+
+    // ── 文件搜索：es.exe 只在 Windows 有意义，其余平台并入 everything 错误（前端引导页） ──
+    fileSearch: async (input) => {
+        const v = guard(fileSearchSchema, input);
+        if (!v) return badRequest;
+        if (process.platform !== "win32") return { ok: false, error: { kind: "everything" } };
+        const opts: FileSearchOptions = {
+            only: v.only,
+            exts: v.exts,
+            sort: v.sort,
+            ascending: v.ascending,
+            limit: v.limit,
+        };
+        const r = await searchEverything(v.query, opts);
+        if (r.ok) return { ok: true, data: { hits: r.hits } };
+        // 搜索失败没有具体路径可言，path 置空（前端按 toast 处理）
+        return r.error === "everything"
+            ? { ok: false, error: { kind: "everything" } }
+            : { ok: false, error: { kind: "failed", path: "" } };
+    },
+
+    // 打开搜索结果：复用启动器的「验存在 → open 默认方式」，错误语义与 launch 相同
+    openPath: async (path) => {
+        const v = guard(pathArgSchema, { path });
+        if (!v) return badRequest;
+        const err = await launchItem({ kind: "file", target: v.path, args: null });
+        return err ? { ok: false, error: { kind: err.error, path: err.path ?? "" } } : { ok: true, data: null };
+    },
+
+    // 资源管理器中定位：explorer /select 选中目标；explorer 即使失败也常返回 1，不检查退出码
+    revealPath: async (path) => {
+        const v = guard(pathArgSchema, { path });
+        if (!v) return badRequest;
+        if (!existsSync(v.path)) return { ok: false, error: { kind: "missing", path: v.path } };
+        // 实测坑：windowsHide 会让 explorer（GUI 程序）的窗口隐藏启动——点了没反应；
+        // 文件夹行路径带尾随 \，/select 解析不动，先剥掉；盘根（D:\）剥完只剩 D:，
+        // /select 无意义，直接原样传路径打开该盘
+        const stripped = v.path.replace(/\\+$/, "");
+        const arg = /^[A-Za-z]:$/.test(stripped) ? v.path : `/select,${stripped}`;
+        spawn("explorer.exe", [arg], { detached: true }).unref();
+        return { ok: true, data: null };
     },
 };
 

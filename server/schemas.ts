@@ -82,7 +82,7 @@ export type TermConfig = { shell: ShellId; font: string; fontSize: number; shell
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = ["json", "qr", "scan"] as const;
+export const TOOL_IDS = ["json", "qr", "scan", "files"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配
@@ -93,6 +93,25 @@ export const toolAliasPatchSchema = z.object({
 export type ToolAliasPatch = { aliases: Partial<Record<ToolId, string>> };
 /** toolId → 别名串（只含有值的键，空 = 未设别名） */
 export type ToolAliases = Partial<Record<ToolId, string>>;
+
+// ── 文件搜索（工具 files：Everything 对接，仅 Windows）──
+// only/exts 是查询修饰符，主进程据此拼 Everything 原生语法（/ad、ext:a;b）
+export const FILE_SORT_IDS = ["name", "size", "dm"] as const;
+export type FileSortId = (typeof FILE_SORT_IDS)[number];
+
+export const fileSearchSchema = z.object({
+    query: z.string().trim().min(1).max(500),
+    only: z.enum(["all", "file", "folder"]),
+    // 后缀只放行小写字母数字（前端 chips 提供固定集合，此处兜底防注入 Everything 语法）
+    exts: z.array(z.string().regex(/^[a-z0-9]{1,10}$/)).max(20),
+    sort: z.enum(FILE_SORT_IDS),
+    ascending: z.boolean(),
+    limit: z.number().int().min(1).max(500),
+});
+export type FileSearchInput = z.infer<typeof fileSearchSchema>;
+
+// 打开/定位动作的目标路径（文件搜索结果的行级动作，不走 DB 条目）
+export const pathArgSchema = z.object({ path: z.string().trim().min(1).max(1000) });
 
 // ── 呼出热键预设（需求 §3.7 v2.0）──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的

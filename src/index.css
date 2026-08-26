@@ -191,3 +191,17 @@ html[data-theme="light"] .scanlines {
     outline: 1px dashed var(--dim);
     outline-offset: 2px;
 }
+
+/* 切换按钮（segmented/chip）的选中态：反色。必须写在这里而不是用 Tailwind 的
+   bg-text text-bg——.tbtn 是无 layer 的普通类，级联优先级高于 utilities layer，
+   会把工具类的背景/文字色盖掉（tbtn 按钮上反色失效的根因）。同样因为它压过了
+   .tbtn:hover 的提亮，选中态悬停文字保持反色。 */
+.seg-on {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+}
+.tbtn.seg-on:hover,
+.seg-on:hover {
+    color: var(--bg);
+}

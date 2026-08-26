@@ -147,6 +147,38 @@ export const en: Record<MessageKey, string> = {
     "scan.open": "open link",
     "scan.fail": "decode failed: no barcode found",
 
+    "tool.files.name": "files",
+    "tool.files.desc": "Search files via Everything",
+    "files.placeholder": "Search all local files (Everything syntax works, e.g. ext:pdf dm:yesterday)…",
+    "files.filter.all": "All",
+    "files.filter.file": "Files",
+    "files.filter.folder": "Folders",
+    "files.sort.name": "Name",
+    "files.sort.size": "Size",
+    "files.sort.dm": "Modified",
+    "files.extGroup.doc": "docs",
+    "files.extGroup.img": "images",
+    "files.extGroup.av": "media",
+    "files.extGroup.zip": "archives",
+    "files.extGroup.code": "code",
+    "files.searching": "searching…",
+    "files.none": "(no results)",
+    "files.hint":
+        "Type to search all local files; the query is passed to Everything as-is, so all of its syntax works.",
+    "files.hintEx":
+        "e.g. ext:pdf by extension · dm:yesterday changed yesterday · D:\\ limit to drive · /a-d files only",
+    "files.count": "results",
+    "files.truncated": "result cap reached",
+    "files.open": "open",
+    "files.reveal": "reveal",
+    "files.copy": "copy",
+    "files.everything.title": "Everything is not running",
+    "files.everything.hint":
+        "File search needs Everything (voidtools) running in the background; get it from the official site if not installed.",
+    "files.everything.site": "open website",
+    "files.everything.retry": "retry",
+    "files.winOnly": "File search is Windows-only (requires Everything).",
+
     "term.new": "new session",
     "btn.terminal": "show/hide terminal",
 

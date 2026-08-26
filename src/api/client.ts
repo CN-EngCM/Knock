@@ -17,9 +17,12 @@ export type {
     ToolId,
     ToolAliases,
     ToolAliasPatch,
+    FileSearchInput,
+    FileSortId,
 } from "../../server/schemas";
 export type { ApiResult, ApiError, ImportStats } from "../../server/api";
 export type { Shortcut } from "../../server/shortcuts";
+export type { FileHit } from "../../server/everything";
 export type { PtyEvent } from "../../server/pty";
 
 declare global {
@@ -71,6 +74,9 @@ export const api: MpApi = {
     setToolAliases: (patch) => invoke("setToolAliases", patch),
     getClipPaste: () => invoke("getClipPaste"),
     setClipPaste: (seconds) => invoke("setClipPaste", seconds),
+    fileSearch: (input) => invoke("fileSearch", input),
+    openPath: (path) => invoke("openPath", path),
+    revealPath: (path) => invoke("revealPath", path),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */

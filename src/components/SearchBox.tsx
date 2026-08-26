@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { TOOLS, type ToolId } from "@/tools/registry";
 import type { Group, Item, ToolAliases } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
 // 候选 = 匹配条目（标题/目标）+ 匹配的内置工具（名称/描述/id/别名）。
-// 素材流：呼出窗口时主进程带来时限内的剪贴板文本（mp:focus-search 的
-// payload），以只读 chip 呈现在输入框内；chip 在场时下拉顶部固定显示
-// 「推荐工具」（能吃文本的工具，嗅探置顶），选中后把素材注入工具输入框。
-// 无 chip 且手打 query 无任何命中时，query 升格为素材参与注入。
+// 布局（用户决策）：推荐工具区恒在。纯手打时命中在上、推荐沉底——Enter 落
+//   命中项（开条目是主用途），↓ 到底进推荐；素材 chip 在场时推荐置顶——
+//   Enter 即注入，保住「复制 → 呼出 → Enter」的素材流契约。
+// 注入契约：只要从推荐工具进入，一律注入「chip ?? 手打 query」，
+//   没有旧的「无命中升格为素材」隐形规则。
 // 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query。
 
 // 终端风行前缀：web / app / file，对应三种条目类型；工具行前缀用「工具」
@@ -68,7 +69,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
     // 匹配源：素材 chip 优先（chip 在场时用完整剪贴板文本去匹配条目/工具）
     const q = (clip ?? query).trim().toLowerCase();
 
-    const { matches, recActive } = useMemo(() => {
+    const { matches } = useMemo(() => {
         const out: Candidate[] = [];
         if (q) {
             const gname = new Map(groups.map((g) => [g.id, g.name]));
@@ -91,9 +92,14 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
                 if (hit) out.push({ kind: "tool", id: tool.id, name, desc });
             }
         }
-        // 推荐区激活：有素材 chip，或手打 query 什么都没命中（query 升格为素材）
-        return { matches: out, recActive: clip !== null || (q.length > 0 && out.length === 0) };
-    }, [q, clip, groups, items, t, toolAliases]);
+        return { matches: out };
+    }, [q, groups, items, t, toolAliases]);
+
+    // 命中区：条目 + 不吃素材的工具；能吃素材的工具恒住推荐区，不在命中区重复出现
+    const hits = useMemo(
+        () => matches.filter((m) => m.kind === "item" || !TOOLS.find((x) => x.id === m.id)?.acceptsText),
+        [matches],
+    );
 
     // 推荐工具：能吃文本素材的工具，按嗅探结果置顶
     const recTools = useMemo(() => {
@@ -102,20 +108,21 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
         return top ? [...list].sort((a, b) => (a.id === top ? -1 : b.id === top ? 1 : 0)) : list;
     }, [clip, query]);
 
-    // 候选组装：推荐区置顶；下方命中区里去掉已在推荐区的工具（避免重复行）
+    // 布局：chip 在场推荐置顶（Enter 即注入）；纯手打推荐沉底（Enter 开命中项）
+    const recOnTop = clip !== null;
+
     const candidates = useMemo(() => {
-        if (!recActive) return matches;
         const rec: Candidate[] = recTools.map((tool) => ({
             kind: "tool",
             id: tool.id,
             name: t(tool.nameKey),
             desc: t(tool.descKey),
         }));
-        return [...rec, ...matches.filter((m) => m.kind === "item" || !TOOLS.find((x) => x.id === m.id)?.acceptsText)];
-    }, [recActive, matches, recTools, t]);
+        return recOnTop ? [...rec, ...hits] : [...hits, ...rec];
+    }, [recOnTop, hits, recTools, t]);
 
-    // 注入源：素材 chip 优先；无 chip 且无命中（升格）时用手打 query；其余不注入
-    const injectSource = clip ?? (recActive && query.trim() ? query : null);
+    // 注入源：素材 chip 优先，否则手打 query——从推荐工具进入就注入
+    const injectSource = clip ?? (query.trim() || null);
 
     // 匹配源 / 素材变化后高亮回到第一项（chip 在场即推荐工具，Enter 直接注入）
     useEffect(() => setHi(0), [q, clip]);
@@ -188,48 +195,52 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
             />
             {open && (
                 <div className="absolute left-0 right-0 top-full z-50 max-h-80 overflow-y-auto rounded-sm border border-line bg-panel py-1 shadow-xl">
-                    {recActive && candidates.length > 0 && (
-                        <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
-                            ── {t("search.recommended")} ──
-                        </div>
-                    )}
-                    {candidates.length === 0 ? (
+                    {hits.length === 0 && (
                         <span className="block px-2.5 py-1.5 font-mono text-[12.5px] text-muted">
                             {t("search.noHit")}
                         </span>
-                    ) : (
-                        candidates.map((c, i) => {
+                    )}
+                    {/* 推荐区分隔标签的位置随布局：置顶在第 0 行前，沉底在命中区之后 */}
+                    {(() => {
+                        const recStart = recOnTop ? 0 : hits.length;
+                        return candidates.map((c, i) => {
                             const sel = hi === i;
                             return (
-                                <button
-                                    key={c.kind === "item" ? `i${c.item.id}` : `t${c.id}`}
-                                    type="button"
-                                    // 阻止 mousedown 默认行为保住输入框焦点，避免点击候选前下拉先因失焦消失
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onMouseEnter={() => setHi(i)}
-                                    onClick={() => select(c)}
-                                    // 高亮行用反色（文字色做底）——与全站 ::selection 同一语言，最醒目
-                                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[13px] ${
-                                        sel ? "bg-text text-bg" : "text-dim"
-                                    }`}
-                                >
-                                    <span
-                                        className={`w-9 flex-none text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
+                                <Fragment key={c.kind === "item" ? `i${c.item.id}` : `t${c.id}`}>
+                                    {i === recStart && (
+                                        <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
+                                            ── {t("search.recommended")} ──
+                                        </div>
+                                    )}
+                                    <button
+                                        type="button"
+                                        // 阻止 mousedown 默认行为保住输入框焦点，避免点击候选前下拉先因失焦消失
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onMouseEnter={() => setHi(i)}
+                                        onClick={() => select(c)}
+                                        // 高亮行用反色（文字色做底）——与全站 ::selection 同一语言，最醒目
+                                        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[13px] ${
+                                            sel ? "bg-text text-bg" : "text-dim"
+                                        }`}
                                     >
-                                        {c.kind === "tool" ? t("tools.menu") : TAG[c.item.kind]}
-                                    </span>
-                                    <span className="min-w-0 flex-1 truncate">
-                                        {c.kind === "tool" ? c.name : c.item.title}
-                                    </span>
-                                    <span
-                                        className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
-                                    >
-                                        {c.kind === "tool" ? c.desc : c.groupName}
-                                    </span>
-                                </button>
+                                        <span
+                                            className={`w-9 flex-none text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
+                                        >
+                                            {c.kind === "tool" ? t("tools.menu") : TAG[c.item.kind]}
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate">
+                                            {c.kind === "tool" ? c.name : c.item.title}
+                                        </span>
+                                        <span
+                                            className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
+                                        >
+                                            {c.kind === "tool" ? c.desc : c.groupName}
+                                        </span>
+                                    </button>
+                                </Fragment>
                             );
-                        })
-                    )}
+                        });
+                    })()}
                 </div>
             )}
         </div>

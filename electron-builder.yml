@@ -14,6 +14,8 @@ files:
     - out/** # 主进程 + preload（esbuild 产物）
     - dist/** # 渲染页面（vite 产物）
     - assets/** # 托盘图标
+    # es.exe 不进 asar：它经 extraResources 单独放到 resources/（exe 无法从 asar 内 spawn）
+    - "!assets/es.exe"
     - package.json
     # ── 原生模块瘦身：运行时只需要 win32-x64 的 .node，其余是源码/构建残留/他平台预编译 ──
     - "!node_modules/better-sqlite3/deps/**"
@@ -38,6 +40,11 @@ asarUnpack:
     - node_modules/better-sqlite3/**
     - node_modules/uiohook-napi/**
     - node_modules/node-pty/**
+# es.exe（Everything CLI，MIT，见 assets/es-LICENSE.txt）→ resources/es.exe，
+# 运行时位置见 server/everything.ts 的 esExePath()
+extraResources:
+    - from: assets/es.exe
+      to: es.exe
 win:
     target:
         - target: dir

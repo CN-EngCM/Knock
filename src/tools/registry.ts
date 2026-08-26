@@ -36,6 +36,13 @@ export const TOOLS: readonly ToolMeta[] = [
         Component: lazy(() => import("./QrTool")),
     },
     { id: "scan", nameKey: "tool.scan.name", descKey: "tool.scan.desc", Component: lazy(() => import("./ScanTool")) },
+    {
+        id: "files",
+        nameKey: "tool.files.name",
+        descKey: "tool.files.desc",
+        acceptsText: true,
+        Component: lazy(() => import("./FileSearchTool")),
+    },
 ];
 
 export function toolMeta(id: ToolId): ToolMeta {

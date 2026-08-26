@@ -1,4 +1,4 @@
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 import { toolMeta, type ToolId } from "@/tools/registry";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -6,24 +6,17 @@ import { useI18n } from "@/i18n/useI18n";
 //   打开 —— 从「工具 ▾」菜单或搜索候选进，ToolsZone 首次挂载该工具组件（懒加载 chunk）；
 //   切换 —— 非活动工具 display:none 保活（草稿不丢）；
 //   关闭 —— tab 的 × 直接卸载组件，状态与重库一起释放，重开回到初始态。
+// 素材注入不经 props（懒加载 chunk 未就绪时 props 会先被清空，素材在挂载前丢失），
+// 由 toolInput.ts 的模块级 pending 在组件挂载时消费。
 type Props = {
     open: ToolId[];
     active: ToolId | null;
     onActivate: (id: ToolId) => void;
     onClose: (id: ToolId) => void;
-    /** 待注入的素材（App 的 pending）：只在工具首次挂载时作为初值生效 */
-    pendingInput: { tool: ToolId; text: string } | null;
-    /** 工具 tab 已存在（初值已送达或事件已覆盖）后清掉 pending，避免陈旧注入 */
-    onInputConsumed: () => void;
 };
 
-export function ToolsZone({ open, active, onActivate, onClose, pendingInput, onInputConsumed }: Props) {
+export function ToolsZone({ open, active, onActivate, onClose }: Props) {
     const { t } = useI18n();
-
-    // pending 对应的工具 tab 出现在 open 里 = 注入已送达，可以清了
-    useEffect(() => {
-        if (pendingInput && open.includes(pendingInput.tool)) onInputConsumed();
-    }, [pendingInput, open, onInputConsumed]);
 
     return (
         <div className="flex min-h-0 flex-1 flex-col bg-panel">
@@ -62,7 +55,7 @@ export function ToolsZone({ open, active, onActivate, onClose, pendingInput, onI
                             style={{ display: active === id ? undefined : "none" }}
                         >
                             <Suspense fallback={<div className="p-3 text-[12px] text-muted">…</div>}>
-                                <C initialInput={pendingInput?.tool === id ? pendingInput.text : undefined} />
+                                <C />
                             </Suspense>
                         </div>
                     );
