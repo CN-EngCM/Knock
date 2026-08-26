@@ -33,8 +33,7 @@ function decodeEntities(s: string): string {
  */
 export function parseNetscapeBookmarks(html: string): Map<string, ParsedGroup> {
   // 三种标记按出现顺序匹配；正则的 | 分支保持先后优先级
-  const tokenRe =
-    /<DT>\s*<H3[^>]*>([\s\S]*?)<\/H3>|<DT>\s*<A\s[^>]*?HREF="([^"]*)"[^>]*>([\s\S]*?)<\/A>|<\/DL>/gi
+  const tokenRe = /<DT>\s*<H3[^>]*>([\s\S]*?)<\/H3>|<DT>\s*<A\s[^>]*?HREF="([^"]*)"[^>]*>([\s\S]*?)<\/A>|<\/DL>/gi
 
   const groups = new Map<string, ParsedGroup>()
   // 名称栈：null 表示「透明」的根节点（不参与分组命名）

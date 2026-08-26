@@ -11,9 +11,7 @@ import { getSetting } from './util/settings'
 import { SHELL_IDS, type ShellId, type ShellOption, type TermConfig } from './schemas'
 
 /** 主进程 → 渲染进程的输出事件（preload 转发，渲染端按 id 分发到 xterm 实例） */
-export type PtyEvent =
-  | { type: 'data'; id: number; data: string }
-  | { type: 'exit'; id: number }
+export type PtyEvent = { type: 'data'; id: number; data: string } | { type: 'exit'; id: number }
 
 // server 层不持有 BrowserWindow：出口由 electron/main.ts 注入
 let emit: ((e: PtyEvent) => void) | null = null

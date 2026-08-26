@@ -18,8 +18,7 @@ const MAX_CANDIDATES = 9
 const CHIP_MAX_CHARS = 32
 
 type Candidate =
-  | { kind: 'item'; item: Item; groupName: string }
-  | { kind: 'tool'; id: ToolId; name: string; desc: string }
+  { kind: 'item'; item: Item; groupName: string } | { kind: 'tool'; id: ToolId; name: string; desc: string }
 
 type Props = {
   groups: Group[]
@@ -214,11 +213,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
                     {c.kind === 'tool' ? t('tools.menu') : TAG[c.item.kind]}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{c.kind === 'tool' ? c.name : c.item.title}</span>
-                  <span
-                    className={`max-w-[40%] flex-none truncate text-[11.5px] ${
-                      sel ? 'text-bg/60' : 'text-muted'
-                    }`}
-                  >
+                  <span className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? 'text-bg/60' : 'text-muted'}`}>
                     {c.kind === 'tool' ? c.desc : c.groupName}
                   </span>
                 </button>

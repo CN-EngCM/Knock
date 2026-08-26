@@ -34,11 +34,14 @@ if (!app.requestSingleInstanceLock()) {
     startClipWatch()
     // 终端输出流：pty 会话 → 渲染进程（窗口藏到托盘时事件静默丢弃，会话继续活着）
     setPtySink((ev) => win?.webContents.send('mp:pty-event', ev))
-    createTray(() => win, () => {
-      // 托盘「设置」：唤起窗口并让前端打开设置对话框
-      showWindow()
-      win?.webContents.send('mp:open-settings')
-    })
+    createTray(
+      () => win,
+      () => {
+        // 托盘「设置」：唤起窗口并让前端打开设置对话框
+        showWindow()
+        win?.webContents.send('mp:open-settings')
+      },
+    )
     initHotkey(toggleWindow)
   })
 

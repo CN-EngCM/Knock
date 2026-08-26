@@ -45,7 +45,13 @@ function sniffMime(buf: Buffer): string {
   if (buf.subarray(0, 3).toString('ascii') === 'GIF') return 'image/gif'
   if (buf.subarray(0, 2).toString('hex') === 'ffd8') return 'image/jpeg'
   if (buf.subarray(0, 2).toString('ascii') === 'BM') return 'image/bmp'
-  if (buf.subarray(0, 5).toString('ascii').match(/^<\?xml|<svg/i)) return 'image/svg+xml'
+  if (
+    buf
+      .subarray(0, 5)
+      .toString('ascii')
+      .match(/^<\?xml|<svg/i)
+  )
+    return 'image/svg+xml'
   return 'image/x-icon'
 }
 

@@ -13,15 +13,7 @@ const FG = [0xed, 0xe9, 0xdb, 0xff] // 暖纸白
 const RADIUS = 52
 
 // '$' 的像素位图：5 列 × 7 行（S 形 + 贯穿竖杠），'#' = 前景色
-const GLYPH = [
-  '..#..',
-  '.####',
-  '#....',
-  '.###.',
-  '....#',
-  '####.',
-  '..#..',
-]
+const GLYPH = ['..#..', '.####', '#....', '.###.', '....#', '####.', '..#..']
 
 // ── 画布 ──
 const px = new Uint8Array(SIZE * SIZE * 4)
@@ -46,7 +38,10 @@ for (let y = 0; y < SIZE; y++) {
     const inCorner = (x !== cx || y !== cy) && Math.hypot(x - cx, y - cy) > RADIUS
     if (!inCorner) {
       const i = (y * SIZE + x) * 4
-      px[i] = BG[0]; px[i + 1] = BG[1]; px[i + 2] = BG[2]; px[i + 3] = BG[3]
+      px[i] = BG[0]
+      px[i + 1] = BG[1]
+      px[i + 2] = BG[2]
+      px[i + 3] = BG[3]
     }
   }
 }

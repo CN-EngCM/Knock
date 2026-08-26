@@ -15,21 +15,24 @@ export default function ScanTool() {
   // reader 无状态可复用，放 ref 里避免每次渲染新建
   const reader = useRef(new BrowserMultiFormatReader())
 
-  const decodeFile = useCallback(async (file: File) => {
-    if (!file.type.startsWith('image/')) return
-    const url = URL.createObjectURL(file)
-    try {
-      const r = await reader.current.decodeFromImageUrl(url)
-      // 枚举值反查名字（QR_CODE / CODE_128 / EAN_13 …），没有名字的位组合退回数字
-      const num = r.getBarcodeFormat() as number
-      const format = BarcodeFormat[num] ?? String(num)
-      setResults((prev) => [{ text: r.getText(), format }, ...prev].slice(0, 8))
-    } catch {
-      toast.error(t('scan.fail'))
-    } finally {
-      URL.revokeObjectURL(url)
-    }
-  }, [t])
+  const decodeFile = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith('image/')) return
+      const url = URL.createObjectURL(file)
+      try {
+        const r = await reader.current.decodeFromImageUrl(url)
+        // 枚举值反查名字（QR_CODE / CODE_128 / EAN_13 …），没有名字的位组合退回数字
+        const num = r.getBarcodeFormat() as number
+        const format = BarcodeFormat[num] ?? String(num)
+        setResults((prev) => [{ text: r.getText(), format }, ...prev].slice(0, 8))
+      } catch {
+        toast.error(t('scan.fail'))
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    },
+    [t],
+  )
 
   // 粘贴截图：paste 事件的 clipboardData 里取第一张图
   useEffect(() => {
@@ -94,7 +97,10 @@ export default function ScanTool() {
         {t('scan.results')} ── {results.length ? '' : t('scan.none')}
       </h3>
       {results.map((r, i) => (
-        <div key={`${i}-${r.text}`} className="flex flex-none items-center gap-2.5 border border-line bg-bg px-2.5 py-1.5">
+        <div
+          key={`${i}-${r.text}`}
+          className="flex flex-none items-center gap-2.5 border border-line bg-bg px-2.5 py-1.5"
+        >
           <span className="flex-none border border-line px-1.5 py-0.5 text-[11px] text-muted">{r.format}</span>
           <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-text">{r.text}</span>
           <button type="button" className={btn} onClick={() => copyText(r.text)}>

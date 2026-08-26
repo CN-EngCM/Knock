@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ─────────────────────────────────────────────────────────────
    纸白终端主题令牌（terminal · paper white）
@@ -24,7 +24,7 @@
   --destructive: #ff6b6b;
 }
 
-html[data-theme="light"] {
+html[data-theme='light'] {
   color-scheme: light;
   --bg: #f2efe6;
   --panel: #faf8f0;
@@ -38,7 +38,7 @@ html[data-theme="light"] {
 }
 
 @media (prefers-color-scheme: light) {
-  html:not([data-theme="dark"]):not([data-theme="light"]) {
+  html:not([data-theme='dark']):not([data-theme='light']) {
     color-scheme: light;
     --bg: #f2efe6;
     --panel: #faf8f0;
@@ -62,7 +62,7 @@ html[data-theme="light"] {
   --color-dim: var(--dim);
   --color-muted: var(--muted);
   --color-line: var(--line);
-  --font-mono: "Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace;
+  --font-mono: 'Cascadia Mono', Consolas, 'Sarasa Mono SC', ui-monospace, monospace;
 
   /* shadcn 语义别名 */
   --color-background: var(--bg);
@@ -96,14 +96,13 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 60;
-  background:
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
 }
-html[data-theme="light"] .scanlines {
+html[data-theme='light'] .scanlines {
   display: none;
 }
 @media (prefers-color-scheme: light) {
-  html:not([data-theme="dark"]) .scanlines {
+  html:not([data-theme='dark']) .scanlines {
     display: none;
   }
 }
@@ -184,7 +183,7 @@ html[data-theme="light"] .scanlines {
   white-space: nowrap;
 }
 .tbtn:hover,
-.tbtn[aria-pressed="true"] {
+.tbtn[aria-pressed='true'] {
   color: var(--text);
 }
 .tbtn:focus-visible,

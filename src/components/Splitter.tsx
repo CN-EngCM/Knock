@@ -19,9 +19,7 @@ export function Splitter({ orientation, onDrag }: Props) {
       onPointerMove={(e) => {
         if (e.currentTarget.hasPointerCapture(e.pointerId)) onDrag(e)
       }}
-      className={
-        orientation === 'vertical' ? `w-1 cursor-col-resize ${base}` : `h-1 cursor-row-resize ${base}`
-      }
+      className={orientation === 'vertical' ? `w-1 cursor-col-resize ${base}` : `h-1 cursor-row-resize ${base}`}
     />
   )
 }

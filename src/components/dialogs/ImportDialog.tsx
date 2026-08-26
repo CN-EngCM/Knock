@@ -77,17 +77,15 @@ export function ImportDialog({ open, onClose, onImported }: Props) {
         </DialogHeader>
 
         <label className="flex cursor-pointer items-center justify-between gap-3 border border-line px-3 py-2.5 text-[13px] hover:bg-faint">
-          <span className={fileName ? 'text-text' : 'text-muted'}>
-            {fileName || t('import.pick')}
-          </span>
+          <span className={fileName ? 'text-text' : 'text-muted'}>{fileName || t('import.pick')}</span>
           <input type="file" accept=".html,.htm" onChange={handleFile} className="hidden" />
           <span className="text-dim">[ {t('import.pick')} ]</span>
         </label>
 
         {result && (
           <div className="border border-line bg-faint px-3 py-2 text-[13px] text-dim">
-            {t('import.createdGroups')} {result.createdGroups} · {t('import.imported')}{' '}
-            {result.importedItems} · {t('import.skipped')} {result.skipped}
+            {t('import.createdGroups')} {result.createdGroups} · {t('import.imported')} {result.importedItems} ·{' '}
+            {t('import.skipped')} {result.skipped}
           </div>
         )}
 

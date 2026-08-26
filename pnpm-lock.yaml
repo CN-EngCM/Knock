@@ -81,6 +81,9 @@ importers:
       open:
         specifier: ^11.0.1
         version: 11.0.1
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -2511,6 +2514,11 @@ packages:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
     engines: {node: '>=10'}
     deprecated: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
+    hasBin: true
+
+  prettier@3.9.6:
+    resolution: {integrity: sha512-OpN0zzVdiaiAhxpuuj5efpIS4sY9j7bY6uR5mnj5yPzGkdkjNKSJeUThPb60Jw29QuAZgA4o+/iB49kFiaBX6g==}
+    engines: {node: '>=14'}
     hasBin: true
 
   proc-log@6.1.0:
@@ -5519,6 +5527,8 @@ snapshots:
       simple-get: 4.0.1
       tar-fs: 2.1.5
       tunnel-agent: 0.6.0
+
+  prettier@3.9.6: {}
 
   proc-log@6.1.0: {}
 

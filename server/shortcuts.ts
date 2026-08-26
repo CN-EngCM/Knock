@@ -53,11 +53,11 @@ export async function scanShortcuts(refresh = false): Promise<Shortcut[]> {
   ].join('\n')
 
   try {
-    const { stdout } = await execFileAsync(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      { maxBuffer: 16 * 1024 * 1024, windowsHide: true, timeout: 30_000 },
-    )
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      maxBuffer: 16 * 1024 * 1024,
+      windowsHide: true,
+      timeout: 30_000,
+    })
     cache = stdout
       .split(/\r?\n/)
       .filter((line) => line.includes('\t'))

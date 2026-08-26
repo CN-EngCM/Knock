@@ -1,24 +1,21 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { TOOLS } from '@/tools/registry'
-import { api, type HotkeyId, type ShellId, type TermConfig, type TermPatch, type ToolAliasPatch, type ToolAliases, type ToolId } from '@/api/client'
+import {
+  api,
+  type HotkeyId,
+  type ShellId,
+  type TermConfig,
+  type TermPatch,
+  type ToolAliasPatch,
+  type ToolAliases,
+  type ToolId,
+} from '@/api/client'
 import { useI18n } from '@/i18n/useI18n'
 import type { Lang, MessageKey } from '@/i18n'
 import type { ThemeMode } from '@/theme'
@@ -224,9 +221,7 @@ export function SettingsDialog({
                 type="button"
                 onClick={() => setSec(s.id)}
                 className={`border-l-2 px-2 py-1.5 text-left text-[13px] ${
-                  sec === s.id
-                    ? 'border-text bg-faint text-text'
-                    : 'border-transparent text-muted hover:text-dim'
+                  sec === s.id ? 'border-text bg-faint text-text' : 'border-transparent text-muted hover:text-dim'
                 }`}
               >
                 {t(s.labelKey)}
@@ -237,189 +232,188 @@ export function SettingsDialog({
             {sec === 'basic' && (
               <>
                 <div className={row}>
-            <Label>{t('settings.theme')}</Label>
-            <Select value={theme} onValueChange={(v) => onTheme(v as ThemeMode)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">{t('theme.auto')}</SelectItem>
-                <SelectItem value="light">{t('theme.light')}</SelectItem>
-                <SelectItem value="dark">{t('theme.dark')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+                  <Label>{t('settings.theme')}</Label>
+                  <Select value={theme} onValueChange={(v) => onTheme(v as ThemeMode)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{t('theme.auto')}</SelectItem>
+                      <SelectItem value="light">{t('theme.light')}</SelectItem>
+                      <SelectItem value="dark">{t('theme.dark')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <div className={row}>
-            <Label>{t('settings.language')}</Label>
-            <Select value={lang} onValueChange={(v) => onChangeLang(v as Lang)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="zh">{t('settings.lang.zh')}</SelectItem>
-                <SelectItem value="en">{t('settings.lang.en')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+                <div className={row}>
+                  <Label>{t('settings.language')}</Label>
+                  <Select value={lang} onValueChange={(v) => onChangeLang(v as Lang)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="zh">{t('settings.lang.zh')}</SelectItem>
+                      <SelectItem value="en">{t('settings.lang.en')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          <div className={row}>
-            <Label>{t('settings.hotkey')}</Label>
-            {hotkey === null ? (
-              <span className="text-[13px] text-muted">…</span>
-            ) : (
-              <Select value={hotkey} onValueChange={(v) => changeHotkey(v as HotkeyId)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(HOTKEY_LABEL) as HotkeyId[]).map((id) => (
-                    <SelectItem key={id} value={id}>
-                      {t(HOTKEY_LABEL[id])}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
+                <div className={row}>
+                  <Label>{t('settings.hotkey')}</Label>
+                  {hotkey === null ? (
+                    <span className="text-[13px] text-muted">…</span>
+                  ) : (
+                    <Select value={hotkey} onValueChange={(v) => changeHotkey(v as HotkeyId)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(HOTKEY_LABEL) as HotkeyId[]).map((id) => (
+                          <SelectItem key={id} value={id}>
+                            {t(HOTKEY_LABEL[id])}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
 
-          <div className={row}>
-            <Label htmlFor="clip-sec">{t('settings.clip')}</Label>
-            <Input
-              id="clip-sec"
-              type="number"
-              min={0}
-              max={60}
-              value={clipSecEdit}
-              onChange={(e) => setClipSecEdit(e.target.value)}
-              onBlur={() => void commitClipSec()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-              className="w-24"
-            />
-          </div>
-          <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.clipHint')}</div>
+                <div className={row}>
+                  <Label htmlFor="clip-sec">{t('settings.clip')}</Label>
+                  <Input
+                    id="clip-sec"
+                    type="number"
+                    min={0}
+                    max={60}
+                    value={clipSecEdit}
+                    onChange={(e) => setClipSecEdit(e.target.value)}
+                    onBlur={() => void commitClipSec()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    className="w-24"
+                  />
+                </div>
+                <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.clipHint')}</div>
 
-          <div className={row}>
-            <Label>{t('settings.autostart')}</Label>
-            {autostart === null ? (
-              <span className="text-[13px] text-muted">…</span>
-            ) : !autostart.supported ? (
-              <span className="text-[13px] text-muted">{t('settings.autostart.unsupported')}</span>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                className="justify-start font-normal"
-                disabled={busy}
-                onClick={toggleAutostart}
-              >
-                {autostart.enabled ? t('settings.autostart.disable') : t('settings.autostart.enable')}
-              </Button>
-            )}
-          </div>
-          <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.autostart.moveHint')}</div>
+                <div className={row}>
+                  <Label>{t('settings.autostart')}</Label>
+                  {autostart === null ? (
+                    <span className="text-[13px] text-muted">…</span>
+                  ) : !autostart.supported ? (
+                    <span className="text-[13px] text-muted">{t('settings.autostart.unsupported')}</span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="justify-start font-normal"
+                      disabled={busy}
+                      onClick={toggleAutostart}
+                    >
+                      {autostart.enabled ? t('settings.autostart.disable') : t('settings.autostart.enable')}
+                    </Button>
+                  )}
+                </div>
+                <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.autostart.moveHint')}</div>
 
-          <div className={row}>
-            <Label>{t('settings.term.shell')}</Label>
-            {shell === null || termCfg === null ? (
-              <span className="text-[13px] text-muted">…</span>
-            ) : (
-              <Select value={shell} onValueChange={(v) => changeShell(v as ShellId)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {termCfg.shells.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.id === 'auto' ? `${s.id} · ${t('settings.term.shellAuto')}` : s.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.term.shellHint')}</div>
+                <div className={row}>
+                  <Label>{t('settings.term.shell')}</Label>
+                  {shell === null || termCfg === null ? (
+                    <span className="text-[13px] text-muted">…</span>
+                  ) : (
+                    <Select value={shell} onValueChange={(v) => changeShell(v as ShellId)}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {termCfg.shells.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.id === 'auto' ? `${s.id} · ${t('settings.term.shellAuto')}` : s.id}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.term.shellHint')}</div>
 
-          <div className={row}>
-            <Label htmlFor="term-font">{t('settings.term.font')}</Label>
-            <Input
-              id="term-font"
-              type="text"
-              value={font}
-              onChange={(e) => setFont(e.target.value)}
-              onBlur={() => void commitFont()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-              placeholder={t('settings.term.fontPlaceholder')}
-            />
-          </div>
+                <div className={row}>
+                  <Label htmlFor="term-font">{t('settings.term.font')}</Label>
+                  <Input
+                    id="term-font"
+                    type="text"
+                    value={font}
+                    onChange={(e) => setFont(e.target.value)}
+                    onBlur={() => void commitFont()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    placeholder={t('settings.term.fontPlaceholder')}
+                  />
+                </div>
 
-          <div className={row}>
-            <Label htmlFor="term-size">{t('settings.term.fontSize')}</Label>
-            <Input
-              id="term-size"
-              type="number"
-              min={8}
-              max={32}
-              value={fontSize}
-              onChange={(e) => setFontSize(e.target.value)}
-              onBlur={() => void commitFontSize()}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-              className="w-24"
-            />
-          </div>
+                <div className={row}>
+                  <Label htmlFor="term-size">{t('settings.term.fontSize')}</Label>
+                  <Input
+                    id="term-size"
+                    type="number"
+                    min={8}
+                    max={32}
+                    value={fontSize}
+                    onChange={(e) => setFontSize(e.target.value)}
+                    onBlur={() => void commitFontSize()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    className="w-24"
+                  />
+                </div>
 
-          <div className={row}>
-            <Label>{t('settings.import')}</Label>
-            <Button
-              type="button"
-              variant="outline"
-              className="justify-start font-normal"
-              onClick={() => {
-                onClose()
-                onOpenImport()
-              }}
-            >
-              {t('settings.importBtn')}
-            </Button>
-          </div>
+                <div className={row}>
+                  <Label>{t('settings.import')}</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="justify-start font-normal"
+                    onClick={() => {
+                      onClose()
+                      onOpenImport()
+                    }}
+                  >
+                    {t('settings.importBtn')}
+                  </Button>
+                </div>
 
-          <div className={row}>
-            <Label>{t('settings.info')}</Label>
-            <span className="text-[13px] text-muted">Electron · {platform}</span>
-          </div>
+                <div className={row}>
+                  <Label>{t('settings.info')}</Label>
+                  <span className="text-[13px] text-muted">Electron · {platform}</span>
+                </div>
               </>
             )}
 
             {sec === 'tools' && (
               <>
-
-          {toolAliases === null ? (
-            <span className="px-1 text-[13px] text-muted">…</span>
-          ) : (
-            TOOLS.map((tool) => (
-              <div className={row} key={tool.id}>
-                <Label htmlFor={`alias-${tool.id}`}>{t(tool.nameKey)}</Label>
-                <Input
-                  id={`alias-${tool.id}`}
-                  type="text"
-                  value={aliasEdits[tool.id] ?? ''}
-                  onChange={(e) => setAliasEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
-                  onBlur={() => void commitAlias(tool.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                  }}
-                  placeholder={t('settings.tools.aliasPlaceholder')}
-                />
-              </div>
-            ))
-          )}
-          <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.tools.aliasHint')}</div>
+                {toolAliases === null ? (
+                  <span className="px-1 text-[13px] text-muted">…</span>
+                ) : (
+                  TOOLS.map((tool) => (
+                    <div className={row} key={tool.id}>
+                      <Label htmlFor={`alias-${tool.id}`}>{t(tool.nameKey)}</Label>
+                      <Input
+                        id={`alias-${tool.id}`}
+                        type="text"
+                        value={aliasEdits[tool.id] ?? ''}
+                        onChange={(e) => setAliasEdits((prev) => ({ ...prev, [tool.id]: e.target.value }))}
+                        onBlur={() => void commitAlias(tool.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur()
+                        }}
+                        placeholder={t('settings.tools.aliasPlaceholder')}
+                      />
+                    </div>
+                  ))
+                )}
+                <div className="-mt-1 px-1 text-[11.5px] text-muted">{t('settings.tools.aliasHint')}</div>
               </>
             )}
           </div>

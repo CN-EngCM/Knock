@@ -37,7 +37,12 @@ export const orderSchema = z.object({
 export const launchSchema = z.object({ id: z.number().int().positive() })
 
 // 书签导入：整个导出 HTML 的文本（Chrome 导出通常几百 KB，上限 10MB 兜底）
-export const importSchema = z.object({ html: z.string().min(1).max(10 * 1024 * 1024) })
+export const importSchema = z.object({
+  html: z
+    .string()
+    .min(1)
+    .max(10 * 1024 * 1024),
+})
 
 // ── 终端会话（v2.2）──
 // 输入分片走 IPC，单次上限 8KB（整屏粘贴也远小于此，防误传大负载）

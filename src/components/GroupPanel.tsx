@@ -3,12 +3,7 @@ import { DndContext, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { ItemRow } from './ItemRow'
 import { useDragSensors } from '@/lib/dnd'
 import type { Group, Item } from '@/api/client'
@@ -151,7 +146,14 @@ export function GroupPanel({
             </DndContext>
           ) : (
             items.map((item) => (
-              <ItemRow key={item.id} item={item} editing={false} onOpen={onOpen} onEdit={onEdit} onDelete={onDeleteItem} />
+              <ItemRow
+                key={item.id}
+                item={item}
+                editing={false}
+                onOpen={onOpen}
+                onEdit={onEdit}
+                onDelete={onDeleteItem}
+              />
             ))
           )}
 

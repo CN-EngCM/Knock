@@ -3,7 +3,16 @@ import { Toaster, toast } from 'sonner'
 import { Check, Pencil, Settings, Terminal } from 'lucide-react'
 import { DndContext, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { api, type ApiResult, type Group, type Item, type TermConfig, type TermPatch, type ToolAliasPatch, type ToolAliases } from './api/client'
+import {
+  api,
+  type ApiResult,
+  type Group,
+  type Item,
+  type TermConfig,
+  type TermPatch,
+  type ToolAliasPatch,
+  type ToolAliases,
+} from './api/client'
 import { AsciiSplash } from './components/AsciiSplash'
 import { GroupPanel } from './components/GroupPanel'
 import { SearchBox } from './components/SearchBox'
@@ -348,9 +357,7 @@ export default function App() {
     setActiveTool((cur) => (cur === id ? (next.at(-1) ?? null) : cur))
   }
 
-  const clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
-    .map((n) => String(n).padStart(2, '0'))
-    .join(':')
+  const clock = [now.getHours(), now.getMinutes(), now.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':')
 
   // 终端区实际显示 = 用户开关开着 且 还有会话（会话被关光时自动藏起）
   const showTerm = layout.termVisible && hasSessions
@@ -404,7 +411,13 @@ export default function App() {
       <header className="flex w-full flex-none flex-wrap items-center gap-2.5 px-6 pt-5 pb-2 text-[15px]">
         <span className="text-text">{t('prompt.user')}</span>
         <span className="text-dim">:~$</span>
-        <SearchBox groups={groups} items={items} toolAliases={toolAliases} onOpenItem={openItem} onOpenTool={openTool} />
+        <SearchBox
+          groups={groups}
+          items={items}
+          toolAliases={toolAliases}
+          onOpenItem={openItem}
+          onOpenTool={openTool}
+        />
         <ToolsMenu open={openTools} onOpen={openTool} />
       </header>
 
@@ -434,10 +447,7 @@ export default function App() {
       ) : (
         /* 三区工作区：左=分组侧栏，右列上=工具区（有 tab 才出现），右列下=终端 */
         <div className="flex min-h-0 flex-1">
-          <aside
-            className="flex flex-none flex-col overflow-y-auto pt-1"
-            style={{ width: layout.sidebarW }}
-          >
+          <aside className="flex flex-none flex-col overflow-y-auto pt-1" style={{ width: layout.sidebarW }}>
             {editing ? (
               /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
               <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
@@ -534,15 +544,9 @@ export default function App() {
         </span>
         <span className="flex items-center gap-1.5">
           <span>
-            {serverOk === null ? '…' : serverOk ? t('status.serverUp') : t('status.serverDown')} |{' '}
-            {clock}
+            {serverOk === null ? '…' : serverOk ? t('status.serverUp') : t('status.serverDown')} | {clock}
           </span>
-          <button
-            className="tbtn"
-            aria-pressed={layout.termVisible}
-            onClick={toggleTerminal}
-            title={t('btn.terminal')}
-          >
+          <button className="tbtn" aria-pressed={layout.termVisible} onClick={toggleTerminal} title={t('btn.terminal')}>
             <Terminal size={14} />
           </button>
           <button
@@ -553,11 +557,7 @@ export default function App() {
           >
             {editing ? <Check size={14} /> : <Pencil size={14} />}
           </button>
-          <button
-            className="tbtn"
-            onClick={() => setDialog({ kind: 'settings' })}
-            title={t('btn.settings')}
-          >
+          <button className="tbtn" onClick={() => setDialog({ kind: 'settings' })} title={t('btn.settings')}>
             <Settings size={14} />
           </button>
         </span>
@@ -584,17 +584,12 @@ export default function App() {
         onClose={() => setDialog({ kind: 'none' })}
         onSubmit={
           dialog.kind === 'item-edit'
-            ? (values: ItemFormValues) =>
-                mutate(() => api.updateItem(dialog.item.id, values), t('toast.saved'))
+            ? (values: ItemFormValues) => mutate(() => api.updateItem(dialog.item.id, values), t('toast.saved'))
             : (values: ItemFormValues) => mutate(() => api.createItem(values), t('toast.saved'))
         }
       />
 
-      <ImportDialog
-        open={dialog.kind === 'import'}
-        onClose={() => setDialog({ kind: 'none' })}
-        onImported={refresh}
-      />
+      <ImportDialog open={dialog.kind === 'import'} onClose={() => setDialog({ kind: 'none' })} onImported={refresh} />
 
       <SettingsDialog
         open={dialog.kind === 'settings'}
@@ -614,9 +609,7 @@ export default function App() {
       />
 
       <ConfirmDialog
-        open={
-          dialog.kind === 'group-delete' || dialog.kind === 'item-delete' || dialog.kind === 'items-bulk-delete'
-        }
+        open={dialog.kind === 'group-delete' || dialog.kind === 'item-delete' || dialog.kind === 'items-bulk-delete'}
         title={
           dialog.kind === 'group-delete'
             ? `${t('group.delete')}：${dialog.group.name}`

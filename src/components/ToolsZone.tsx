@@ -33,9 +33,7 @@ export function ToolsZone({ open, active, onActivate, onClose, pendingInput, onI
             key={id}
             onClick={() => onActivate(id)}
             className={`mb-[-1px] flex cursor-default select-none items-center border-b pb-1 pt-1.5 ${
-              active === id
-                ? 'border-text text-text'
-                : 'border-transparent text-muted hover:border-line hover:text-dim'
+              active === id ? 'border-text text-text' : 'border-transparent text-muted hover:border-line hover:text-dim'
             } px-2.5`}
           >
             {t(toolMeta(id).nameKey)}

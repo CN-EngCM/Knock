@@ -1,22 +1,10 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ShortcutPickerDialog } from './ShortcutPickerDialog'
 import type { Group, Item, Kind } from '@/api/client'
 import { useI18n } from '@/i18n/useI18n'
@@ -80,9 +68,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
         title: title.trim(),
         // 书签缺协议时自动补 https://（否则 href 会变成站内相对路径）
         target:
-          kind === 'bookmark' && !/^https?:\/\//i.test(target.trim())
-            ? `https://${target.trim()}`
-            : target.trim(),
+          kind === 'bookmark' && !/^https?:\/\//i.test(target.trim()) ? `https://${target.trim()}` : target.trim(),
         args: kind === 'app' && args.trim() ? args.trim() : null,
         group_id: groupId,
       })

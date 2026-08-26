@@ -2,7 +2,22 @@ import type { MpApi } from '../../server/api'
 import type { PtyEvent } from '../../server/pty'
 
 // 类型再导出：前端组件从这里拿行类型，避免各处写 '../../server/...' 的深路径
-export type { Group, Item, Kind, HotkeyId, CreateItemInput, UpdateItemInput, OrderInput, ShellId, ShellOption, TermConfig, TermPatch, ToolId, ToolAliases, ToolAliasPatch } from '../../server/schemas'
+export type {
+  Group,
+  Item,
+  Kind,
+  HotkeyId,
+  CreateItemInput,
+  UpdateItemInput,
+  OrderInput,
+  ShellId,
+  ShellOption,
+  TermConfig,
+  TermPatch,
+  ToolId,
+  ToolAliases,
+  ToolAliasPatch,
+} from '../../server/schemas'
 export type { ApiResult, ApiError, ImportStats } from '../../server/api'
 export type { Shortcut } from '../../server/shortcuts'
 export type { PtyEvent } from '../../server/pty'

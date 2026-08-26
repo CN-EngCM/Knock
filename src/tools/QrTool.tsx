@@ -105,7 +105,10 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
         {url ? (
           <img src={url} alt="QR" style={{ width: size }} className="max-w-full border border-line bg-white p-1" />
         ) : (
-          <div className="flex items-center justify-center border border-dashed border-line text-[11.5px] text-muted" style={{ width: size, height: size }}>
+          <div
+            className="flex items-center justify-center border border-dashed border-line text-[11.5px] text-muted"
+            style={{ width: size, height: size }}
+          >
             {t('qr.empty')}
           </div>
         )}

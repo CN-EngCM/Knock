@@ -101,7 +101,10 @@ const badRequest = { ok: false, error: { kind: 'bad-request' } } as const
 const notFound = { ok: false, error: { kind: 'not-found' } } as const
 
 /** zod 校验失败 → 统一 bad-request（不透传 zod 细节给渲染进程） */
-function guard<T>(schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false } }, input: unknown) {
+function guard<T>(
+  schema: { safeParse: (v: unknown) => { success: true; data: T } | { success: false } },
+  input: unknown,
+) {
   const r = schema.safeParse(input)
   return r.success ? r.data : null
 }

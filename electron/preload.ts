@@ -14,8 +14,7 @@ import type { PtyEvent } from '../server/pty'
 // PtyEvent 是 type import（编译期擦除），不会把 server 代码带进渲染进程。
 
 contextBridge.exposeInMainWorld('knock', {
-  invoke: (channel: string, ...args: unknown[]): Promise<unknown> =>
-    ipcRenderer.invoke(channel, ...args),
+  invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
   onOpenSettings: (cb: () => void): void => {
     ipcRenderer.on('mp:open-settings', () => cb())
   },

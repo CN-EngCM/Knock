@@ -11,6 +11,7 @@
 ```bash
 pnpm dev        # Vite(127.0.0.1:5173) + Electron 窗口；改前端热更新，改主进程代码需重启
 pnpm typecheck  # tsc --noEmit，改完代码必须先过这个
+pnpm format     # prettier --write .，改完代码必须跑（风格：单引号/无分号/行宽 120，见 .prettierrc）
 pnpm build      # vite build（dist/）+ esbuild 主进程（out/）
 pnpm dist       # build + electron-builder → 目录版（release/win-unpacked/，无单文件 exe）
 ```
@@ -45,7 +46,7 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 3. **UI 文案一律走 i18n 字典**（src/i18n/）：zh.ts 是 key 的事实来源，en.ts 用 `Record<MessageKey, string>` 强制对齐，两边必须同时改。界面语言与注释都用中文。
 4. **注释解释「为什么」**，不复述代码；重点写类型设计意图与平台差异坑。
 5. 单仓库单 package，不引新框架/新抽象层；能十行解决不写一百行。
-6. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist`）由使用者手动执行，代理只保证 `pnpm build` 通过。
+6. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist`）由使用者手动执行，代理只保证 `pnpm build` 通过。
 
 ## 数据与平台
 

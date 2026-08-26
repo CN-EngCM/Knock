@@ -30,7 +30,8 @@ export const en: Record<MessageKey, string> = {
   'settings.hotkey.conflict': 'Hotkey already taken by another app, keeping the previous one',
   'settings.hotkey.saved': 'Hotkey updated',
   'settings.clip': 'Auto-paste window',
-  'settings.clipHint': 'On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)',
+  'settings.clipHint':
+    'On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)',
   'settings.import': 'Browser bookmarks',
   'settings.importBtn': 'Open import',
   'settings.info': 'Runtime',

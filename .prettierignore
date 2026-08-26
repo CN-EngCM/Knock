@@ -1,0 +1,17 @@
+# 构建产物与依赖
+node_modules/
+dist/
+out/
+release/
+release2/
+
+# 文档与历史素材是手排的，不参与格式化
+*.md
+docs/
+prototypes/
+
+# pnpm 生成的锁文件
+pnpm-lock.yaml
+
+# 字符画生成器的中间产物
+scripts/art-*.txt
