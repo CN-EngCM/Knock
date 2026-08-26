@@ -46,7 +46,8 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 3. **UI 文案一律走 i18n 字典**（src/i18n/）：zh.ts 是 key 的事实来源，en.ts 用 `Record<MessageKey, string>` 强制对齐，两边必须同时改。界面语言与注释都用中文。
 4. **注释解释「为什么」**，不复述代码；重点写类型设计意图与平台差异坑。
 5. 单仓库单 package，不引新框架/新抽象层；能十行解决不写一百行。
-6. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist`）由使用者手动执行，代理只保证 `pnpm build` 通过。
+6. **禁止自动 git commit / push**，除非用户明确允许；工作改完停在未提交状态由用户处置。
+7. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist`）由使用者手动执行，代理只保证 `pnpm build` 通过。
 
 ## 数据与平台
 
