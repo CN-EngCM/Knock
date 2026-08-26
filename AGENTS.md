@@ -11,7 +11,7 @@
 ```bash
 pnpm dev        # Vite(127.0.0.1:5173) + Electron 窗口；改前端热更新，改主进程代码需重启
 pnpm typecheck  # tsc --noEmit，改完代码必须先过这个
-pnpm format     # prettier --write .，改完代码必须跑（风格：单引号/无分号/行宽 120，见 .prettierrc）
+pnpm format     # prettier --write .，改完代码必须跑（风格：双引号/分号/缩进4/行宽 120，见 .prettierrc）
 pnpm build      # vite build（dist/）+ esbuild 主进程（out/）
 pnpm dist       # build + electron-builder → 目录版（release/win-unpacked/，无单文件 exe）
 ```

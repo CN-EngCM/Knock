@@ -1,13 +1,13 @@
-import Database from 'better-sqlite3'
-import { join } from 'node:path'
-import { dataDir } from './util/dataDir'
+import Database from "better-sqlite3";
+import { join } from "node:path";
+import { dataDir } from "./util/dataDir";
 
 // SQLite 连接（better-sqlite3 是同步 API，个人工具规模下最简单可靠）。
 // WAL 模式提升读写并发表现，对单用户应用无副作用。
-const db = new Database(join(dataDir(), 'mypage.db'))
-db.pragma('journal_mode = WAL')
+const db = new Database(join(dataDir(), "mypage.db"));
+db.pragma("journal_mode = WAL");
 // 开启外键约束（SQLite 默认关闭）：删除分组时级联删除其条目
-db.pragma('foreign_keys = ON')
+db.pragma("foreign_keys = ON");
 
 // 建表语句（幂等，对应需求文档 §6 数据模型）。
 // kind 用 CHECK 约束收窄为三种条目类型的联合，脏数据在数据库层就被挡住。
@@ -35,6 +35,6 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_items_group ON items(group_id, position);
-`)
+`);
 
-export default db
+export default db;

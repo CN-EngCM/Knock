@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import type { PtyEvent } from '../server/pty'
+import { contextBridge, ipcRenderer } from "electron";
+import type { PtyEvent } from "../server/pty";
 
 // ── 渲染进程的唯一暴露面（需求 §4.1 v2.0：进程边界即安全边界）──
 // 不开 nodeIntegration，页面只能通过这几个白名单接口接触主进程：
@@ -13,19 +13,19 @@ import type { PtyEvent } from '../server/pty'
 // 沙箱 preload 只允许 CJS 子集，esbuild 打成 out/preload.cjs。
 // PtyEvent 是 type import（编译期擦除），不会把 server 代码带进渲染进程。
 
-contextBridge.exposeInMainWorld('knock', {
-  invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
-  onOpenSettings: (cb: () => void): void => {
-    ipcRenderer.on('mp:open-settings', () => cb())
-  },
-  onFocusSearch: (cb: (clip: string | null) => void): (() => void) => {
-    const handler = (_e: unknown, clip: string | null) => cb(clip)
-    ipcRenderer.on('mp:focus-search', handler)
-    return () => ipcRenderer.removeListener('mp:focus-search', handler)
-  },
-  onPtyEvent: (cb: (e: PtyEvent) => void): (() => void) => {
-    const handler = (_e: unknown, ev: PtyEvent) => cb(ev)
-    ipcRenderer.on('mp:pty-event', handler)
-    return () => ipcRenderer.removeListener('mp:pty-event', handler)
-  },
-})
+contextBridge.exposeInMainWorld("knock", {
+    invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
+    onOpenSettings: (cb: () => void): void => {
+        ipcRenderer.on("mp:open-settings", () => cb());
+    },
+    onFocusSearch: (cb: (clip: string | null) => void): (() => void) => {
+        const handler = (_e: unknown, clip: string | null) => cb(clip);
+        ipcRenderer.on("mp:focus-search", handler);
+        return () => ipcRenderer.removeListener("mp:focus-search", handler);
+    },
+    onPtyEvent: (cb: (e: PtyEvent) => void): (() => void) => {
+        const handler = (_e: unknown, ev: PtyEvent) => cb(ev);
+        ipcRenderer.on("mp:pty-event", handler);
+        return () => ipcRenderer.removeListener("mp:pty-event", handler);
+    },
+});

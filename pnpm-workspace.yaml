@@ -10,9 +10,9 @@
 # electron-builder 拷贝原生依赖时出错（官方推荐 Electron 项目用 hoisted）
 nodeLinker: hoisted
 allowBuilds:
-  electron: true
-  better-sqlite3: true
-  esbuild: true
-  electron-winstaller: false
-  uiohook-napi: false
-  node-pty: true
+    electron: true
+    better-sqlite3: true
+    esbuild: true
+    electron-winstaller: false
+    uiohook-napi: false
+    node-pty: true
