@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   纸白终端主题令牌（terminal · paper white）
+
+   生效规则：
+   - html 无 data-theme 属性 → 深色/浅色跟随系统
+   - html[data-theme="dark"]  → 强制深色（暖白磷光于暖黑底）
+   - html[data-theme="light"] → 强制浅色（纸面终端：纸色底、墨色字）
+
+   浅色令牌块出现两次（手动指定 / 系统偏好），是刻意保留的直白写法。
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0a08;
+  --panel: #131311;
+  --text: #ede9db;
+  --dim: #b9b5a6;
+  --muted: #7c7869;
+  --line: #3e3c33;
+  --faint: rgba(237, 233, 219, 0.06);
+  --glow: rgba(237, 233, 219, 0.28);
+  --destructive: #ff6b6b;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f2efe6;
+  --panel: #faf8f0;
+  --text: #1f1d16;
+  --dim: #6b675c;
+  --muted: #98917d;
+  --line: #dcd6c4;
+  --faint: rgba(31, 29, 22, 0.05);
+  --glow: rgba(31, 29, 22, 0.12);
+  --destructive: #c53a3f;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]):not([data-theme="light"]) {
+    color-scheme: light;
+    --bg: #f2efe6;
+    --panel: #faf8f0;
+    --text: #1f1d16;
+    --dim: #6b675c;
+    --muted: #98917d;
+    --line: #dcd6c4;
+    --faint: rgba(31, 29, 22, 0.05);
+    --glow: rgba(31, 29, 22, 0.12);
+    --destructive: #c53a3f;
+  }
+}
+
+/* 把令牌映射为 Tailwind 颜色：bg-bg / text-text / border-line / text-dim …
+   同时提供 shadcn/ui 组件依赖的语义别名（background/foreground/muted…），
+   两套名字指向同一组变量，组件与本站手写样式天然同主题。 */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-text: var(--text);
+  --color-dim: var(--dim);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --font-mono: "Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace;
+
+  /* shadcn 语义别名 */
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-primary: var(--text);
+  --color-primary-foreground: var(--bg);
+  --color-secondary: var(--panel);
+  --color-secondary-foreground: var(--text);
+  --color-muted-foreground: var(--dim);
+  --color-accent: var(--faint);
+  --color-accent-foreground: var(--text);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--text);
+  --color-destructive: var(--destructive);
+  --color-ring: var(--dim);
+  --radius-lg: 6px;
+  --radius-md: 4px;
+  --radius-sm: 3px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* CRT 扫描线：仅“生效深色”时显示（默认显示；浅色下隐藏） */
+.scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
+}
+html[data-theme="light"] .scanlines {
+  display: none;
+}
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]) .scanlines {
+    display: none;
+  }
+}
+
+::selection {
+  background: var(--text);
+  color: var(--bg);
+}
+
+/* ── 空态 ASCII 标志（AsciiSplash）：扫光 + 轻浮动 + 光标闪烁，全纯 CSS ──
+   扫光用 background-clip:text 渐变横移实现，颜色全部取主题令牌。 */
+.ascii-art {
+  color: transparent;
+  background: linear-gradient(
+    100deg,
+    var(--muted) 20%,
+    var(--dim) 38%,
+    var(--text) 50%,
+    var(--dim) 62%,
+    var(--muted) 80%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ascii-shimmer 5s linear infinite;
+}
+@keyframes ascii-shimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+.ascii-float {
+  animation: ascii-float 4s ease-in-out infinite;
+}
+@keyframes ascii-float {
+  0%,
+  100% {
+    transform: translateY(-3px);
+  }
+  50% {
+    transform: translateY(3px);
+  }
+}
+.ascii-cursor {
+  animation: ascii-blink 1.1s steps(1) infinite;
+}
+@keyframes ascii-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ascii-art,
+  .ascii-float,
+  .ascii-cursor {
+    animation: none;
+  }
+  .ascii-art {
+    color: var(--dim);
+  }
+}
+
+/* 终端式按钮（文字 [ xxx ] 或状态栏图标）：低调次要态，悬停提亮；焦点用虚线框呼应终端气质。
+   aria-pressed 用于状态栏编辑开关——开启时图标常亮，取代旧的 EDIT:on 文字。 */
+.tbtn {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: var(--dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tbtn:hover,
+.tbtn[aria-pressed="true"] {
+  color: var(--text);
+}
+.tbtn:focus-visible,
+.rowbtn:focus-visible {
+  outline: 1px dashed var(--dim);
+  outline-offset: 2px;
+}

@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MyPage · 原型 A「素白」</title>
+<!--
+  原型 A「素白」Quiet Minimal
+  定位：安静、精确、经得起每天几十次直视的浅色工作台。
+  记号：bg #FAFAF7 / ink #191917 / muted #8C8C85 / hairline #E6E6E0 / accent 藏蓝 #27418F
+  签名元素：超大细字时钟 + 发丝线日期行 —— 首页即「看一眼时间，然后出发」
+  类型标识：图标块右下角小圆点（蓝=网页 绿=应用 橙=文件夹 紫=文件）
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { color-scheme: light; }
+  body {
+    background: #FAFAF7; color: #191917;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 36px 32px 110px; }
+
+  /* 顶栏 */
+  .topbar { display: flex; justify-content: space-between; align-items: center; }
+  .wordmark { font-size: 13px; font-weight: 650; letter-spacing: .14em; }
+  .controls { display: flex; gap: 8px; }
+  .chip {
+    height: 32px; padding: 0 14px; display: inline-flex; align-items: center;
+    border: 1px solid #E6E6E0; border-radius: 999px; background: #fff;
+    font-family: inherit; font-size: 12.5px; color: #55554F; cursor: pointer;
+  }
+  .chip:hover { border-color: #191917; color: #191917; }
+
+  /* 时钟英雄区 */
+  .hero { text-align: center; padding: 52px 0 8px; }
+  .clock {
+    font-size: clamp(56px, 9vw, 84px); font-weight: 200; line-height: 1;
+    letter-spacing: .015em; font-variant-numeric: tabular-nums;
+  }
+  .dateline {
+    display: flex; align-items: center; gap: 18px; margin: 18px auto 0;
+    max-width: 460px; color: #8C8C85; font-size: 13px; white-space: nowrap;
+  }
+  .dateline::before, .dateline::after { content: ""; flex: 1; height: 1px; background: #E6E6E0; }
+
+  /* 搜索：无边框，仅底部一条发丝线 */
+  .search {
+    max-width: 560px; margin: 34px auto 52px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid #E6E6E0; padding: 10px 4px 12px; transition: border-color .15s;
+  }
+  .search:focus-within { border-color: #27418F; }
+  .search svg { flex: none; color: #8C8C85; }
+  .search input {
+    flex: 1; border: 0; outline: 0; background: transparent;
+    font-family: inherit; font-size: 17px; color: #191917;
+  }
+  .search input::placeholder { color: #B3B3AC; }
+  .search kbd {
+    border: 1px solid #E6E6E0; border-radius: 5px; padding: 4px 8px;
+    font-family: inherit; font-size: 11px; color: #8C8C85;
+  }
+
+  /* 分组：左侧标签列 + 右侧流式磁贴 */
+  .group {
+    display: grid; grid-template-columns: 128px 1fr; gap: 28px;
+    padding: 30px 0; border-top: 1px solid #EDEDE7;
+  }
+  .group h2 { font-size: 12px; font-weight: 650; letter-spacing: .16em; color: #8C8C85; padding-top: 9px; }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 22px 14px; }
+  .item {
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px;
+    text-decoration: none; color: inherit; background: none; border: 0;
+    font-family: inherit; cursor: pointer;
+  }
+  .ico {
+    width: 42px; height: 42px; border: 1px solid #E6E6E0; border-radius: 10px; background: #fff;
+    display: grid; place-items: center; font-size: 15px; font-weight: 650; color: #191917;
+    transition: border-color .15s;
+  }
+  .item:hover .ico { border-color: #191917; }
+  .item:hover .label { color: #191917; }
+  .label {
+    font-size: 13px; color: #55554F; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 类型圆点：贴在图标块右下角 */
+  .kind {
+    position: absolute; top: 30px; right: calc(50% - 26px);
+    width: 9px; height: 9px; border-radius: 50%; border: 2px solid #FAFAF7;
+  }
+  .kind.web { background: #27418F; }
+  .kind.app { background: #3E9B4F; }
+  .kind.dir { background: #C8872E; }
+  .kind.doc { background: #7E6BB8; }
+
+  /* 编辑模式：显示虚线追加块 */
+  .add-tile { display: none; }
+  body.editing .add-tile { display: flex; }
+  .add-tile .ico { border-style: dashed; color: #B3B3AC; }
+  .add-tile:hover .ico { border-color: #8C8C85; }
+
+  /* 原型切换器 */
+  .switcher {
+    position: fixed; right: 14px; bottom: 14px; z-index: 90;
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(25,25,23,.92); color: #EDEDE7; border-radius: 999px; padding: 6px 8px 6px 14px;
+    font-size: 12px;
+  }
+  .switcher a { color: #EDEDE7; opacity: .55; text-decoration: none; padding: 3px 8px; border-radius: 999px; }
+  .switcher a:hover { opacity: 1; }
+  .switcher a.cur { background: #fff; color: #191917; opacity: 1; }
+
+  :focus-visible { outline: 2px solid #27418F; outline-offset: 2px; border-radius: 4px; }
+
+  /* 入场动效（reduced-motion 下关闭） */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero, .search, .group { animation: rise .5s cubic-bezier(.2,.7,.3,1) both; }
+    .search { animation-delay: .06s; }
+    .group:nth-of-type(1) { animation-delay: .12s; }
+    .group:nth-of-type(2) { animation-delay: .18s; }
+    .group:nth-of-type(3) { animation-delay: .24s; }
+    .group:nth-of-type(4) { animation-delay: .30s; }
+    .group:nth-of-type(5) { animation-delay: .36s; }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  }
+  @media (max-width: 640px) {
+    .group { grid-template-columns: 1fr; gap: 14px; }
+    .group h2 { padding-top: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="wordmark">MYPAGE</div>
+    <div class="controls">
+      <button class="chip" id="editBtn" aria-pressed="false">编辑</button>
+      <button class="chip">主题</button>
+      <button class="chip">EN</button>
+    </div>
+  </header>
+
+  <div class="hero">
+    <div class="clock" id="clock">--:--</div>
+    <div class="dateline" id="dateline"></div>
+  </div>
+
+  <div class="search">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="search" type="text" placeholder="搜索收藏、应用与文件…" aria-label="搜索"/>
+    <kbd>/</kbd>
+  </div>
+
+  <main>
+    <section class="group">
+      <h2>开发</h2>
+      <div class="items">
+        <a class="item" href="#" data-name="github github.com 代码仓库" title="https://github.com"><span class="ico">G</span><span class="kind web"></span><span class="label">GitHub</span></a>
+        <a class="item" href="#" data-name="stackoverflow stack overflow 问答" title="https://stackoverflow.com"><span class="ico">S</span><span class="kind web"></span><span class="label">Stack Overflow</span></a>
+        <a class="item" href="#" data-name="mdn mozilla 文档" title="https://developer.mozilla.org"><span class="ico">M</span><span class="kind web"></span><span class="label">MDN</span></a>
+        <a class="item" href="#" data-name="vercel 部署" title="https://vercel.com"><span class="ico">V</span><span class="kind web"></span><span class="label">Vercel</span></a>
+        <button class="item add-tile" data-name=""><span class="ico">+</span><span class="label">添加</span></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>设计</h2>
+      <div class="items">
+        <a class="item" href="#" data-name="figma 设计" title="https://figma.com"><span class="ico">F</span><span class="kind web"></span><span class="label">Figma</span></a>
+        <a class="item" href="#" data-name="dribbble 灵感" title="https://dribbble.com"><span class="ico">D</span><span class="kind web"></span><span class="label">Dribbble</span></a>
+        <a class="item" href="#" data-name="jsdesign 即时设计" title="https://js.design"><span class="ico">J</span><span class="kind web"></span><span class="label">即时设计</span></a>
+        <a class="item" href="#" data-name="behance 作品" title="https://behance.net"><span class="ico">B</span><span class="kind web"></span><span class="label">Behance</span></a>
+        <button class="item add-tile" data-name=""><span class="ico">+</span><span class="label">添加</span></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>工作台</h2>
+      <div class="items">
+        <button class="item" data-name="vscode visual studio code 编辑器" title="D:\Apps\VSCode\Code.exe"><span class="ico">V</span><span class="kind app"></span><span class="label">VS Code</span></button>
+        <button class="item" data-name="terminal windows terminal 终端" title="wt.exe"><span class="ico">T</span><span class="kind app"></span><span class="label">Terminal</span></button>
+        <button class="item" data-name="docker 容器" title="Docker Desktop"><span class="ico">D</span><span class="kind app"></span><span class="label">Docker</span></button>
+        <button class="item" data-name="postman api 调试" title="Postman.exe"><span class="ico">P</span><span class="kind app"></span><span class="label">Postman</span></button>
+        <button class="item add-tile" data-name=""><span class="ico">+</span><span class="label">添加</span></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>本机文件</h2>
+      <div class="items">
+        <button class="item" data-name="projects 项目 d:\projects" title="D:\Projects"><span class="ico">P</span><span class="kind dir"></span><span class="label">项目</span></button>
+        <button class="item" data-name="screenshots 截图" title="D:\Screenshots"><span class="ico">S</span><span class="kind dir"></span><span class="label">截图</span></button>
+        <button class="item" data-name="resume 简历 pdf" title="D:\Docs\简历2026.pdf"><span class="ico">R</span><span class="kind doc"></span><span class="label">简历2026.pdf</span></button>
+        <button class="item" data-name="notes 学习笔记" title="D:\Docs\笔记"><span class="ico">N</span><span class="kind dir"></span><span class="label">学习笔记</span></button>
+        <button class="item add-tile" data-name=""><span class="ico">+</span><span class="label">添加</span></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>娱乐</h2>
+      <div class="items">
+        <a class="item" href="#" data-name="bilibili b站 视频" title="https://bilibili.com"><span class="ico">B</span><span class="kind web"></span><span class="label">Bilibili</span></a>
+        <a class="item" href="#" data-name="youtube 视频" title="https://youtube.com"><span class="ico">Y</span><span class="kind web"></span><span class="label">YouTube</span></a>
+        <button class="item" data-name="steam 游戏" title="steam.exe"><span class="ico">S</span><span class="kind app"></span><span class="label">Steam</span></button>
+        <button class="item" data-name="netease 网易云音乐 音乐" title="cloudmusic.exe"><span class="ico">W</span><span class="kind app"></span><span class="label">网易云音乐</span></button>
+        <button class="item add-tile" data-name=""><span class="ico">+</span><span class="label">添加</span></button>
+      </div>
+    </section>
+  </main>
+
+</div>
+
+<nav class="switcher">
+  <span>原型 A · 素白</span>
+  <a class="cur" href="a-quiet-light.html">A</a>
+  <a href="b-glass-aurora.html">B</a>
+  <a href="c-amber-terminal.html">C</a>
+  <a href="d-keycap.html">D</a>
+  <a href="index.html">索引</a>
+</nav>
+
+<script>
+  // —— 原型交互：搜索过滤 / 编辑模式 / 实时时钟（正式版由 React 实现）——
+  const searchInput = document.getElementById('search');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    document.querySelectorAll('.item').forEach((el) => {
+      el.style.display = !q || el.dataset.name.toLowerCase().includes(q) ? '' : 'none';
+    });
+    // 整组都无命中时隐藏分组
+    document.querySelectorAll('.group').forEach((g) => {
+      const any = [...g.querySelectorAll('.item')].some((i) => i.style.display !== 'none');
+      g.style.display = any ? '' : 'none';
+    });
+  });
+
+  const editBtn = document.getElementById('editBtn');
+  editBtn.addEventListener('click', () => {
+    document.body.classList.toggle('editing');
+    editBtn.setAttribute('aria-pressed', document.body.classList.contains('editing'));
+  });
+
+  const clockEl = document.getElementById('clock');
+  const datelineEl = document.getElementById('dateline');
+  function tick() {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    clockEl.textContent = hh + ':' + mm;
+    const greet = d.getHours() < 6 ? '凌晨好' : d.getHours() < 12 ? '早上好' : d.getHours() < 18 ? '下午好' : '晚上好';
+    datelineEl.textContent = `${d.getMonth() + 1}月${d.getDate()}日 星期${'日一二三四五六'[d.getDay()]} · ${greet}`;
+  }
+  tick();
+  setInterval(tick, 15000);
+</script>
+</body>
+</html>

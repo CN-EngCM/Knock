@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>敲敲 Knock</title>
+  <!-- 标签页图标：暗底暖白 $（内联 SVG，无外部请求） -->
+  <link
+    rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230A0A08'/%3E%3Ctext x='32' y='44' font-family='Consolas,monospace' font-size='36' font-weight='bold' fill='%23EDE9DB' text-anchor='middle'%3E$%3C/text%3E%3C/svg%3E"
+  />
+  <script>
+    // 首帧渲染前应用已保存的主题，避免闪色。
+    // 不设 data-theme = 跟随系统；设为 light / dark = 手动指定。
+    try {
+      var t = localStorage.getItem('mypage-theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.dataset.theme = t;
+      }
+    } catch (e) { /* 隐私模式下 localStorage 不可用，忽略 */ }
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+# pnpm v11 供应链保护：默认禁止依赖运行安装脚本，这里显式放行/拒绝
+#   electron        —— 需下载平台二进制（dist/electron.exe）
+#   better-sqlite3  —— 原生模块，需下载/编译 binding
+#   esbuild         —— 需下载平台二进制
+#   electron-winstaller —— 仅 Squirrel 安装器需要；本项目用 portable 目标，不需要
+#   uiohook-napi    —— prebuilds 随包自带（NAPI 接口），install 脚本仅本地编译兜底
+#   node-pty        —— 同为 NAPI 预编译随包自带；install 脚本只检查 prebuilds/ 存在，
+#                      存在即退出（Windows 上不会触发 node-gyp 编译）
+# nodeLinker: hoisted —— 扁平 node_modules；pnpm 符号链接布局会让
+# electron-builder 拷贝原生依赖时出错（官方推荐 Electron 项目用 hoisted）
+nodeLinker: hoisted
+allowBuilds:
+  electron: true
+  better-sqlite3: true
+  esbuild: true
+  electron-winstaller: false
+  uiohook-napi: false
+  node-pty: true

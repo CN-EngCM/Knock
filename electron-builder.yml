@@ -1,0 +1,45 @@
+# electron-builder 配置：Windows 目录版（需求 §3.7 / §10.5，v2.1 起不再出单文件 exe）
+# 打包命令：pnpm dist（= vite build + esbuild 主进程 + electron-builder --win dir）
+appId: com.knock.app
+productName: Knock
+directories:
+  output: release
+afterPack: ./scripts/afterPack.cjs
+# 不让 electron-builder 跑 @electron/rebuild：
+#   better-sqlite3 的 Electron ABI 由 postinstall（scripts/electron-deps.mjs）拉预编译解决；
+#   uiohook-napi / node-pty 是 NAPI 接口（ABI 无关），其预编译 rebuilder 不认识，
+#   会误走源码编译（本机无 VS Build Tools 必失败）。
+npmRebuild: false
+files:
+  - out/**        # 主进程 + preload（esbuild 产物）
+  - dist/**       # 渲染页面（vite 产物）
+  - assets/**     # 托盘图标
+  - package.json
+  # ── 原生模块瘦身：运行时只需要 win32-x64 的 .node，其余是源码/构建残留/他平台预编译 ──
+  - "!node_modules/better-sqlite3/deps/**"
+  - "!node_modules/better-sqlite3/src/**"
+  - "!node_modules/better-sqlite3/docs/**"
+  - "!node_modules/better-sqlite3/benchmark/**"
+  - "!node_modules/better-sqlite3/build/Release/*.lib"
+  - "!node_modules/uiohook-napi/libuiohook/**"
+  - "!node_modules/uiohook-napi/src/**"
+  - "!node_modules/uiohook-napi/prebuilds/darwin-**"
+  - "!node_modules/uiohook-napi/prebuilds/linux-**"
+  - "!node_modules/uiohook-napi/prebuilds/win32-arm64/**"
+  - "!node_modules/node-pty/src/**"
+  - "!node_modules/node-pty/scripts/**"
+  - "!node_modules/node-pty/typings/**"
+  - "!node_modules/node-pty/prebuilds/darwin-**"
+  - "!node_modules/node-pty/prebuilds/win32-arm64/**"
+  - "!node_modules/node-pty/third_party/**"
+  - "!node_modules/node-pty/**/*.pdb"
+# 原生模块不能从 asar 内加载；其余 prod 依赖由 electron-builder 自动收入
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - node_modules/uiohook-napi/**
+  - node_modules/node-pty/**
+win:
+  target:
+    - target: dir
+      arch: [x64]
+  icon: assets/icon.png

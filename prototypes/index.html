@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MyPage · 设计原型索引</title>
+<!--
+  四套视觉方向的原型索引。原型均为零依赖静态页，可直接双击打开。
+  交互说明：搜索框可实时过滤条目；「编辑」按钮可切换编辑模式（出现虚线添加块）。
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #FAFAF7; color: #191917;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 56px 32px 90px; }
+  h1 { font-size: 24px; font-weight: 750; letter-spacing: -.01em; }
+  .sub { color: #8C8C85; font-size: 14px; margin: 10px 0 34px; line-height: 1.7; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+  a.card {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid #E6E6E0; border-radius: 16px; padding: 22px;
+    background: #fff; transition: border-color .15s, transform .15s;
+  }
+  a.card:hover { border-color: #191917; transform: translateY(-2px); }
+  .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .badge {
+    width: 40px; height: 40px; border-radius: 11px; flex: none;
+    display: grid; place-items: center; font-weight: 800; font-size: 16px;
+  }
+  .b-a { background: #fff; border: 1px solid #E6E6E0; color: #191917; }
+  .b-b { background: linear-gradient(135deg, #1D4ED8, #0891B2 55%, #6D28D9); color: #fff; }
+  .b-c { background: #0E0A04; color: #FFB000; font-family: Consolas, monospace; }
+  .b-d { background: #FFD02F; border: 2px solid #17150F; box-shadow: 3px 3px 0 #17150F; color: #17150F; }
+  .head h2 { font-size: 16.5px; font-weight: 700; }
+  .head span { font-size: 12px; color: #8C8C85; display: block; margin-top: 1px; }
+  p.desc { font-size: 13.5px; color: #55554F; line-height: 1.75; margin-bottom: 14px; }
+  .swatches { display: flex; gap: 6px; margin-bottom: 14px; }
+  .swatches i { width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.08); }
+  .open { font-size: 13px; font-weight: 650; color: #27418F; }
+  .note { margin-top: 34px; font-size: 12.5px; color: #8C8C85; line-height: 1.8; border-top: 1px solid #EDEDE7; padding-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MyPage · 四套设计原型</h1>
+  <p class="sub">同一套内容结构（搜索 + 五个分组 + 网页/应用/文件混合条目），四种截然不同的性格。<br>
+  原型里搜索框可实时过滤，「编辑」按钮可切换编辑模式看添加交互。选定后作为正式版视觉基调。</p>
+
+  <div class="cards">
+    <a class="card" href="a-quiet-light.html">
+      <div class="head"><span class="badge b-a">A</span><div><h2>素白 <em style="font-style:normal;color:#8C8C85;font-size:12px;font-weight:400">Quiet Minimal · 浅色</em></h2><span>给每天要盯几十次的双眼留白</span></div></div>
+      <p class="desc">安静精确的极简工作台：发丝线分隔、标签列式分组、唯一的藏蓝点缀。签名元素是超大细字时钟——打开首页先看一眼时间，再出发。</p>
+      <div class="swatches"><i style="background:#FAFAF7"></i><i style="background:#FFFFFF"></i><i style="background:#191917"></i><i style="background:#E6E6E0"></i><i style="background:#27418F"></i></div>
+      <span class="open">打开原型 A →</span>
+    </a>
+
+    <a class="card" href="b-glass-aurora.html">
+      <div class="head"><span class="badge b-b">B</span><div><h2>夜航 <em style="font-style:normal;color:#8C8C85;font-size:12px;font-weight:400">Glass Aurora · 深色</em></h2><span>深夜打开浏览器时的那口气</span></div></div>
+      <p class="desc">深海军蓝夜空上缓慢流动的蓝青紫极光，磨砂玻璃卡片悬浮其上；每个站点一枚专属渐变色图标。氛围感最强的一版。</p>
+      <div class="swatches"><i style="background:#0B1120"></i><i style="background:#1D4ED8"></i><i style="background:#0891B2"></i><i style="background:#6D28D9"></i><i style="background:#E7EBF3"></i></div>
+      <span class="open">打开原型 B →</span>
+    </a>
+
+    <a class="card" href="c-amber-terminal.html">
+      <div class="head"><span class="badge b-c">C</span><div><h2>琥珀终端 <em style="font-style:normal;color:#8C8C85;font-size:12px;font-weight:400">Amber Terminal · 深色</em></h2><span>这页本质是启动器，shell 是它的母语</span></div></div>
+      <p class="desc">CRT 琥珀磷光屏：扫描线与暗角、$ 提示符即搜索框、条目即命令、底部 tmux 式状态栏显示编辑状态与时钟。极客味最浓的一版。</p>
+      <div class="swatches"><i style="background:#0E0A04"></i><i style="background:#FFB000"></i><i style="background:#C08A00"></i><i style="background:#4A3908"></i><i style="background:#171006"></i></div>
+      <span class="open">打开原型 C →</span>
+      <div style="margin-top:8px"><a href="c-terminal-colors.html" style="font-size:13px;font-weight:650;color:#27418F;text-decoration:none">终端风格已选定 · 配色对比版（绿/冰蓝/洋红/纸白 + 原版琥珀）→</a></div>
+    </a>
+
+    <a class="card" href="d-keycap.html">
+      <div class="head"><span class="badge b-d">D</span><div><h2>键帽 <em style="font-style:normal;color:#8C8C85;font-size:12px;font-weight:400">Keycap Brutal · 浅色</em></h2><span>启动条目 = 按下按键</span></div></div>
+      <p class="desc">新粗野主义：粗描边、硬阴影、明快的黄珊瑚蓝。每个条目是一颗有厚度的键帽——悬停抬起，按下会真的压下去。最活泼的一版。</p>
+      <div class="swatches"><i style="background:#F4F0E6"></i><i style="background:#FFFFFF"></i><i style="background:#17150F"></i><i style="background:#FFD02F"></i><i style="background:#FF6B57"></i></div>
+      <span class="open">打开原型 D →</span>
+    </a>
+  </div>
+
+  <p class="note">说明：原型为纯静态演示（无后端），主题/语言按钮仅示意交互位置；四套均遵循「深浅色随系统 + 中英双语」的正式需求，此处只演示各自的主基调。需求见 ../docs/REQUIREMENTS.md。</p>
+</div>
+</body>
+</html>

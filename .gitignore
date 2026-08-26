@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+release/
+release2/
+*.log
+.DS_Store
+scripts/art-*.txt
+scripts/art-debug.png
