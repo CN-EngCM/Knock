@@ -1,10 +1,10 @@
 # AGENTS.md
 
-本文件给 AI 编码代理（及新协作者）提供本仓库的工作须知。需求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)（v2.0–v2.2 已实施；之后的演进以本文件为准）。
+本文件给 AI 编码代理（及新协作者）提供本仓库的工作须知，也是项目演进的唯一事实来源（v2.0–v2.2 需求已全部实施，历史需求/计划文档已删，需要时从 git 历史查阅）。
 
 ## 项目是什么
 
-敲敲（Knock）：个人启动器（网页收藏 / 本机应用 / 文件快捷方式）。Electron 托盘常驻，**双击 Ctrl** 呼出主窗口，无 TCP 端口、无 HTTP 服务、单机单用户。同时是 TypeScript 学习项目——可读性优先，禁止过度设计与炫技（需求 §4.3 是硬约束）。
+敲敲（Knock）：个人启动器（网页收藏 / 本机应用 / 文件快捷方式）。Electron 托盘常驻，**双击 Ctrl** 呼出主窗口，无 TCP 端口、无 HTTP 服务、单机单用户。同时是 TypeScript 学习项目——可读性优先，禁止过度设计与炫技，这是硬约束。
 
 ## 常用命令
 
@@ -30,7 +30,7 @@ electron/clipWatch.ts 剪贴板轮询打点「最后复制时间」，供呼出�
 server/api.ts         ★ MpApi 接口 = 前后端唯一契约；apiHandlers 处理器表逐方法实现
 server/*.ts           业务模块（db/launcher/favicon/shortcuts/bookmarks/autostart/pty），纯函数风格
 src/                  渲染进程 React 界面；src/api/client.ts 按 MpApi 逐方法转发 invoke
-src/tools/            内置工具：registry.ts 注册表（acceptsText 标记；组件一律 React.lazy，关闭即卸载）+ toolInput.ts（素材注入：挂载初值 + 事件双通道）
+src/tools/            内置工具：registry.ts 注册表（acceptsText 标记；组件一律 React.lazy，关闭即卸载）+ toolInput.ts（素材注入：挂载初值 + 事件双通道）；设计规范见同目录 TOOL_SPEC.md
 src/components/       布局组件（SearchBox / GroupPanel / ToolsZone / TerminalZone / AsciiSplash / Splitter）
 src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用它（dnd-kit 默认传感器会吞掉拖拽元素内的点击）
 ```
@@ -48,10 +48,11 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 5. 单仓库单 package，不引新框架/新抽象层；能十行解决不写一百行。
 6. **禁止自动 git commit / push**，除非用户明确允许；工作改完停在未提交状态由用户处置。
 7. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist`）由使用者手动执行，代理只保证 `pnpm build` 通过。
+8. **内置工具的新增与修改遵循 [src/tools/TOOL_SPEC.md](src/tools/TOOL_SPEC.md)**（形态判定、id 注册链、素材注入、状态分层、错误与 UI 约定），先读规范再动手。
 
 ## 数据与平台
 
-- SQLite（WAL）在用户数据目录：Windows `%APPDATA%\MyPage\mypage.db`，macOS/Linux 对应 Application Support / .config。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）。
+- SQLite（WAL）在用户数据目录：Windows `%APPDATA%\MyPage\mypage.db`，macOS/Linux 对应 Application Support / .config。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）。
 - 主题、界面语言、布局偏好（侧栏宽/终端高/终端开关）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。
 - 开发主力平台 Windows；平台相关代码集中在 server/shortcuts.ts（仅 Windows 快捷方式扫描）、server/autostart.ts 与 server/pty.ts（默认 shell 探测），其余保持跨平台写法。
 - 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
