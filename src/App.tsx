@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, Dispatch, useEffect, useMemo, useRef, SetStateAction, useState } from "react";
 import { Toaster, toast } from "sonner";
 import { Check, Pencil, Settings, Terminal } from "lucide-react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
@@ -9,20 +9,17 @@ import {
     type ApiResult,
     type Group,
     type Item,
-    type TermConfig,
     type TermPatch,
     type ToolAliasPatch,
-    type ToolAliases,
-    type TranslateConfig,
     type TranslateConfigPatch,
 } from "./api/client";
 import { AsciiSplash } from "./components/AsciiSplash";
+import { Clock } from "./components/Clock";
 import { GroupPanel } from "./components/GroupPanel";
 import { SearchBox } from "./components/SearchBox";
 import { Splitter } from "./components/Splitter";
 import { ToolsMenu } from "./components/ToolsMenu";
 import { ToolsZone } from "./components/ToolsZone";
-import { TerminalZone } from "./components/TerminalZone";
 import type { ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
@@ -33,6 +30,9 @@ import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDia
 import { useDragSensors } from "./lib/dnd";
 import { useI18n } from "./i18n/useI18n";
 import { applyTheme, initialTheme, saveTheme, type ThemeMode } from "./theme";
+
+// 终端区懒加载：xterm 体积不小，首屏用不到就不进主 chunk（拆分由 Vite 自动完成）
+const TerminalZone = lazy(() => import("./components/TerminalZone").then((m) => ({ default: m.TerminalZone })));
 
 // 全部弹窗收敛为一个可辨识联合（discriminated union）：
 // 用 kind 字段区分形态，switch 后每个分支的 payload 类型自动收窄。
@@ -75,12 +75,25 @@ function loadLayout(): Layout {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** 启动期只读一次的设置类 RPC：挂载即拉一次，失败保持 null（界面以 … 占位，不阻塞首帧） */
+function useRpcValue<T>(load: () => Promise<ApiResult<T>>): [T | null, Dispatch<SetStateAction<T | null>>] {
+    const [value, setValue] = useState<T | null>(null);
+    // load 收进 ref、依赖数组留空：请求保证只发一次；即便调用处换传内联箭头，
+    // 也不会因每次渲染换函数身份而反复请求
+    const loadRef = useRef(load);
+    useEffect(() => {
+        loadRef.current().then((r) => {
+            if (r.ok) setValue(r.data);
+        });
+    }, []);
+    return [value, setValue];
+}
+
 export default function App() {
     const { t, lang, setLang } = useI18n();
     const [theme, setTheme] = useState<ThemeMode>(initialTheme);
     const [editing, setEditing] = useState(false);
     const [serverOk, setServerOk] = useState<boolean | null>(null);
-    const [now, setNow] = useState(() => new Date());
     const [groups, setGroups] = useState<Group[]>([]);
     const [items, setItems] = useState<Item[]>([]);
     const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
@@ -99,11 +112,15 @@ export default function App() {
     // 已打开工具是纯运行时状态：每次启动强制从空开始，不落盘不还原（用户决策）
     const [openTools, setOpenTools] = useState<ToolId[]>([]);
     const [activeTool, setActiveTool] = useState<ToolId | null>(null);
-    // 终端设置（shell/字体）与终端会话数：字体喂 TerminalZone，设置页改这里
-    const [termCfg, setTermCfg] = useState<TermConfig | null>(null);
+    // 终端设置（shell/字体）：字体喂 TerminalZone，设置页改这里再落库
+    const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
     // 启动不自动开会话（TerminalZone 已无 auto-spawn），从 false 起步避免空态闪错
     const [hasSessions, setHasSessions] = useState(false);
     const [termSpawnReq, setTermSpawnReq] = useState(0);
+    // 粘性挂载标记：终端一旦用过就终身挂载。会话与 xterm 回滚缓冲都活在组件里，
+    // 「隐藏终端但会话存活」的场景不能卸载组件——所以挂载条件是 termEverUsed
+    // 而不是 showTerm，显隐只由 showTerm 决定走 CSS display:none。
+    const [termEverUsed, setTermEverUsed] = useState(false);
     const rightRef = useRef<HTMLDivElement>(null);
     const dragSensors = useDragSensors();
 
@@ -111,11 +128,6 @@ export default function App() {
         applyTheme(theme);
         saveTheme(theme);
     }, [theme]);
-
-    useEffect(() => {
-        const id = setInterval(() => setNow(new Date()), 1000);
-        return () => clearInterval(id);
-    }, []);
 
     // 布局持久化（拖完分栏松手时才写，写盘频率无压力）
     useEffect(() => {
@@ -157,58 +169,26 @@ export default function App() {
         })();
     }, [refresh]);
 
-    // 终端设置启动时拉一次：字体给 TerminalZone，shell 候选给设置页
-    useEffect(() => {
-        api.getTermConfig().then((r) => {
-            if (r.ok) setTermCfg(r.data);
-        });
-    }, []);
-
     // 工具别名启动时拉一次：喂 SearchBox 参与候选匹配
-    const [toolAliases, setToolAliases] = useState<ToolAliases>({});
-    useEffect(() => {
-        api.getToolAliases().then((r) => {
-            if (r.ok) setToolAliases(r.data);
-        });
-    }, []);
+    const [toolAliases, setToolAliases] = useRpcValue(api.getToolAliases);
 
     // 剪贴板素材时限（主进程每次呼出直接读库，这里的值只喂设置页展示）
-    const [clipSec, setClipSec] = useState<number | null>(null);
-    useEffect(() => {
-        api.getClipPaste().then((r) => {
-            if (r.ok) setClipSec(r.data.seconds);
-        });
-    }, []);
+    const [clipPaste, setClipPaste] = useRpcValue(api.getClipPaste);
+    const clipSec = clipPaste?.seconds ?? null;
 
     // 翻译密钥（有道）：只喂设置页编辑态；翻译请求由主进程现读库，不经这里
-    const [translateCfg, setTranslateCfg] = useState<TranslateConfig | null>(null);
-    useEffect(() => {
-        api.getTranslateConfig().then((r) => {
-            if (r.ok) setTranslateCfg(r.data);
-        });
-    }, []);
-
-    async function patchClipSec(s: number): Promise<boolean> {
-        try {
-            const r = await api.setClipPaste(s);
-            if (!r.ok) throw new Error(r.error.kind);
-            setClipSec(r.data.seconds);
-            return true;
-        } catch {
-            toast.error(t("toast.error"));
-            return false;
-        }
-    }
+    const [translateCfg, setTranslateCfg] = useRpcValue(api.getTranslateConfig);
 
     // 会话数上报回调必须稳定（TerminalZone 的 effect 依赖它），直接 setState 同值不触发重渲染
     const handleSessionCount = useCallback((n: number) => setHasSessions(n > 0), []);
 
-    // 设置页提交终端设置：成功则回填配置（字体由 props 流到 TerminalZone 即时生效）
-    async function patchTerm(p: TermPatch): Promise<boolean> {
+    // 设置页各分项提交的公共路径：失败统一 toast 并返回 false（弹窗内自行回滚），成功交给 apply 回填。
+    // 现状没有 memo 需求，普通闭包定义即可（要吃到 i18n 文案，故放在组件内）
+    async function patchSetting<T>(call: () => Promise<ApiResult<T>>, apply: (data: T) => void): Promise<boolean> {
         try {
-            const r = await api.setTermConfig(p);
+            const r = await call();
             if (!r.ok) throw new Error(r.error.kind);
-            setTermCfg(r.data);
+            apply(r.data);
             return true;
         } catch {
             toast.error(t("toast.error"));
@@ -216,30 +196,27 @@ export default function App() {
         }
     }
 
-    // 设置页提交工具别名：成功则回填（SearchBox 的候选匹配随 props 即时生效）
-    async function patchToolAlias(p: ToolAliasPatch): Promise<boolean> {
-        try {
-            const r = await api.setToolAliases(p);
-            if (!r.ok) throw new Error(r.error.kind);
-            setToolAliases(r.data);
-            return true;
-        } catch {
-            toast.error(t("toast.error"));
-            return false;
-        }
+    // 设置页提交剪贴板时限（秒）
+    function patchClipSec(s: number): Promise<boolean> {
+        return patchSetting(
+            () => api.setClipPaste(s),
+            (d) => setClipPaste(d),
+        );
     }
 
-    // 设置页提交翻译密钥：成功则回填编辑态
-    async function patchTranslate(p: TranslateConfigPatch): Promise<boolean> {
-        try {
-            const r = await api.setTranslateConfig(p);
-            if (!r.ok) throw new Error(r.error.kind);
-            setTranslateCfg(r.data);
-            return true;
-        } catch {
-            toast.error(t("toast.error"));
-            return false;
-        }
+    // 设置页提交终端设置：成功回填配置（字体由 props 流到 TerminalZone 即时生效）
+    function patchTerm(p: TermPatch): Promise<boolean> {
+        return patchSetting(() => api.setTermConfig(p), setTermCfg);
+    }
+
+    // 设置页提交工具别名：成功回填（SearchBox 的候选匹配随 props 即时生效）
+    function patchToolAlias(p: ToolAliasPatch): Promise<boolean> {
+        return patchSetting(() => api.setToolAliases(p), setToolAliases);
+    }
+
+    // 设置页提交翻译密钥：成功回填编辑态
+    function patchTranslate(p: TranslateConfigPatch): Promise<boolean> {
+        return patchSetting(() => api.setTranslateConfig(p), setTranslateCfg);
     }
 
     // ── 变更操作：成功后重拉数据并轻提示，失败统一 toast ──
@@ -389,8 +366,6 @@ export default function App() {
         setActiveTool((cur) => (cur === id ? (next.at(-1) ?? null) : cur));
     }
 
-    const clock = [now.getHours(), now.getMinutes(), now.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
-
     // 终端区实际显示 = 用户开关开着 且 还有会话（会话被关光时自动藏起）
     const showTerm = layout.termVisible && hasSessions;
 
@@ -401,7 +376,11 @@ export default function App() {
             return;
         }
         setLayout((l) => ({ ...l, termVisible: true }));
-        if (!hasSessions) setTermSpawnReq((n) => n + 1);
+        if (!hasSessions) {
+            // 首次使用终端：置粘性挂载 + 请求开新会话；此后组件不再卸载
+            setTermEverUsed(true);
+            setTermSpawnReq((n) => n + 1);
+        }
     }
 
     const sidebarGroups = (editing: boolean) =>
@@ -446,7 +425,8 @@ export default function App() {
                 <SearchBox
                     groups={groups}
                     items={items}
-                    toolAliases={toolAliases}
+                    // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
+                    toolAliases={toolAliases ?? {}}
                     onOpenItem={openItem}
                     onOpenTool={openTool}
                     onOpenPath={openLocalPath}
@@ -461,6 +441,7 @@ export default function App() {
                         <>
                             <span className="text-[13px]">{t("group.none")}</span>
                             <button
+                                type="button"
                                 className="tbtn border border-line px-4 py-2 hover:bg-faint"
                                 onClick={() => setDialog({ kind: "group-create" })}
                             >
@@ -474,6 +455,7 @@ export default function App() {
                                 {t("offline.hint")}
                             </span>
                             <button
+                                type="button"
                                 className="tbtn border border-line px-4 py-2 hover:bg-faint"
                                 onClick={() => refresh()}
                             >
@@ -550,24 +532,29 @@ export default function App() {
                                 }}
                             />
                         )}
-                        {/* 终端区常驻挂载（会话与回滚缓冲不因隐藏而丢），无会话或被关闭时仅 display:none */}
-                        <section
-                            className={openTools.length > 0 ? "flex-none" : "min-h-0 flex-1"}
-                            style={{
-                                height: openTools.length > 0 ? layout.termH : undefined,
-                                display: showTerm ? undefined : "none",
-                            }}
-                        >
-                            <TerminalZone
-                                theme={theme}
-                                visible={showTerm}
-                                font={termCfg?.font ?? ""}
-                                fontSize={termCfg?.fontSize ?? 13}
-                                spawnReq={termSpawnReq}
-                                onSessionCount={handleSessionCount}
-                                onHide={() => setLayout((l) => ({ ...l, termVisible: false }))}
-                            />
-                        </section>
+                        {/* 终端区粘性挂载：一旦开过就终身渲染（会话与回滚缓冲保活，
+                            不能随显隐卸载），无会话或被关闭时仅 display:none */}
+                        {termEverUsed && (
+                            <Suspense fallback={null}>
+                                <section
+                                    className={openTools.length > 0 ? "flex-none" : "min-h-0 flex-1"}
+                                    style={{
+                                        height: openTools.length > 0 ? layout.termH : undefined,
+                                        display: showTerm ? undefined : "none",
+                                    }}
+                                >
+                                    <TerminalZone
+                                        theme={theme}
+                                        visible={showTerm}
+                                        font={termCfg?.font ?? ""}
+                                        fontSize={termCfg?.fontSize ?? 13}
+                                        spawnReq={termSpawnReq}
+                                        onSessionCount={handleSessionCount}
+                                        onHide={() => setLayout((l) => ({ ...l, termVisible: false }))}
+                                    />
+                                </section>
+                            </Suspense>
+                        )}
                         {/* 右列全空（无工具无终端）→ ASCII 标志占位 */}
                         {openTools.length === 0 && !showTerm && <AsciiSplash />}
                     </div>
@@ -581,9 +568,10 @@ export default function App() {
                 </span>
                 <span className="flex items-center gap-1.5">
                     <span>
-                        {serverOk === null ? "…" : serverOk ? t("status.serverUp") : t("status.serverDown")} | {clock}
+                        {serverOk === null ? "…" : serverOk ? t("status.serverUp") : t("status.serverDown")} | <Clock />
                     </span>
                     <button
+                        type="button"
                         className="tbtn"
                         aria-pressed={layout.termVisible}
                         onClick={toggleTerminal}
@@ -592,6 +580,7 @@ export default function App() {
                         <Terminal size={14} />
                     </button>
                     <button
+                        type="button"
                         className="tbtn"
                         aria-pressed={editing}
                         onClick={() => setEditing((v) => !v)}
@@ -599,7 +588,12 @@ export default function App() {
                     >
                         {editing ? <Check size={14} /> : <Pencil size={14} />}
                     </button>
-                    <button className="tbtn" onClick={() => setDialog({ kind: "settings" })} title={t("btn.settings")}>
+                    <button
+                        type="button"
+                        className="tbtn"
+                        onClick={() => setDialog({ kind: "settings" })}
+                        title={t("btn.settings")}
+                    >
                         <Settings size={14} />
                     </button>
                 </span>

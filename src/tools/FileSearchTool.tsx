@@ -71,7 +71,6 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
     }, []);
 
     // 搜索主链路：空词回空态；非空防抖后查询，序号对不上的晚归结果丢弃
-    const extKey = exts.join(","); // 数组引用每次渲染都变，压成字符串做稳定依赖
     useEffect(() => {
         const q = query.trim();
         if (q === "") {
@@ -109,7 +108,7 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                 });
         }, DEBOUNCE_MS);
         return () => clearTimeout(timer);
-    }, [query, only, extKey, exts, sortKey, ascending, retryTick, t]);
+    }, [query, only, exts, sortKey, ascending, retryTick, t]);
 
     // 键盘选中行滚进可视区（block:nearest 只在出界时滚动）
     useEffect(() => {

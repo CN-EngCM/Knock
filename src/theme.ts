@@ -25,13 +25,6 @@ export function applyTheme(mode: ThemeMode): void {
     }
 }
 
-// 主题按钮循环切换：auto → light → dark → auto
-export function cycleTheme(mode: ThemeMode): ThemeMode {
-    if (mode === "auto") return "light";
-    if (mode === "light") return "dark";
-    return "auto";
-}
-
 export function saveTheme(mode: ThemeMode): void {
     try {
         localStorage.setItem(STORAGE_KEY, mode);

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { TOOLS, type ToolId } from "@/tools/registry";
 import { api, type Group, type Item, type ToolAliases } from "@/api/client";
+import { KIND_TAG } from "@/lib/kindTag";
 import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
@@ -13,9 +14,6 @@ import { useI18n } from "@/i18n/useI18n";
 // 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query。
 // 本地路径直达：输入像绝对路径且真实存在时，命中区顶部多一组「── 路径 ──」
 //   动作行（文件 = 打开文件 + 前往所在目录；文件夹 = 前往），纯手打时 Enter 直接落第一行。
-
-// 终端风行前缀：web / app / file，对应三种条目类型；工具行前缀用「工具」
-const TAG: Record<Item["kind"], string> = { bookmark: "web", app: "app", file: "file" };
 
 const MAX_CANDIDATES = 9;
 const CHIP_MAX_CHARS = 32;
@@ -266,7 +264,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                         const sel = hi === i;
                         const tag =
                             c.kind === "item"
-                                ? TAG[c.item.kind]
+                                ? KIND_TAG[c.item.kind]
                                 : c.kind === "tool"
                                   ? t("tools.menu")
                                   : c.label === "open"

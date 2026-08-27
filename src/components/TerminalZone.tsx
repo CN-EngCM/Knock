@@ -14,7 +14,9 @@ import type { ThemeMode } from "@/theme";
 
 type Session = { id: number; label: string };
 
-// 主题从 CSS 令牌读：auto 模式下系统切换令牌即变，跟随零成本
+// 主题色从 CSS 变量现读。xterm 实例只在创建时拿到一份快照，之后
+// 「theme prop 切换」与「auto 模式下系统明暗切换」（matchMedia 监听）
+// 都要重新执行下面这段，把新令牌刷进已建实例。
 function themeFromVars(): ITheme {
     const cs = getComputedStyle(document.documentElement);
     const v = (n: string) => cs.getPropertyValue(n).trim();
@@ -177,12 +179,24 @@ export function TerminalZone({ theme, visible, font, fontSize, spawnReq, onSessi
         });
     }, [activeId, visible, fitAndSync]);
 
-    // 主题切换 → 全部会话重设配色（auto 模式跟随系统令牌，见 themeFromVars 注释）
-    useEffect(() => {
-        if (theme === undefined) return;
+    // 把当前 CSS 变量应用到全部已建实例（主题切换与系统明暗切换共用）
+    const applyTheme = useCallback(() => {
         const th = themeFromVars();
         for (const term of terms.current.values()) term.options.theme = th;
-    }, [theme]);
+    }, []);
+
+    // 主题 prop 切换 → 全部会话重设配色
+    useEffect(() => {
+        applyTheme();
+    }, [theme, applyTheme]);
+
+    // auto 模式下系统明暗切换不会改变 theme prop，单独监听媒体查询刷新已建实例
+    // （显式主题由属性选择器接管，此时令牌不随系统变，多刷一次是无害的空操作）
+    useEffect(() => {
+        const mq = window.matchMedia("(prefers-color-scheme: dark)");
+        mq.addEventListener("change", applyTheme);
+        return () => mq.removeEventListener("change", applyTheme);
+    }, [applyTheme]);
 
     // 字体设置变化 → 已有会话同步重设（xterm 支持运行期改 fontFamily/fontSize），改完重新 fit
     useEffect(() => {
@@ -202,10 +216,16 @@ export function TerminalZone({ theme, visible, font, fontSize, spawnReq, onSessi
         onSessionCount(sessions.length);
     }, [sessions.length, onSessionCount]);
 
-    // 外部（状态栏按钮）请求开新会话：只在信号量递增时动作，初始 0 不触发。
+    // 外部（状态栏按钮）请求开新会话：只在信号量递增时动作。
+    // 终端区是懒挂载（首次呼出时 spawnReq 已是 1，挂载即触发）——StrictMode
+    // 会在挂载时把 effect 双跑一遍，记录已消费的值防止开两个会话。
     // spawn 故意不进依赖——它随语言切换变身份，进依赖会在切语言时凭空开一个会话。
+    const consumedSpawn = useRef(0);
     useEffect(() => {
-        if (spawnReq > 0) void spawn();
+        if (spawnReq > 0 && spawnReq !== consumedSpawn.current) {
+            consumedSpawn.current = spawnReq;
+            void spawn();
+        }
     }, [spawnReq]);
 
     return (

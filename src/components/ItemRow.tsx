@@ -4,10 +4,8 @@ import { GripVertical } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { api, type Item } from "@/api/client";
+import { KIND_TAG } from "@/lib/kindTag";
 import { useI18n } from "@/i18n/useI18n";
-
-// 终端风行前缀：web / app / file，对应三种条目类型
-const TAG: Record<Item["kind"], string> = { bookmark: "web", app: "app", file: "file" };
 
 // 从书签 URL 提取主机名作为图标缓存键；解析失败返回 null（不显示图标）
 function faviconHost(item: Item): string | null {
@@ -89,7 +87,7 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
 
     const content = (
         <>
-            <span className="w-9 flex-none text-[11.5px] text-muted">{TAG[item.kind]}</span>
+            <span className="w-9 flex-none text-[11.5px] text-muted">{KIND_TAG[item.kind]}</span>
             {host && <FaviconImg domain={host} />}
             <span className="min-w-0 flex-1 truncate text-text">{item.title}</span>
             {editing && <GripVertical className="size-3.5 flex-none text-muted" aria-hidden />}

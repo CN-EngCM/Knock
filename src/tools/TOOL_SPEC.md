@@ -59,6 +59,7 @@
 - 渲染端需要与 schema 对齐的词汇表（如语言下拉）时**手工复制一份**——渲染进程禁止运行时 import server/ 的值，zod 在主进程兜底。
 - 外部依赖不可用属可预期错误，走工具内的行内引导，不要只 toast：files 的 Everything 引导页（官网 + 重试）、translate 的 `noConfig` 态（`openSettings` 直达设置）是两个范式。
 - 平台受限的工具做双层守卫：前端进 `winOnly` 之类的提示态后不再发请求，主进程对非目标平台返回错误兜底。
+- 带配置的工具新增设置分节时，在 `src/components/dialogs/settings/` 下加一个分节组件 + `SettingsDialog.tsx` 的 `SECTION_DEFS` 登记一行。
 
 ## 7. 交互与 UI 约定
 
