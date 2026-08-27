@@ -7,6 +7,7 @@ import {
     api,
     type ApiError,
     type ApiResult,
+    type AiModelConfig,
     type Group,
     type Item,
     type TermPatch,
@@ -33,6 +34,13 @@ import { applyTheme, initialTheme, saveTheme, type ThemeMode } from "./theme";
 
 // 终端区懒加载：xterm 体积不小，首屏用不到就不进主 chunk（拆分由 Vite 自动完成）
 const TerminalZone = lazy(() => import("./components/TerminalZone").then((m) => ({ default: m.TerminalZone })));
+
+// 工具内「打开设置」引导要直达的分节：工具有缺配置态就登记一行；
+// 未收录的 ToolId 保持旧行为落回翻译分节
+const TOOL_SETTINGS_SECTION: Partial<Record<ToolId, SectionId>> = {
+    translate: "translate",
+    ai: "ai",
+};
 
 // 全部弹窗收敛为一个可辨识联合（discriminated union）：
 // 用 kind 字段区分形态，switch 后每个分支的 payload 类型自动收窄。
@@ -179,6 +187,10 @@ export default function App() {
     // 翻译密钥（有道）：只喂设置页编辑态；翻译请求由主进程现读库，不经这里
     const [translateCfg, setTranslateCfg] = useRpcValue(api.getTranslateConfig);
 
+    // AI 模型配置（整表）：设置页编辑态 + 工具内「有无可配模型」判断均来自这里；
+    // 对话请求由主进程现读库，不经这里
+    const [aiModels, setAiModels] = useRpcValue(api.getAiModels);
+
     // 会话数上报回调必须稳定（TerminalZone 的 effect 依赖它），直接 setState 同值不触发重渲染
     const handleSessionCount = useCallback((n: number) => setHasSessions(n > 0), []);
 
@@ -217,6 +229,14 @@ export default function App() {
     // 设置页提交翻译密钥：成功回填编辑态
     function patchTranslate(p: TranslateConfigPatch): Promise<boolean> {
         return patchSetting(() => api.setTranslateConfig(p), setTranslateCfg);
+    }
+
+    // 设置页提交 AI 模型配置（整表替换）：成功回填；对话/测试请求由主进程现读库即生效
+    function patchAiModels(list: AiModelConfig[]): Promise<boolean> {
+        return patchSetting(
+            () => api.setAiModels(list),
+            () => setAiModels(list),
+        );
     }
 
     // ── 变更操作：成功后重拉数据并轻提示，失败统一 toast ──
@@ -352,11 +372,13 @@ export default function App() {
 
     // ── 工具生命周期：菜单/搜索候选打开 / 点 tab 切换 / 点 × 关闭（卸载释放）──
     // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
-    // 已开的 tab（双通道与时序问题见 tools/toolInput.ts 注释）；裸开则清残留素材
-    function openTool(id: ToolId, input?: string | null) {
+    // 已开的 tab（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
+    // expertId 仅 ai 工具有意义（进入指定专家）；它与 input 相互独立，
+    // 「只有专家、没有素材」同样要过注入通道，让组件收到新注入的边沿信号
+    function openTool(id: ToolId, input?: string | null, expertId?: number) {
         setOpenTools((cur) => (cur.includes(id) ? cur : [...cur, id]));
         setActiveTool(id);
-        if (input != null) dispatchToolInput({ tool: id, text: input });
+        if (input != null || expertId != null) dispatchToolInput({ tool: id, text: input ?? "", expertId });
         else clearToolInput(id);
     }
 
@@ -519,7 +541,13 @@ export default function App() {
                                 active={activeTool}
                                 onActivate={setActiveTool}
                                 onClose={closeTool}
-                                onOpenSettings={() => setDialog({ kind: "settings", section: "translate" })}
+                                onOpenSettings={() =>
+                                    setDialog({
+                                        kind: "settings",
+                                        // 引导分节跟随当前激活工具（translate/ai 有缺配置态）
+                                        section: (activeTool && TOOL_SETTINGS_SECTION[activeTool]) || "translate",
+                                    })
+                                }
                             />
                         )}
                         {openTools.length > 0 && showTerm && (
@@ -650,6 +678,8 @@ export default function App() {
                 onClipSec={patchClipSec}
                 translateCfg={translateCfg}
                 onTranslateCfg={patchTranslate}
+                aiModels={aiModels}
+                onAiModels={patchAiModels}
             />
 
             <ConfirmDialog

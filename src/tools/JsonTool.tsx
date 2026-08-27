@@ -8,7 +8,7 @@ import { useToolInput } from "./toolInput";
 // initialInput = 搜索框素材注入（呼出时时限内复制的文本 → 推荐本工具 → 选中注入）。
 export default function JsonTool({ initialInput }: { initialInput?: string | null }) {
     const { t } = useI18n();
-    const [input, setInput] = useToolInput("json", initialInput);
+    const { text: input, setText: setInput } = useToolInput("json", initialInput);
     const [output, setOutput] = useState("");
     // 错误只存 z 原始 message（位置信息），无敏感内容
     const [error, setError] = useState<string | null>(null);

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
+    type AiModelConfig,
     type TermConfig,
     type TermPatch,
     type ToolAliasPatch,
@@ -15,6 +16,7 @@ import type { ThemeMode } from "@/theme";
 import { BasicSection } from "./settings/BasicSection";
 import { ToolsSection } from "./settings/ToolsSection";
 import { TranslateSection } from "./settings/TranslateSection";
+import { AiSection } from "./settings/AiSection";
 
 type Props = {
     open: boolean;
@@ -39,6 +41,9 @@ type Props = {
     /** 有道翻译密钥：提交走 onTranslateCfg（App 负责落库与回填） */
     translateCfg: TranslateConfig | null;
     onTranslateCfg: (patch: TranslateConfigPatch) => Promise<boolean>;
+    /** AI 模型配置整表：提交走 onAiModels（App 负责落库与回填） */
+    aiModels: AiModelConfig[] | null;
+    onAiModels: (list: AiModelConfig[]) => Promise<boolean>;
     /** 打开时直接定位的分节（工具内「打开设置」引导；缺省回基础设置） */
     initialSection?: SectionId;
 };
@@ -48,6 +53,7 @@ const SECTION_DEFS = [
     { id: "basic", labelKey: "settings.basic" },
     { id: "tools", labelKey: "settings.tools" },
     { id: "translate", labelKey: "settings.translate" },
+    { id: "ai", labelKey: "settings.ai" },
 ] as const;
 export type SectionId = (typeof SECTION_DEFS)[number]["id"];
 
@@ -70,6 +76,8 @@ export function SettingsDialog({
     onClipSec,
     translateCfg,
     onTranslateCfg,
+    aiModels,
+    onAiModels,
     initialSection,
 }: Props) {
     const { t } = useI18n();
@@ -125,6 +133,7 @@ export function SettingsDialog({
                         {sec === "translate" && (
                             <TranslateSection translateCfg={translateCfg} onTranslateCfg={onTranslateCfg} />
                         )}
+                        {sec === "ai" && <AiSection aiModels={aiModels} onAiModels={onAiModels} />}
                     </div>
                 </div>
 

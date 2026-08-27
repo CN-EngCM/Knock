@@ -1,4 +1,6 @@
 import db from "./db";
+// 专家出厂播种：模块加载时执行一次（幂等），比放 db.ts 干净——db.ts 调 util/settings 会循环依赖
+import { ensureSeeded } from "./experts";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
 import { parseNetscapeBookmarks } from "./bookmarks";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
@@ -8,12 +10,19 @@ import { launchItem } from "./launcher";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
 import { scanShortcuts, type Shortcut } from "./shortcuts";
 import { getSetting, setSetting } from "./util/settings";
+import { testModel as aiTestModel, startChat, stopChat } from "./ai";
+import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import {
+    aiChatSchema,
+    aiChatStopSchema,
+    aiModelConfigSchema,
+    aiModelsSchema,
     clipPasteSchema,
+    createExpertSchema,
     createGroupSchema,
     createItemSchema,
     fileSearchSchema,
@@ -27,9 +36,15 @@ import {
     ptyWriteSchema,
     termPatchSchema,
     toolAliasPatchSchema,
+    updateExpertSchema,
     updateGroupSchema,
     updateItemSchema,
     TOOL_IDS,
+    type AiModelConfig,
+    type AiChatInput,
+    type CreateExpertInput,
+    type UpdateExpertInput,
+    type Expert,
     type Group,
     type HotkeyId,
     type Item,
@@ -55,18 +70,23 @@ import {
 
 export type ApiError =
     | { kind: "bad-request" } // 入参校验失败
-    | { kind: "not-found" } // 目标分组/条目不存在，或 favicon 未命中
+    | { kind: "not-found" } // 目标分组/条目/专家不存在，或 favicon、AI 模型配置未命中
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
     | { kind: "missing"; path: string } // 启动目标路径不存在
     | { kind: "failed"; path: string } // 启动器执行失败
     | { kind: "everything" } // Everything 未运行（es.exe 退出码 8）或当前平台不支持
     | { kind: "youdao"; code: string } // 有道接口错误：code 为官方 errorCode，或 network（连不上/超时/响应异常）
+    | { kind: "ai"; status?: number } // LLM 上游错误：status=HTTP 状态码，缺省=网络层失败或首字节超时
     | { kind: "not-configured" }; // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
 export type ImportStats = { createdGroups: number; importedItems: number; skipped: number };
+
+// 专家出厂播种（幂等）：主进程业务装载的必经之路就是本模块，
+// 在此显式调一次，避免依赖各 entry 的 import 次序
+ensureSeeded();
 
 export interface MpApi {
     session(): Promise<ApiResult<{ platform: NodeJS.Platform }>>;
@@ -112,6 +132,20 @@ export interface MpApi {
     translate(input: TranslateInput): Promise<ApiResult<TranslateResult>>;
     getTranslateConfig(): Promise<ApiResult<TranslateConfig>>;
     setTranslateConfig(patch: TranslateConfigPatch): Promise<ApiResult<TranslateConfig>>;
+    // ── AI 助手（工具 ai）──
+    // 模型配置整表存 settings 键 aiModels（JSON），每次对话/测试现读，改完即生效
+    getAiModels(): Promise<ApiResult<AiModelConfig[]>>;
+    setAiModels(models: AiModelConfig[]): Promise<ApiResult<null>>;
+    /** 测试连接：测的是当前编辑值（不落库），mini 非流式请求 */
+    aiTestModel(cfg: AiModelConfig): Promise<ApiResult<null>>;
+    // 专家 CRUD：存 experts 表，按创建顺序（position）返回
+    listExperts(): Promise<ApiResult<Expert[]>>;
+    createExpert(input: CreateExpertInput): Promise<ApiResult<Expert>>;
+    updateExpert(id: number, patch: UpdateExpertInput): Promise<ApiResult<Expert>>;
+    deleteExpert(id: number): Promise<ApiResult<null>>;
+    /** 对话增量走 mp:ai-event 事件下行（照 pty 模式），此契约只交付 streamId；模型 id 未命中按 not-found */
+    aiChat(input: AiChatInput): Promise<ApiResult<{ streamId: number }>>;
+    aiChatStop(streamId: number): Promise<ApiResult<null>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -467,6 +501,60 @@ export const apiHandlers: ApiHandlers = {
             ok: true,
             data: { appKey: getSetting("youdaoAppKey", ""), secret: getSetting("youdaoAppSecret", "") },
         };
+    },
+
+    // ── AI 模型配置：整表替换式保存（设置页提交全部卡片）；读回即编辑态初值 ──
+    getAiModels: async () => {
+        let list: unknown = [];
+        try {
+            list = JSON.parse(getSetting("aiModels", "[]"));
+        } catch {
+            /* 坏数据当空表 */
+        }
+        const r = aiModelsSchema.safeParse(list);
+        return { ok: true, data: r.success ? r.data : [] };
+    },
+    setAiModels: async (models) => {
+        const v = guard(aiModelsSchema, models);
+        if (!v) return badRequest;
+        setSetting("aiModels", JSON.stringify(v));
+        return { ok: true, data: null };
+    },
+
+    // 测试连接透传上游错误（kind=ai 带 status），由前端映射成可读文案
+    aiTestModel: async (cfg) => {
+        const v = guard(aiModelConfigSchema, cfg);
+        if (!v) return badRequest;
+        return aiTestModel(v);
+    },
+
+    // ── 专家 CRUD ──
+    listExperts: async () => listExperts(),
+    createExpert: async (input) => {
+        const v = guard(createExpertSchema, input);
+        if (!v) return badRequest;
+        return createExpert(v);
+    },
+    updateExpert: async (id, patch) => {
+        const v = guard(updateExpertSchema, { id, patch });
+        if (!v) return badRequest;
+        return updateExpert(v.id, v.patch);
+    },
+    deleteExpert: async (id) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        return deleteExpert(id);
+    },
+
+    // 对话启动/停止：增量不在请求-响应里，经 preload 的 onAiEvent 下行（注释见 MpApi）
+    aiChat: async (input) => {
+        const v = guard(aiChatSchema, input);
+        if (!v) return badRequest;
+        return startChat(v);
+    },
+    aiChatStop: async (streamId) => {
+        const v = guard(aiChatStopSchema, { streamId });
+        if (!v) return badRequest;
+        return stopChat(v.streamId);
     },
 };
 

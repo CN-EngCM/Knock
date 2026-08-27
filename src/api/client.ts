@@ -1,5 +1,6 @@
 import type { MpApi } from "../../server/api";
 import type { PtyEvent } from "../../server/pty";
+import type { AiEvent } from "../../server/ai";
 
 // 类型再导出：前端组件从这里拿行类型，避免各处写 '../../server/...' 的深路径
 export type {
@@ -23,12 +24,20 @@ export type {
     TranslateConfigPatch,
     TranslateInput,
     YoudaoLangId,
+    AiModelConfig,
+    AiProviderId,
+    AiEffortId,
+    AiChatInput,
+    CreateExpertInput,
+    UpdateExpertInput,
+    Expert,
 } from "../../server/schemas";
 export type { ApiResult, ApiError, ImportStats } from "../../server/api";
 export type { Shortcut } from "../../server/shortcuts";
 export type { FileHit } from "../../server/everything";
 export type { TranslateResult } from "../../server/youdao";
 export type { PtyEvent } from "../../server/pty";
+export type { AiEvent } from "../../server/ai";
 
 declare global {
     interface Window {
@@ -37,6 +46,7 @@ declare global {
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;
+            onAiEvent: (cb: (e: AiEvent) => void) => () => void;
         };
     }
 }
@@ -86,9 +96,23 @@ export const api: MpApi = {
     translate: (input) => invoke("translate", input),
     getTranslateConfig: () => invoke("getTranslateConfig"),
     setTranslateConfig: (patch) => invoke("setTranslateConfig", patch),
+    getAiModels: () => invoke("getAiModels"),
+    setAiModels: (models) => invoke("setAiModels", models),
+    aiTestModel: (cfg) => invoke("aiTestModel", cfg),
+    listExperts: () => invoke("listExperts"),
+    createExpert: (input) => invoke("createExpert", input),
+    updateExpert: (id, patch) => invoke("updateExpert", id, patch),
+    deleteExpert: (id) => invoke("deleteExpert", id),
+    aiChat: (input) => invoke("aiChat", input),
+    aiChatStop: (streamId) => invoke("aiChatStop", streamId),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */
 export function onPtyEvent(cb: (e: PtyEvent) => void): () => void {
     return window.knock.onPtyEvent(cb);
+}
+
+/** AI 对话增量流订阅（mp:ai-event 事件通道）；返回退订函数 */
+export function onAiEvent(cb: (e: AiEvent) => void): () => void {
+    return window.knock.onAiEvent(cb);
 }

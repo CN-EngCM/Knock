@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { TOOLS, type ToolId } from "@/tools/registry";
-import { api, type Group, type Item, type ToolAliases } from "@/api/client";
+import { api, type Expert, type Group, type Item, type ToolAliases } from "@/api/client";
 import { KIND_TAG } from "@/lib/kindTag";
+import { useExperts } from "@/lib/experts";
 import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
@@ -22,6 +23,8 @@ const PATH_PROBE_DEBOUNCE_MS = 200;
 type Candidate =
     | { kind: "item"; item: Item; groupName: string }
     | { kind: "tool"; id: ToolId; name: string; desc: string }
+    /** 勾了「推荐到搜索栏」的 AI 专家：进推荐区一行 */
+    | { kind: "expert"; expert: Expert }
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
     | { kind: "path"; label: "open" | "goto"; target: string };
 
@@ -31,8 +34,8 @@ type Props = {
     /** 工具别名（设置页维护）：别名命中也算工具候选 */
     toolAliases: ToolAliases;
     onOpenItem: (item: Item) => void;
-    /** input 非 null 时 = 带素材打开工具（App 层负责注入通道） */
-    onOpenTool: (id: ToolId, input: string | null) => void;
+    /** input 非 null 时 = 带素材打开工具（App 层负责注入通道）；expertId 仅 ai 工具（进入指定专家） */
+    onOpenTool: (id: ToolId, input: string | null, expertId?: number) => void;
     /** 下拉路径动作的执行落点：组件只做形状判定与存在性探测，打开与失败反馈归 App 层 */
     onOpenPath: (path: string) => void;
 };
@@ -74,6 +77,8 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
     const [focused, setFocused] = useState(false);
     const [hi, setHi] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
+    // 勾了推荐的专家列表（AiTool 与此处经共享 store 同步，专家增删改即时反映）
+    const experts = useExperts();
 
     // 双击 Ctrl 呼出：清空搜索词、装上剪贴板素材（null = 超时/关闭）、聚焦输入框
     useEffect(() => {
@@ -168,20 +173,24 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
             name: t(tool.nameKey),
             desc: t(tool.descKey),
         }));
+        // 勾了推荐的专家排在工具行之后、同一推荐区里（下标数学不用动）
+        for (const expert of experts.filter((e) => e.recommend)) {
+            rec.push({ kind: "expert", expert });
+        }
         // 分组标签插入点：chip 在场推荐置顶；纯手打 = 路径区+命中区在上、推荐沉底
         return {
             candidates: recOnTop ? [...rec, ...pathRows, ...hits] : [...pathRows, ...hits, ...rec],
             pathStart: pathRows.length > 0 ? (recOnTop ? rec.length : 0) : -1,
             recStart: recOnTop ? 0 : pathRows.length + hits.length,
         };
-    }, [recOnTop, hits, pathRows, recTools, t]);
+    }, [recOnTop, hits, pathRows, recTools, experts, t]);
 
     // 注入源：素材 chip 优先，否则手打 query——从推荐工具进入就注入
     const injectSource = clip ?? (query.trim() || null);
 
-    // 匹配源 / 素材 / 路径探测结论变化后高亮回到第一项（chip 在场即推荐工具，Enter 直接注入；
-    // 探测结论进出会增删行，旧高亮序号可能指错行，一并重置）
-    useEffect(() => setHi(0), [q, clip, pathHit]);
+    // 匹配源 / 素材 / 路径探测结论 / 专家行数变化后高亮回到第一项（chip 在场即推荐工具，
+    // Enter 直接注入；探测结论与推荐专家进出会增删行，旧高亮序号可能指错行，一并重置）
+    useEffect(() => setHi(0), [q, clip, pathHit, experts]);
 
     const open = q.length > 0 && focused;
 
@@ -191,6 +200,9 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
         } else if (c.kind === "tool") {
             const accepts = TOOLS.find((x) => x.id === c.id)?.acceptsText;
             onOpenTool(c.id, accepts ? injectSource : null);
+        } else if (c.kind === "expert") {
+            // 专家行：素材 chip ?? query 一起交给 ai（没有则 null——只切到该专家正常打开）
+            onOpenTool("ai", injectSource, c.expert.id);
         } else {
             onOpenPath(c.target);
         }
@@ -267,16 +279,27 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                 ? KIND_TAG[c.item.kind]
                                 : c.kind === "tool"
                                   ? t("tools.menu")
-                                  : c.label === "open"
-                                    ? "file"
-                                    : "dir";
+                                  : c.kind === "expert"
+                                    ? t("search.expert")
+                                    : c.label === "open"
+                                      ? "file"
+                                      : "dir";
                         const title =
                             c.kind === "item"
                                 ? c.item.title
                                 : c.kind === "tool"
                                   ? c.name
-                                  : t(c.label === "open" ? "search.openFile" : "search.gotoFolder");
-                        const tail = c.kind === "item" ? c.groupName : c.kind === "tool" ? c.desc : c.target;
+                                  : c.kind === "expert"
+                                    ? c.expert.name
+                                    : t(c.label === "open" ? "search.openFile" : "search.gotoFolder");
+                        const tail =
+                            c.kind === "item"
+                                ? c.groupName
+                                : c.kind === "tool"
+                                  ? c.desc
+                                  : c.kind === "expert"
+                                    ? t(c.expert.multi ? "ai.modeMulti" : "ai.modeSingle")
+                                    : c.target;
                         return (
                             <Fragment
                                 key={
@@ -284,7 +307,9 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                         ? `i${c.item.id}`
                                         : c.kind === "tool"
                                           ? `t${c.id}`
-                                          : `p${c.label}${c.target}`
+                                          : c.kind === "expert"
+                                            ? `e${c.expert.id}`
+                                            : `p${c.label}${c.target}`
                                 }
                             >
                                 {i === pathStart && (

@@ -10,7 +10,7 @@ import { useToolInput } from "./toolInput";
 // initialInput = 搜索框素材注入（如呼出时限内复制的 URL）。
 export default function QrTool({ initialInput }: { initialInput?: string | null }) {
     const { t } = useI18n();
-    const [text, setText] = useToolInput("qr", initialInput ?? "https://");
+    const { text, setText } = useToolInput("qr", initialInput ?? "https://");
     const [size, setSize] = useState(216);
     const [ec, setEc] = useState<"L" | "M" | "Q" | "H">("M");
     const [url, setUrl] = useState("");

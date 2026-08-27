@@ -54,7 +54,7 @@ export default function TranslateTool({
     openSettings?: () => void;
 }) {
     const { t } = useI18n();
-    const [text, setText] = useToolInput("translate", initialInput);
+    const { text, setText } = useToolInput("translate", initialInput);
     const [from, setFrom] = useState<FromId>(() => loadLang(LS_FROM, "auto", true) as FromId);
     const [to, setTo] = useState<YoudaoLangId>(() => loadLang(LS_TO, "en", false) as YoudaoLangId);
     const [result, setResult] = useState<TranslateResult | null>(null);

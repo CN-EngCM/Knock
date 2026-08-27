@@ -31,6 +31,7 @@
   - `openSettings` 由 App → ToolsZone 透传，供「缺配置」类状态直达设置页；用不上的工具不接。
 - 组件在 registry 里一律 `lazy(() => import(...))`；工具的重依赖在组件文件里**静态 import** 即可——chunk 本身就是懒加载的，关闭即整体卸载。
 - 生命周期铁律：**关闭 tab = 卸载组件**，状态与代码库一起释放，重开回初始态；切换 tab 是 `display:none` 保活，草稿不丢。禁止做「重开还原上次内容」——每次启动从空开始是用户决策。
+- 唯一例外（同为用户决策，2026-08）：AI 助手的会话经模块级内存 store（`src/tools/aiSessions.ts`）在关 tab 后保留、流继续推进、重开恢复；应用重启仍从空开始（不落盘）。
 
 ## 4. 素材注入（acceptsText）
 
@@ -69,7 +70,7 @@
 - **视觉骨架**（与现有工具保持一致，具体值可微调但不要另起炉灶）：
   - 根容器吃满 `h-full`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
   - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；
-  - 按钮 `tbtn border border-line px-2.5 py-1 text-[12px] hover:bg-faint`，文案格式 `[ xxx ]`；
+  - 文字按钮用 `@/components/ui/button` 的 Button 组件（2026-08 用户决策）：主操作 default 实心、次操作 outline；工具内默认 **size xs**（h-6、12px 字号，与 12–12.5px 等宽密度对齐），仅空态 CTA 等焦点动作用 sm；图标类轻量动作可继续用 tbtn。按钮文案直接写动词短语，不加方括号装饰。存量工具（files/translate/qr/json）保持 tbtn 旧样式，后续另行统一；
   - 输入框 `border-line bg-bg font-mono text-[12.5px]` 家族。
 - **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。
 

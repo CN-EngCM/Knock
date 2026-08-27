@@ -12,7 +12,7 @@ import type { ToolId } from "../../server/schemas";
 //    （送达即清 pending，保持「读后即清」的单次消费语义）。
 // 工具组件统一通过 useToolInput 接入，两个通道都对组件透明。
 export const TOOL_INPUT_EVENT = "mypage:tool-input";
-export type ToolInputDetail = { tool: ToolId; text: string };
+export type ToolInputDetail = { tool: ToolId; text: string; expertId?: number };
 
 /** 模块级待注入素材：dispatch 写入，挂载或事件送达时消费（读后即清） */
 let pending: ToolInputDetail | null = null;
@@ -23,11 +23,11 @@ export function dispatchToolInput(detail: ToolInputDetail): void {
 }
 
 /** 挂载时取走属于自己的素材（读后即清；没有则 null） */
-function consumeToolInput(id: ToolId): string | null {
+function consumeToolInput(id: ToolId): ToolInputDetail | null {
     if (pending?.tool === id) {
-        const text = pending.text;
+        const detail = pending;
         pending = null;
-        return text;
+        return detail;
     }
     return null;
 }
@@ -37,19 +37,39 @@ export function clearToolInput(id: ToolId): void {
     if (pending?.tool === id) pending = null;
 }
 
-/** 工具的受控文本输入：挂载吃 pending + 实时事件注入，返回 [text, setText] */
-export function useToolInput(id: ToolId, initial?: string | null): [string, (v: string) => void] {
-    const [text, setText] = useState(() => initial ?? consumeToolInput(id) ?? "");
+// hook 的返回值：text 是受控文本；expertId 取最近一次注入携带值；
+// seq 是注入序号——每送抵一次注入就 +1（含挂载消费的那次）。单独给 seq 是因为
+// AiTool 需要「这是新注入」的边沿信号来触发自动发送，光看 text 区分不了
+// 「用户清空输入后又被注入了相同文本」；其他工具只用 text/setText 即可。
+type ToolInput = {
+    text: string;
+    setText: (v: string) => void;
+    expertId: number | undefined;
+    seq: number;
+};
+
+/** 工具的受控文本输入：挂载吃 pending + 实时事件注入，返回 text 与注入信号 */
+export function useToolInput(id: ToolId, initial?: string | null): ToolInput {
+    // 首次渲染的消费结果只取一次（useState 初始化器同款约束）：initial 非 null
+    // 视为直挂场景优先用之，此时不动 pending（与旧实现行为一致）
+    const [first] = useState(() => (initial != null ? null : consumeToolInput(id)));
+    const [text, setText] = useState(() => first?.text ?? initial ?? "");
+    const [expertId, setExpertId] = useState<number | undefined>(first?.expertId);
+    const [seq, setSeq] = useState(first ? 1 : 0);
+
     useEffect(() => {
         const h = (e: Event) => {
             const d = (e as CustomEvent<ToolInputDetail>).detail;
             if (d.tool === id) {
                 consumeToolInput(id); // 事件送达同样清 pending
                 setText(d.text);
+                setExpertId(d.expertId);
+                setSeq((n) => n + 1);
             }
         };
         window.addEventListener(TOOL_INPUT_EVENT, h);
         return () => window.removeEventListener(TOOL_INPUT_EVENT, h);
     }, [id]);
-    return [text, setText];
+
+    return { text, setText, expertId, seq };
 }

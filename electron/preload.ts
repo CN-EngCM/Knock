@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { PtyEvent } from "../server/pty";
+import type { AiEvent } from "../server/ai";
 
 // ── 渲染进程的唯一暴露面：进程边界即安全边界 ──
 // 不开 nodeIntegration，页面只能通过这几个白名单接口接触主进程：
@@ -10,8 +11,9 @@ import type { PtyEvent } from "../server/pty";
 //   onPtyEvent     —— 订阅终端输出流（v2.2：pty data/exit 下行事件），返回退订函数：
 //                     React 开发态 StrictMode 会把 effect 跑两遍，没有退订就会
 //                     挂两个监听器，每份数据写两遍 xterm（表现为终端整屏双行）。
+//   onAiEvent      —— 订阅 AI 对话增量流（delta/done/abort/error），返回退订函数，理由同上。
 // 沙箱 preload 只允许 CJS 子集，esbuild 打成 out/preload.cjs。
-// PtyEvent 是 type import（编译期擦除），不会把 server 代码带进渲染进程。
+// PtyEvent / AiEvent 都是 type import（编译期擦除），不会把 server 代码带进渲染进程。
 
 contextBridge.exposeInMainWorld("knock", {
     invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
@@ -27,5 +29,10 @@ contextBridge.exposeInMainWorld("knock", {
         const handler = (_e: unknown, ev: PtyEvent) => cb(ev);
         ipcRenderer.on("mp:pty-event", handler);
         return () => ipcRenderer.removeListener("mp:pty-event", handler);
+    },
+    onAiEvent: (cb: (e: AiEvent) => void): (() => void) => {
+        const handler = (_e: unknown, ev: AiEvent) => cb(ev);
+        ipcRenderer.on("mp:ai-event", handler);
+        return () => ipcRenderer.removeListener("mp:ai-event", handler);
     },
 });

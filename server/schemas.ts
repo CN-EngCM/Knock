@@ -82,7 +82,7 @@ export type TermConfig = { shell: ShellId; font: string; fontSize: number; shell
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = ["json", "qr", "scan", "files", "translate"] as const;
+export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配
@@ -151,6 +151,68 @@ export type TranslateConfigPatch = z.infer<typeof translateConfigPatchSchema>;
 /** 密钥读回形状（设置页编辑态用；是否已配置由「两者非空」判断） */
 export type TranslateConfig = { appKey: string; secret: string };
 
+// ── AI 助手（工具 ai）──
+// 供应商词汇：v1 只做 OpenAI 兼容的 DeepSeek / 智谱两家（新增协议要动 server/ai.ts）；
+// 渲染端下拉的词汇表在 src/tools/AiTool.tsx / AiSection.tsx 手工对齐
+// （渲染进程禁止运行时 import server/ 的值，zod 在主进程仍会兜底校验）。
+export const AI_PROVIDER_IDS = ["deepseek", "zhipu"] as const;
+export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
+
+// 思考强度词汇表（前后端共享，同 TOOL_IDS 的「唯一事实来源」模式；渲染端下拉手工复制）。
+// 两家供应商的参数同名 reasoning_effort，取值交集为 low/high/max——DeepSeek 另收 medium，
+// 智谱拒绝 medium（实测 400 code 1210「该模型始终思考，不支持关闭思考；请使用 low、high 或 max」，
+// 其中 low ≈ 关思考）。词表统一取交集、请求体直传不做映射；default = 不发送该参数（用服务端默认强度）。
+export const AI_EFFORT_IDS = ["default", "low", "high", "max"] as const;
+export type AiEffortId = (typeof AI_EFFORT_IDS)[number];
+
+// 一套模型配置 = 供应商 + 模型 id + API 密钥。id 是本地标识（UUID），不参与展示
+// ——对外显示「供应商 · 模型id」；密钥只进 settings 表，经 client 往返仅存于内存。
+export const aiModelConfigSchema = z.object({
+    id: z.string().min(1).max(64),
+    provider: z.enum(AI_PROVIDER_IDS),
+    model: z.string().trim().min(1).max(100),
+    apiKey: z.string().trim().min(1).max(200),
+});
+export type AiModelConfig = z.infer<typeof aiModelConfigSchema>;
+
+/** 整表存储上限 20 套，防 settings 表被塞爆 */
+export const aiModelsSchema = z.array(aiModelConfigSchema).max(20);
+
+// 专家六字段（无别名、无排序——按创建顺序即 position）；modelId 空串 = 未绑定模型
+export const createExpertSchema = z.object({
+    name: z.string().trim().min(1).max(50),
+    prompt: z.string().trim().min(1).max(8000),
+    multi: z.boolean(),
+    recommend: z.boolean(),
+    // 思考强度：AI_EFFORT_IDS 词汇表，default = 不发参（见上方注释）
+    effort: z.enum(AI_EFFORT_IDS),
+    modelId: z.string().trim().max(64),
+});
+export type CreateExpertInput = z.infer<typeof createExpertSchema>;
+
+// PATCH：全部字段可选只更新传入部分（与 updateItem 同款），id+patch 合并校验
+const expertPatchSchema = createExpertSchema.partial();
+export const updateExpertSchema = z.object({
+    id: z.number().int().positive(),
+    patch: expertPatchSchema,
+});
+export type UpdateExpertInput = z.infer<typeof expertPatchSchema>;
+
+// 单条消息上限 20000 字符 ≈ 长译文/长代码的合理量级；整段 history 上限 200 条兜底。
+// effort 必填：渲染端总是有值（专家配置带默认 default），主进程据此决定是否携带 reasoning_effort
+export const aiChatSchema = z.object({
+    modelId: z.string().trim().min(1).max(64),
+    system: z.string().trim().max(8000),
+    effort: z.enum(AI_EFFORT_IDS),
+    messages: z
+        .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(20000) }))
+        .min(1)
+        .max(200),
+});
+export type AiChatInput = z.infer<typeof aiChatSchema>;
+
+export const aiChatStopSchema = z.object({ streamId: z.number().int().positive() });
+
 // ── 呼出热键预设 ──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的
 // 机制分发（double-* 走 uiohook 双击检测，其余走 globalShortcut）共用这一份。
@@ -182,5 +244,18 @@ export type Item = {
     target: string;
     args: string | null;
     icon: string | null;
+    position: number;
+};
+
+export type Expert = {
+    id: number;
+    name: string;
+    prompt: string;
+    multi: boolean;
+    recommend: boolean;
+    /** 思考强度（AI_EFFORT_IDS 词汇）；default = 请求不带 reasoning_effort */
+    effort: AiEffortId;
+    /** 绑定的 aiModelConfig.id；空串 = 未绑定 */
+    modelId: string;
     position: number;
 };

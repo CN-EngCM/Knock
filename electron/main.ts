@@ -3,6 +3,7 @@ import { join } from "node:path";
 // esbuild 以 ESM 打包本文件，__dirname 由构建脚本注入的 banner 提供
 import { apiHandlers } from "../server/api";
 import { killAllSessions, setPtySink } from "../server/pty";
+import { setAiSink } from "../server/ai";
 import { freshClipboardText, startClipWatch } from "./clipWatch";
 import { createTray } from "./tray";
 import { initHotkey, shutdownHotkey } from "./hotkey";
@@ -34,6 +35,8 @@ if (!app.requestSingleInstanceLock()) {
         startClipWatch();
         // 终端输出流：pty 会话 → 渲染进程（窗口藏到托盘时事件静默丢弃，会话继续活着）
         setPtySink((ev) => win?.webContents.send("mp:pty-event", ev));
+        // AI 对话增量流：与 pty 同款出口注入，工具关闭/组件卸载期间事件自然被忽略
+        setAiSink((ev) => win?.webContents.send("mp:ai-event", ev));
         createTray(
             () => win,
             () => {

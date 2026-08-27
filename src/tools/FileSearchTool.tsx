@@ -50,7 +50,7 @@ function dirOf(h: FileHit): string {
 
 export default function FileSearchTool({ initialInput }: { initialInput?: string | null }) {
     const { t } = useI18n();
-    const [query, setQuery] = useToolInput("files", initialInput);
+    const { text: query, setText: setQuery } = useToolInput("files", initialInput);
     const [only, setOnly] = useState<Only>("all");
     const [exts, setExts] = useState<string[]>([]);
     const [sortKey, setSortKey] = useState<SortKey>("dm");
