@@ -1,7 +1,7 @@
 import { BrowserWindow } from "electron";
 import { getSetting, setSetting } from "../server/util/settings";
 
-// ── 窗口状态记忆（需求 §3.7：记住上次位置/尺寸/是否最大化）──
+// ── 窗口状态记忆（记住上次位置/尺寸/是否最大化）──
 // 状态存 SQLite settings 表（键 window_state），与业务数据同库同备份。
 // 主进程独占写、仅此处读写，无并发问题。
 

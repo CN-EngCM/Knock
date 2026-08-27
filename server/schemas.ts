@@ -151,7 +151,7 @@ export type TranslateConfigPatch = z.infer<typeof translateConfigPatchSchema>;
 /** 密钥读回形状（设置页编辑态用；是否已配置由「两者非空」判断） */
 export type TranslateConfig = { appKey: string; secret: string };
 
-// ── 呼出热键预设（需求 §3.7 v2.0）──
+// ── 呼出热键预设 ──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的
 // 机制分发（double-* 走 uiohook 双击检测，其余走 globalShortcut）共用这一份。
 export const HOTKEY_IDS = ["double-ctrl", "double-alt", "double-shift", "alt-space", "ctrl-alt-space"] as const;

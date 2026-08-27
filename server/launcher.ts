@@ -44,7 +44,7 @@ export async function launchItem(item: {
     target: string;
     args: string | null;
 }): Promise<LaunchError | null> {
-    // 启动前先验路径：失效路径要给出明确报错而不是静默失败（需求 §3.3）
+    // 启动前先验路径：失效路径要给出明确报错而不是静默失败
     if (!existsSync(item.target)) {
         return { error: "missing", path: item.target };
     }

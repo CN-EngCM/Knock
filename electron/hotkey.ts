@@ -3,7 +3,7 @@ import { uIOhook, UiohookKey } from "uiohook-napi";
 import { getSetting, setSetting } from "../server/util/settings";
 import type { HotkeyId } from "../server/schemas";
 
-// ── 全局呼出热键（需求 §3.7 v2.0）──
+// ── 全局呼出热键 ──
 // 两类机制：
 //   double-*  —— 双击修饰键（Ctrl/Alt/Shift，300ms 内两次）。Electron 的
 //                globalShortcut 只能注册静态组合键，做不到双击检测，

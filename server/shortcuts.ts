@@ -12,7 +12,7 @@ export type Shortcut = {
     target: string; // 解析出的目标路径（可能为空）
 };
 
-// ── Windows 快捷方式扫描器（v1 仅 Windows，需求 §3.3/§4.2）──
+// ── Windows 快捷方式扫描器（v1 仅 Windows）──
 // 扫描开始菜单（用户 + 公共）与桌面（用户 + 公共）的 .lnk，
 // 用一次 PowerShell 调用批量解析目标路径（WScript.Shell COM）。
 // 结果在进程内缓存；非 Windows 平台返回空数组。

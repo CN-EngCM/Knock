@@ -4,7 +4,7 @@ import { dataDir } from "./util/dataDir";
 import { getSetting } from "./util/settings";
 
 // ── favicon 拉取与本地缓存 ──
-// 策略（需求 §3.1）：优先直连站点自身 /favicon.ico（国内网络最可靠），
+// 策略：优先直连站点自身 /favicon.ico（国内网络最可靠），
 // 失败再走可配置的公共图标服务兜底（settings.favicon_mirror，默认 DuckDuckGo，
 // 国内可能不可达——不可达就退化为无图标，不影响使用）。
 

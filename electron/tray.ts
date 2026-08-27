@@ -1,7 +1,7 @@
 import { app, Tray, Menu, nativeImage, type BrowserWindow } from "electron";
 import { join } from "node:path";
 
-// ── 托盘（需求 §3.7 v2.0）──
+// ── 托盘 ──
 // 左键单击 = 切换主窗口显隐（与热键等效）；
 // 右键菜单 = 显示主窗口 / 设置 / 退出——「退出」是程序唯一退出入口。
 

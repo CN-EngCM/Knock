@@ -10,11 +10,11 @@ import { loadWindowState, trackWindowState } from "./windowState";
 
 // ── Electron 主进程入口 ──
 // 单实例托盘常驻应用：业务逻辑（server/api.ts 处理器表 + SQLite）跑在本进程内，
-// 渲染进程经 preload 白名单 invoke 调用（需求 v2.0 §1 / §4.1）。
+// 渲染进程经 preload 白名单 invoke 调用。
 
 // 固定 IPv4：与 vite.config 的 server.host 保持一致（localhost 可能解析成 ::1）
 const DEV_URL = "http://127.0.0.1:5173";
-// 便携版/自启场景：带 --hidden 启动则只进托盘不弹窗（需求 §3.7）
+// 便携版/自启场景：带 --hidden 启动则只进托盘不弹窗
 const startHidden = process.argv.includes("--hidden");
 
 let win: BrowserWindow | null = null;

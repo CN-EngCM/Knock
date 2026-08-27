@@ -9,7 +9,7 @@ db.pragma("journal_mode = WAL");
 // 开启外键约束（SQLite 默认关闭）：删除分组时级联删除其条目
 db.pragma("foreign_keys = ON");
 
-// 建表语句（幂等，对应需求文档 §6 数据模型）。
+// 建表语句（幂等）。
 // kind 用 CHECK 约束收窄为三种条目类型的联合，脏数据在数据库层就被挡住。
 db.exec(`
   CREATE TABLE IF NOT EXISTS groups (

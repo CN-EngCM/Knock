@@ -1,7 +1,7 @@
 import { app } from "electron";
 import { join } from "node:path";
 
-// ── 开机自启（需求 §3.7 v2.0）──
+// ── 开机自启 ──
 // v1 的三平台手工实现（注册表+VBS / LaunchAgent / XDG desktop）全部退役，
 // 统一交给 Electron 的 app.setLoginItemSettings（Windows 写 HKCU Run，
 // macOS 写 SMAppService，Linux 写 autostart desktop）。

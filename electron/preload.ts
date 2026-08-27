@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { PtyEvent } from "../server/pty";
 
-// ── 渲染进程的唯一暴露面（需求 §4.1 v2.0：进程边界即安全边界）──
+// ── 渲染进程的唯一暴露面：进程边界即安全边界 ──
 // 不开 nodeIntegration，页面只能通过这几个白名单接口接触主进程：
 //   invoke         —— 发起 RPC（channel 必须是 server/api.ts 注册过的处理器名，
 //                     参数由处理器入口的 zod 校验兜底）
