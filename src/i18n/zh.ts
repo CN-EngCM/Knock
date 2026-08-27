@@ -111,6 +111,9 @@ export const zh = {
 
     "search.noHit": "（无匹配条目）",
     "search.recommended": "推荐",
+    "search.pathGroup": "路径",
+    "search.openFile": "打开文件",
+    "search.gotoFolder": "前往文件夹",
 
     // ── 编辑模式多选删除 ──
     "edit.selected": "已选",

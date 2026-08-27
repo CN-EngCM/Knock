@@ -115,6 +115,9 @@ export const en: Record<MessageKey, string> = {
 
     "search.noHit": "(no matches)",
     "search.recommended": "recommended",
+    "search.pathGroup": "path",
+    "search.openFile": "open file",
+    "search.gotoFolder": "go to folder",
 
     // ── edit-mode multi-select delete ──
     "edit.selected": "selected",

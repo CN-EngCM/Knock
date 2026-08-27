@@ -82,6 +82,7 @@ export const api: MpApi = {
     fileSearch: (input) => invoke("fileSearch", input),
     openPath: (path) => invoke("openPath", path),
     revealPath: (path) => invoke("revealPath", path),
+    statPath: (path) => invoke("statPath", path),
     translate: (input) => invoke("translate", input),
     getTranslateConfig: () => invoke("getTranslateConfig"),
     setTranslateConfig: (patch) => invoke("setTranslateConfig", patch),

@@ -11,6 +11,7 @@ import { getSetting, setSetting } from "./util/settings";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import {
     clipPasteSchema,
     createGroupSchema,
@@ -104,6 +105,8 @@ export interface MpApi {
     fileSearch(input: FileSearchInput): Promise<ApiResult<{ hits: FileHit[] }>>;
     openPath(path: string): Promise<ApiResult<null>>;
     revealPath(path: string): Promise<ApiResult<null>>;
+    /** 路径探测（搜索框直达动作）：只回答「存在与否 + 是否目录」；不存在走 not-found */
+    statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
     // ── 有道翻译（工具 translate）：请求在主进程发（渲染进程直连被 CORS 拦，密钥也不进渲染包）；
     //    密钥存 settings 表，每次翻译现读现签，设置页改完即生效 ──
     translate(input: TranslateInput): Promise<ApiResult<TranslateResult>>;
@@ -422,6 +425,18 @@ export const apiHandlers: ApiHandlers = {
         const arg = /^[A-Za-z]:$/.test(stripped) ? v.path : `/select,${stripped}`;
         spawn("explorer.exe", [arg], { detached: true }).unref();
         return { ok: true, data: null };
+    },
+
+    // 搜索框路径直达动作的探测端：只答存在性与目录性，「打开还是去所在目录」由前端决定。
+    // stat 的任何失败（ENOENT / 权限 / 非法字符）对用户都是同一个事实——这个路径不可达
+    statPath: async (path) => {
+        const v = guard(pathArgSchema, { path });
+        if (!v) return badRequest;
+        try {
+            return { ok: true, data: { isDir: (await stat(v.path)).isDirectory() } };
+        } catch {
+            return notFound;
+        }
     },
 
     // ── 有道翻译：失败原因按 youdao(code)/not-configured 交给前端行内释义，不抛异常 ──

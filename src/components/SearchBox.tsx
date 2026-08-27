@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { TOOLS, type ToolId } from "@/tools/registry";
-import type { Group, Item, ToolAliases } from "@/api/client";
+import { api, type Group, type Item, type ToolAliases } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
@@ -11,15 +11,21 @@ import { useI18n } from "@/i18n/useI18n";
 // 注入契约：只要从推荐工具进入，一律注入「chip ?? 手打 query」，
 //   没有旧的「无命中升格为素材」隐形规则。
 // 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query。
+// 本地路径直达：输入像绝对路径且真实存在时，命中区顶部多一组「── 路径 ──」
+//   动作行（文件 = 打开文件 + 前往所在目录；文件夹 = 前往），纯手打时 Enter 直接落第一行。
 
 // 终端风行前缀：web / app / file，对应三种条目类型；工具行前缀用「工具」
 const TAG: Record<Item["kind"], string> = { bookmark: "web", app: "app", file: "file" };
 
 const MAX_CANDIDATES = 9;
 const CHIP_MAX_CHARS = 32;
+const PATH_PROBE_DEBOUNCE_MS = 200;
 
 type Candidate =
-    { kind: "item"; item: Item; groupName: string } | { kind: "tool"; id: ToolId; name: string; desc: string };
+    | { kind: "item"; item: Item; groupName: string }
+    | { kind: "tool"; id: ToolId; name: string; desc: string }
+    /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
+    | { kind: "path"; label: "open" | "goto"; target: string };
 
 type Props = {
     groups: Group[];
@@ -29,6 +35,8 @@ type Props = {
     onOpenItem: (item: Item) => void;
     /** input 非 null 时 = 带素材打开工具（App 层负责注入通道） */
     onOpenTool: (id: ToolId, input: string | null) => void;
+    /** 下拉路径动作的执行落点：组件只做形状判定与存在性探测，打开与失败反馈归 App 层 */
+    onOpenPath: (path: string) => void;
 };
 
 /** 极轻内容嗅探：http(s) → qr 置顶（URL 可能也是合法 JSON 串，先判 URL）；JSON.parse 成功 → json 置顶 */
@@ -42,6 +50,18 @@ function sniffTop(src: string): ToolId | null {
     }
 }
 
+/** 输入形如本地绝对路径（Windows 盘符 / UNC 开头）才值得发 IPC 探测；返回剥引号后的串。
+ *  相对路径会落到 Electron 启动目录，语义无意义；资源管理器「复制文件地址」常带成对英文引号，先剥再判 */
+function asLocalAbsolutePath(src: string): string | null {
+    const s = /^".*"$/.test(src) ? src.slice(1, -1) : src;
+    return /^[A-Za-z]:[\\/]|^\\\\/.test(s) ? s : null;
+}
+
+/** 文件输入的「前往文件夹」目标 = 所在目录（保留末尾分隔符）；形状判定已保证分隔符存在 */
+function parentDir(p: string): string {
+    return p.match(/^.*[\\/]/)?.[0] ?? p;
+}
+
 /** chip 单行展示：空白折叠 + 按码点截断 */
 function chipLabel(text: string): string {
     const flat = text.replace(/\s+/g, " ").trim();
@@ -49,7 +69,7 @@ function chipLabel(text: string): string {
     return chars.length > CHIP_MAX_CHARS ? chars.slice(0, CHIP_MAX_CHARS).join("") + "…" : flat;
 }
 
-export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }: Props) {
+export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, onOpenPath }: Props) {
     const { t } = useI18n();
     const [query, setQuery] = useState("");
     const [clip, setClip] = useState<string | null>(null);
@@ -97,7 +117,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
 
     // 命中区：条目 + 不吃素材的工具；能吃素材的工具恒住推荐区，不在命中区重复出现
     const hits = useMemo(
-        () => matches.filter((m) => m.kind === "item" || !TOOLS.find((x) => x.id === m.id)?.acceptsText),
+        () => matches.filter((m) => m.kind !== "tool" || !TOOLS.find((x) => x.id === m.id)?.acceptsText),
         [matches],
     );
 
@@ -111,30 +131,70 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
     // 布局：chip 在场推荐置顶（Enter 即注入）；纯手打推荐沉底（Enter 开命中项）
     const recOnTop = clip !== null;
 
-    const candidates = useMemo(() => {
+    // ── 本地路径直达：输入像绝对路径才探测；防抖把连续击键压成一次 IPC stat ──
+    // 竞态用 alive 标记丢弃晚归结果——快速输入时旧路径的「存在」不能污染新输入
+    const [pathHit, setPathHit] = useState<{ path: string; isDir: boolean } | null>(null);
+    useEffect(() => {
+        const p = asLocalAbsolutePath((clip ?? query).trim());
+        if (!p) {
+            setPathHit(null);
+            return;
+        }
+        let alive = true;
+        const timer = setTimeout(() => {
+            void api.statPath(p).then((r) => {
+                if (!alive) return;
+                setPathHit(r.ok ? { path: p, isDir: r.data.isDir } : null);
+            });
+        }, PATH_PROBE_DEBOUNCE_MS);
+        return () => {
+            alive = false;
+            clearTimeout(timer);
+        };
+    }, [query, clip]);
+
+    // 路径直达动作行：文件夹只有前往；文件打开放前——纯手打时 Enter 默认就是打开文件
+    const pathRows: Candidate[] = !pathHit
+        ? []
+        : pathHit.isDir
+          ? [{ kind: "path", label: "goto", target: pathHit.path }]
+          : [
+                { kind: "path", label: "open", target: pathHit.path },
+                { kind: "path", label: "goto", target: parentDir(pathHit.path) },
+            ];
+
+    const { candidates, pathStart, recStart } = useMemo(() => {
         const rec: Candidate[] = recTools.map((tool) => ({
             kind: "tool",
             id: tool.id,
             name: t(tool.nameKey),
             desc: t(tool.descKey),
         }));
-        return recOnTop ? [...rec, ...hits] : [...hits, ...rec];
-    }, [recOnTop, hits, recTools, t]);
+        // 分组标签插入点：chip 在场推荐置顶；纯手打 = 路径区+命中区在上、推荐沉底
+        return {
+            candidates: recOnTop ? [...rec, ...pathRows, ...hits] : [...pathRows, ...hits, ...rec],
+            pathStart: pathRows.length > 0 ? (recOnTop ? rec.length : 0) : -1,
+            recStart: recOnTop ? 0 : pathRows.length + hits.length,
+        };
+    }, [recOnTop, hits, pathRows, recTools, t]);
 
     // 注入源：素材 chip 优先，否则手打 query——从推荐工具进入就注入
     const injectSource = clip ?? (query.trim() || null);
 
-    // 匹配源 / 素材变化后高亮回到第一项（chip 在场即推荐工具，Enter 直接注入）
-    useEffect(() => setHi(0), [q, clip]);
+    // 匹配源 / 素材 / 路径探测结论变化后高亮回到第一项（chip 在场即推荐工具，Enter 直接注入；
+    // 探测结论进出会增删行，旧高亮序号可能指错行，一并重置）
+    useEffect(() => setHi(0), [q, clip, pathHit]);
 
     const open = q.length > 0 && focused;
 
     function select(c: Candidate) {
         if (c.kind === "item") {
             onOpenItem(c.item);
-        } else {
+        } else if (c.kind === "tool") {
             const accepts = TOOLS.find((x) => x.id === c.id)?.acceptsText;
             onOpenTool(c.id, accepts ? injectSource : null);
+        } else {
+            onOpenPath(c.target);
         }
         setQuery("");
         setClip(null);
@@ -195,52 +255,76 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool }
             />
             {open && (
                 <div className="absolute left-0 right-0 top-full z-50 max-h-80 overflow-y-auto rounded-sm border border-line bg-panel py-1 shadow-xl">
-                    {hits.length === 0 && (
+                    {/* 只剩推荐工具或路径动作行时不算「无匹配」——指的是没有条目/工具命中 */}
+                    {hits.length === 0 && pathRows.length === 0 && (
                         <span className="block px-2.5 py-1.5 font-mono text-[12.5px] text-muted">
                             {t("search.noHit")}
                         </span>
                     )}
                     {/* 推荐区分隔标签的位置随布局：置顶在第 0 行前，沉底在命中区之后 */}
-                    {(() => {
-                        const recStart = recOnTop ? 0 : hits.length;
-                        return candidates.map((c, i) => {
-                            const sel = hi === i;
-                            return (
-                                <Fragment key={c.kind === "item" ? `i${c.item.id}` : `t${c.id}`}>
-                                    {i === recStart && (
-                                        <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
-                                            ── {t("search.recommended")} ──
-                                        </div>
-                                    )}
-                                    <button
-                                        type="button"
-                                        // 阻止 mousedown 默认行为保住输入框焦点，避免点击候选前下拉先因失焦消失
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onMouseEnter={() => setHi(i)}
-                                        onClick={() => select(c)}
-                                        // 高亮行用反色（文字色做底）——与全站 ::selection 同一语言，最醒目
-                                        className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[13px] ${
-                                            sel ? "bg-text text-bg" : "text-dim"
-                                        }`}
+                    {candidates.map((c, i) => {
+                        const sel = hi === i;
+                        const tag =
+                            c.kind === "item"
+                                ? TAG[c.item.kind]
+                                : c.kind === "tool"
+                                  ? t("tools.menu")
+                                  : c.label === "open"
+                                    ? "file"
+                                    : "dir";
+                        const title =
+                            c.kind === "item"
+                                ? c.item.title
+                                : c.kind === "tool"
+                                  ? c.name
+                                  : t(c.label === "open" ? "search.openFile" : "search.gotoFolder");
+                        const tail = c.kind === "item" ? c.groupName : c.kind === "tool" ? c.desc : c.target;
+                        return (
+                            <Fragment
+                                key={
+                                    c.kind === "item"
+                                        ? `i${c.item.id}`
+                                        : c.kind === "tool"
+                                          ? `t${c.id}`
+                                          : `p${c.label}${c.target}`
+                                }
+                            >
+                                {i === pathStart && (
+                                    <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
+                                        ── {t("search.pathGroup")} ──
+                                    </div>
+                                )}
+                                {i === recStart && (
+                                    <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
+                                        ── {t("search.recommended")} ──
+                                    </div>
+                                )}
+                                <button
+                                    type="button"
+                                    // 阻止 mousedown 默认行为保住输入框焦点，避免点击候选前下拉先因失焦消失
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onMouseEnter={() => setHi(i)}
+                                    onClick={() => select(c)}
+                                    // 高亮行用反色（文字色做底）——与全站 ::selection 同一语言，最醒目
+                                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[13px] ${
+                                        sel ? "bg-text text-bg" : "text-dim"
+                                    }`}
+                                >
+                                    <span
+                                        className={`w-9 flex-none text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
                                     >
-                                        <span
-                                            className={`w-9 flex-none text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
-                                        >
-                                            {c.kind === "tool" ? t("tools.menu") : TAG[c.item.kind]}
-                                        </span>
-                                        <span className="min-w-0 flex-1 truncate">
-                                            {c.kind === "tool" ? c.name : c.item.title}
-                                        </span>
-                                        <span
-                                            className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
-                                        >
-                                            {c.kind === "tool" ? c.desc : c.groupName}
-                                        </span>
-                                    </button>
-                                </Fragment>
-                            );
-                        });
-                    })()}
+                                        {tag}
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate">{title}</span>
+                                    <span
+                                        className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
+                                    >
+                                        {tail}
+                                    </span>
+                                </button>
+                            </Fragment>
+                        );
+                    })}
                 </div>
             )}
         </div>

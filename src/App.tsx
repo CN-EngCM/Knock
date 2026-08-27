@@ -5,6 +5,7 @@ import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
     api,
+    type ApiError,
     type ApiResult,
     type Group,
     type Item,
@@ -315,6 +316,15 @@ export default function App() {
         if (!editing) setSelectedIds((prev) => (prev.size === 0 ? prev : new Set()));
     }, [editing]);
 
+    // 打开/启动类失败的统一提示：missing/failed 带具体路径（launcher.ts 约定），其余通用文案
+    function apiErrorToast(e: ApiError) {
+        if (e.kind === "missing" || e.kind === "failed") {
+            toast.error(`${t("launch.missing")}: ${e.path}`);
+        } else {
+            toast.error(t("toast.error"));
+        }
+    }
+
     // ── 打开条目：书签前端直开；应用/文件走后端启动器 ──
     async function openItem(item: Item) {
         if (item.kind === "bookmark") {
@@ -323,14 +333,17 @@ export default function App() {
         }
         try {
             const r = await api.launch(item.id);
-            if (!r.ok) {
-                // 路径失效时错误里带具体路径（launcher.ts 约定）
-                if (r.error.kind === "missing" || r.error.kind === "failed") {
-                    toast.error(`${t("launch.missing")}: ${r.error.path}`);
-                } else {
-                    toast.error(t("toast.error"));
-                }
-            }
+            if (!r.ok) apiErrorToast(r.error);
+        } catch {
+            toast.error(t("toast.error"));
+        }
+    }
+
+    // ── 搜索框路径直达动作（打开文件 / 前往文件夹）：同样走 openPath，报错口径与 openItem 一致 ──
+    async function openLocalPath(path: string) {
+        try {
+            const r = await api.openPath(path);
+            if (!r.ok) apiErrorToast(r.error);
         } catch {
             toast.error(t("toast.error"));
         }
@@ -436,6 +449,7 @@ export default function App() {
                     toolAliases={toolAliases}
                     onOpenItem={openItem}
                     onOpenTool={openTool}
+                    onOpenPath={openLocalPath}
                 />
                 <ToolsMenu open={openTools} onOpen={openTool} />
             </header>
