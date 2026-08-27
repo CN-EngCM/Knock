@@ -41,9 +41,11 @@ function fmtMtime(s: string): string {
     return s ? s.slice(0, 16).replace("T", " ") : "";
 }
 
-/** 行内灰色小字显示的目录部分（去掉名字本身；文件夹的尾随 \ 保留） */
+/** 行内灰色小字显示的目录部分（去掉名字本身；保留末级分隔符） */
 function dirOf(h: FileHit): string {
-    return h.path.slice(0, h.path.length - h.name.length);
+    // 文件夹的 path 以 \ 结尾而 name 不含它，先去掉尾随 \ 再按 name 截，否则会多留一个字母
+    const p = h.isDir && h.path.endsWith("\\") ? h.path.slice(0, -1) : h.path;
+    return p.slice(0, p.length - h.name.length);
 }
 
 export default function FileSearchTool({ initialInput }: { initialInput?: string | null }) {
