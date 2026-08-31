@@ -336,8 +336,17 @@ export default function App() {
         }
     }
 
+    // 打开条目防抖：同一条目 500ms 内（≈Windows 默认双击间隔）的点击视为误连点。
+    // 被拦的点击同样刷新时间戳——连点期间封锁持续顺延，点多久都只开一次，
+    // 停手超过 500ms 后的下一次点击才真正打开；侧栏与搜索候选共用此入口
+    const lastOpenRef = useRef<{ id: number; at: number } | null>(null);
+
     // ── 打开条目：书签前端直开；应用/文件走后端启动器 ──
     async function openItem(item: Item) {
+        const now = Date.now();
+        const blocked = lastOpenRef.current?.id === item.id && now - lastOpenRef.current.at < 500;
+        lastOpenRef.current = { id: item.id, at: now };
+        if (blocked) return;
         if (item.kind === "bookmark") {
             window.open(item.target, "_blank", "noreferrer");
             return;
@@ -455,7 +464,7 @@ export default function App() {
             />
 
             {/* 提示符行：$ 即搜索框（输入即出下拉候选，含工具）；右侧「工具 ▾」是内置工具另一入口 */}
-            <header className="flex w-full flex-none flex-wrap items-center gap-2.5 px-6 pt-5 pb-2 text-[15px]">
+            <header className="flex w-full flex-none flex-wrap items-center gap-2.5 px-6 pt-2.5 pb-2 text-[15px]">
                 <span className="text-text">{t("prompt.user")}</span>
                 <span className="text-dim">:~$</span>
                 <SearchBox
@@ -503,7 +512,7 @@ export default function App() {
             ) : (
                 /* 三区工作区：左=分组侧栏，右列上=工具区（有 tab 才出现），右列下=终端 */
                 <div className="flex min-h-0 flex-1">
-                    <aside className="flex flex-none flex-col overflow-y-auto pt-1" style={{ width: layout.sidebarW }}>
+                    <aside className="flex flex-none flex-col overflow-y-auto" style={{ width: layout.sidebarW }}>
                         {editing ? (
                             /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
                             <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>

@@ -119,7 +119,19 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
             </button>
         </div>
     ) : item.kind === "bookmark" ? (
-        <a href={item.target} target="_blank" rel="noreferrer" className={rowClass}>
+        <a
+            href={item.target}
+            target="_blank"
+            rel="noreferrer"
+            className={rowClass}
+            // 原生链接双击会开出两个标签：普通左键改走 onOpen（App 里有同条目防抖）；
+            // 带修饰键保持浏览器原生行为，中键不触发 click 天然无此问题
+            onClick={(e) => {
+                if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+                e.preventDefault();
+                onOpen(item);
+            }}
+        >
             {content}
         </a>
     ) : (

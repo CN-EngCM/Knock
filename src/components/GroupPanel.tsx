@@ -79,8 +79,9 @@ export function GroupPanel({
                     <h2
                         {...(editing ? sortable.listeners : {})}
                         onClick={() => setCollapsed((v) => !v)}
-                        // bg-panel 让组头成带状（与终端区/状态栏同底色），和下方条目拉开层次
-                        className="flex cursor-default touch-none select-none items-center gap-2 border-b border-line bg-panel px-2.5 py-1.5 text-[13px] tracking-wide text-dim"
+                        // bg-panel 让组头成带状（与终端区/状态栏同底色），和下方条目拉开层次；
+                        // h-8 与工具区 tab 条同高，两条 border-b 连成一条线
+                        className="flex h-8 cursor-default touch-none select-none items-center gap-2 border-b border-line bg-panel px-2.5 text-[13px] tracking-wide text-dim"
                     >
                         {editing && <GripVertical className="size-3.5 flex-none cursor-grab text-muted" aria-hidden />}
                         <span className="w-3 flex-none text-[10px] text-muted" aria-hidden>

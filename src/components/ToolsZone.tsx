@@ -22,12 +22,13 @@ export function ToolsZone({ open, active, onActivate, onClose, onOpenSettings }:
 
     return (
         <div className="flex min-h-0 flex-1 flex-col bg-panel">
-            <div className="flex flex-none items-stretch gap-0.5 border-b border-line px-2 text-[12.5px]">
+            {/* h-8 与侧栏分组头同高：两条底边线在同一水平线上（顶边也都贴工作区顶） */}
+            <div className="flex h-8 flex-none items-stretch gap-0.5 border-b border-line px-2 text-[12.5px]">
                 {open.map((id) => (
                     <span
                         key={id}
                         onClick={() => onActivate(id)}
-                        className={`mb-[-1px] flex cursor-default select-none items-center border-b pb-1 pt-1.5 ${
+                        className={`mb-[-1px] flex cursor-default select-none items-center border-b ${
                             active === id
                                 ? "border-text text-text"
                                 : "border-transparent text-muted hover:border-line hover:text-dim"
