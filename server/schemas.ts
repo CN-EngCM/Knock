@@ -131,6 +131,12 @@ export type FileSearchInput = z.infer<typeof fileSearchSchema>;
 // 打开/定位动作的目标路径（文件搜索结果的行级动作，不走 DB 条目）
 export const pathArgSchema = z.object({ path: z.string().trim().min(1).max(1000) });
 
+// 数据目录迁移（设置页「数据目录」行）：target 为 null = 恢复默认位置。
+// 路径只限长不做字符白名单——存在性 / 是否为空由主进程按真实文件系统校验。
+export const changeDataDirSchema = z.object({
+    target: z.string().trim().min(1).max(1000).nullable(),
+});
+
 // ── 有道文本翻译（工具 translate）──
 // 语言代码取有道常用子集（官方完整表 100+，个人使用足够）；渲染端下拉的
 // 词汇表在 src/tools/TranslateTool.tsx 手工对齐（渲染进程禁止运行时 import server/ 的值）。

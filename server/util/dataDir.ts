@@ -1,22 +1,12 @@
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { defaultDataRoot, readPointer } from "./dataLocation";
 
-// 跨平台用户数据目录（存 SQLite 数据库等）：
-//   Windows: %APPDATA%\MyPage
-//   macOS:   ~/Library/Application Support/MyPage
-//   Linux:   ~/.config/MyPage（尊重 XDG_CONFIG_HOME）
-// 目录名沿用项目旧名 MyPage（改名 Knock 时未迁移），改了会找不到既有数据库。
+// 当前数据目录：唯一事实来源是默认根下的指针文件 data-location.json（见 dataLocation.ts）。
+// 无指针 = 从未启动过 → 兜底默认根（主进程启动引导会在开库前把指针补上）。
+// mkdir 只对最终确定的目录做；「指针指向的目录不存在」是启动引导判定目标不可用、
+// 走恢复流程的依据——若在这里提前创建，恢复流程就会被静默换成空库。
 export function dataDir(): string {
-    let base: string;
-    if (process.platform === "win32") {
-        base = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");
-    } else if (process.platform === "darwin") {
-        base = join(homedir(), "Library", "Application Support");
-    } else {
-        base = process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
-    }
-    const dir = join(base, "MyPage");
+    const dir = readPointer() ?? defaultDataRoot();
     mkdirSync(dir, { recursive: true });
     return dir;
 }

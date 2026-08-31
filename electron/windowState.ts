@@ -41,8 +41,13 @@ export function loadWindowState(): WinState {
     }
 }
 
+// 被跟踪窗口的模块级引用：changeDataDir 迁移时要取「当前」bounds 补写进新库
+// 副本（旧库随后被删，防抖未落盘的最后一段状态不补就丢了），需从外部够到窗口
+let tracked: BrowserWindow | null = null;
+
 /** 跟踪窗口并持久化状态：resize/move 防抖写盘，close 时立即写一次 */
 export function trackWindowState(win: BrowserWindow): void {
+    tracked = win;
     let timer: NodeJS.Timeout | undefined;
 
     const save = () => {
@@ -65,4 +70,18 @@ export function trackWindowState(win: BrowserWindow): void {
     win.on("resize", schedule);
     win.on("move", schedule);
     win.on("close", save);
+}
+
+/** 当前窗口状态快照（与 save() 同款取「还原后」bounds）；无窗口时退回已存状态。
+ *  供 changeDataDir 把状态写进迁移副本，键同为 window_state */
+export function currentWindowState(): WinState {
+    if (!tracked || tracked.isDestroyed()) return loadWindowState();
+    const b = tracked.getNormalBounds();
+    return {
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height,
+        maximized: tracked.isMaximized(),
+    };
 }

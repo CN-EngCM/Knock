@@ -1,4 +1,5 @@
 import db from "./db";
+import Database from "better-sqlite3";
 // 专家出厂播种：模块加载时执行一次（幂等），比放 db.ts 干净——db.ts 调 util/settings 会循环依赖
 import { ensureSeeded } from "./experts";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
@@ -10,18 +11,31 @@ import { launchItem } from "./launcher";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
 import { scanShortcuts, type Shortcut } from "./shortcuts";
 import { getSetting, setSetting } from "./util/settings";
+import { dataDir } from "./util/dataDir";
+import {
+    DB_NAME,
+    FAVICONS_NAME,
+    canAcceptAsDataDir,
+    defaultDataRoot,
+    removeDbArtifacts,
+    samePath,
+    writePointer,
+} from "./util/dataLocation";
+import { currentWindowState } from "../electron/windowState";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
-import { dialog } from "electron";
+import { app, dialog } from "electron";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import {
     aiChatSchema,
     aiChatStopSchema,
     aiModelConfigSchema,
     aiModelsSchema,
+    changeDataDirSchema,
     clipPasteSchema,
     createExpertSchema,
     createGroupSchema,
@@ -83,7 +97,8 @@ export type ApiError =
     | { kind: "everything" } // Everything 未运行（es.exe 退出码 8）或当前平台不支持
     | { kind: "youdao"; code: string } // 有道接口错误：code 为官方 errorCode，或 network（连不上/超时/响应异常）
     | { kind: "ai"; status?: number } // LLM 上游错误：status=HTTP 状态码，缺省=网络层失败或首字节超时
-    | { kind: "not-configured" }; // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
+    | { kind: "not-configured" } // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
+    | { kind: "data-dir"; reason: "same" | "occupied" | "failed" }; // 数据目录迁移：same=与当前相同；occupied=目标非空；failed=备份/校验失败（旧数据未动，可重试）
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
@@ -141,6 +156,11 @@ export interface MpApi {
     statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
     /** 原生目录选择框（条目编辑「浏览…」用）：取消返回 null */
     pickDirectory(): Promise<ApiResult<string | null>>;
+    // ── 数据目录（设置页展示与迁移）：目录由默认根下的指针文件决定（dataLocation.ts）──
+    /** dir = 当前生效数据目录；isDefault = 是否就在默认根（决定「恢复默认」按钮显隐） */
+    getDataDir(): Promise<ApiResult<{ dir: string; isDefault: boolean }>>;
+    /** 迁移数据目录：null = 恢复默认。成功即 relaunch+exit（本调用不会有返回）；失败返回 error，可原样重试 */
+    changeDataDir(target: string | null): Promise<ApiResult<null>>;
     // ── 有道翻译（工具 translate）：请求在主进程发（渲染进程直连被 CORS 拦，密钥也不进渲染包）；
     //    密钥存 settings 表，每次翻译现读现签，设置页改完即生效 ──
     translate(input: TranslateInput): Promise<ApiResult<TranslateResult>>;
@@ -511,6 +531,78 @@ export const apiHandlers: ApiHandlers = {
     pickDirectory: async () => {
         const r = await dialog.showOpenDialog({ properties: ["openDirectory"] });
         return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
+    },
+
+    // ── 数据目录行：dir 即当前生效目录（指针解析结果），isDefault 决定「恢复默认」按钮 ──
+    getDataDir: async () => {
+        const dir = dataDir();
+        return { ok: true, data: { dir, isDefault: samePath(dir, defaultDataRoot()) } };
+    },
+
+    // ── 数据目录迁移（null = 恢复默认）──
+    // 为什么不关库再复制：全仓只有一个 db 连接，关掉后所有 IPC 处理器都会打到死
+    // 连接上。改用 better-sqlite3 的在线备份 db.backup()——对 WAL 活跃写入也能
+    // 产出一致快照，且失败只影响目标副本，旧库毫发无损。
+    changeDataDir: async (target) => {
+        const v = guard(changeDataDirSchema, { target });
+        if (!v) return badRequest;
+        const oldDir = dataDir();
+        // 入口先 resolve 归一化：相同性判断、指针写入、清理都基于统一形式
+        const dest = resolve(v.target ?? defaultDataRoot());
+        if (samePath(dest, oldDir)) return { ok: false, error: { kind: "data-dir", reason: "same" } };
+        // 目标准入：自定义目录须「空或不存在」；默认根只要求没有旧 mypage.db
+        //（它常混有 Electron 历史杂项，严格空判会让「恢复默认」永远失败）
+        if (!canAcceptAsDataDir(dest)) return { ok: false, error: { kind: "data-dir", reason: "occupied" } };
+
+        try {
+            mkdirSync(dest, { recursive: true });
+            const destDb = join(dest, DB_NAME);
+            await db.backup(destDb);
+            if (existsSync(join(oldDir, FAVICONS_NAME))) {
+                cpSync(join(oldDir, FAVICONS_NAME), join(dest, FAVICONS_NAME), { recursive: true });
+            }
+
+            // 校验副本可整库读，并顺手把当前窗口状态写进副本：旧库稍后会被删除，
+            // 而窗口 move/resize 是 500ms 防抖落库，最后一段状态多半还没写盘——不补
+            // 进副本，重启后窗口位置就丢了。（连接不能开 readonly：要写 settings 表）
+            const copy = new Database(destDb);
+            try {
+                const check = copy.pragma("quick_check") as { quick_check: string }[];
+                if (check[0]?.quick_check !== "ok") throw new Error("quick_check failed");
+                copy.prepare(
+                    "INSERT INTO settings (key, value) VALUES ('window_state', ?) " +
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                ).run(JSON.stringify(currentWindowState()));
+            } finally {
+                copy.close();
+            }
+
+            // 副本验证通过才写指针：此刻起新目录成为唯一事实来源
+            writePointer(dest);
+        } catch (e) {
+            // 3–5 步任何失败：清掉本次在目标目录产生的残留即返回。指针未写、
+            // 旧库未动 → 前端解除 pending 后原样重试即可；失败原因落主进程日志
+            console.error("[changeDataDir] migrate failed:", e);
+            try {
+                removeDbArtifacts(dest);
+            } catch {
+                /* 清理本身失败也按 failed 返回：不挡重试 */
+            }
+            return { ok: false, error: { kind: "data-dir", reason: "failed" } };
+        }
+
+        // 切换完成：关掉旧连接（全仓首次 close，此后旧连接已死）→ 删旧目录数据。
+        // 只删具名文件，默认根处的指针文件天然不受影响。指针已写，清理失败忽略——
+        // 残留只是垃圾不是错误源，无论成败都必须重启到新目录
+        try {
+            db.close();
+            removeDbArtifacts(oldDir);
+        } catch (e) {
+            console.error("[changeDataDir] old db close/cleanup failed:", e);
+        }
+        app.relaunch();
+        app.exit(0);
+        return { ok: true, data: null }; // exit(0) 立即生效，实际到不了这里
     },
 
     // ── 有道翻译：失败原因按 youdao(code)/not-configured 交给前端行内释义，不抛异常 ──

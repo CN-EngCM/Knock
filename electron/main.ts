@@ -1,13 +1,33 @@
 import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import { join } from "node:path";
 // esbuild 以 ESM 打包本文件，__dirname 由构建脚本注入的 banner 提供
-import { apiHandlers } from "../server/api";
-import { killAllSessions, setPtySink } from "../server/pty";
-import { setAiSink } from "../server/ai";
-import { freshClipboardText, startClipWatch } from "./clipWatch";
-import { createTray } from "./tray";
-import { initHotkey, shutdownHotkey } from "./hotkey";
-import { loadWindowState, trackWindowState } from "./windowState";
+import { createTray } from "./tray"; // 纯 electron，不触达 db，可静态加载
+import { resolveDataDirOnBoot } from "./dataBoot";
+
+// ── 为什么下面这些模块全是动态 import ──
+// server 侧模块与 clipWatch/hotkey/windowState 都经 server/util/settings → db
+// 在 import 求值期同步打开 SQLite；而数据目录由默认根下的指针文件决定，
+// 开库前可能还要弹首次引导 / 恢复对话框（dataBoot.ts）。因此它们必须推迟到
+// whenReady 且数据目录引导完成后才加载；类型用 typeof import 取（编译期擦除，
+// 不触发模块求值）。
+type ApiModule = typeof import("../server/api");
+type PtyModule = typeof import("../server/pty");
+type AiModule = typeof import("../server/ai");
+type ClipModule = typeof import("./clipWatch");
+type HotkeyModule = typeof import("./hotkey");
+type WindowStateModule = typeof import("./windowState");
+
+// 引导完成后才赋值；此前没有调用路径能触达它们（相关监听也在引导后才注册）
+let apiHandlers: ApiModule["apiHandlers"];
+let killAllSessions: PtyModule["killAllSessions"];
+let setPtySink: PtyModule["setPtySink"];
+let setAiSink: AiModule["setAiSink"];
+let startClipWatch: ClipModule["startClipWatch"];
+let freshClipboardText: ClipModule["freshClipboardText"];
+let initHotkey: HotkeyModule["initHotkey"];
+let shutdownHotkey: HotkeyModule["shutdownHotkey"];
+let loadWindowState: WindowStateModule["loadWindowState"];
+let trackWindowState: WindowStateModule["trackWindowState"];
 
 // ── Electron 主进程入口 ──
 // 单实例托盘常驻应用：业务逻辑（server/api.ts 处理器表 + SQLite）跑在本进程内，
@@ -27,9 +47,33 @@ app.setAppUserModelId("com.knock.app"); // Windows 托盘/任务栏分组标识
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.on("second-instance", () => showWindow());
+    app.whenReady().then(async () => {
+        // 1) 开库前先确定数据目录：无指针弹首次引导，指针失效走恢复流程（可能重启/退出）
+        await resolveDataDirOnBoot();
 
-    app.whenReady().then(() => {
+        // 2) 目录已定，此刻才加载会开库的模块（见顶部「为什么全是动态 import」）
+        ({ apiHandlers } = await import("../server/api"));
+        ({ killAllSessions, setPtySink } = await import("../server/pty"));
+        ({ setAiSink } = await import("../server/ai"));
+        ({ startClipWatch, freshClipboardText } = await import("./clipWatch"));
+        ({ initHotkey, shutdownHotkey } = await import("./hotkey"));
+        ({ loadWindowState, trackWindowState } = await import("./windowState"));
+
+        // ── RPC 注册：server/api.ts 的处理器表逐个挂到 ipcMain ──
+        // channel 名即方法名（getData / createGroup / …），类型契约见 server/api.ts。
+        // 参数透传给处理器，由处理器入口的 zod 校验兜底（preload 是通用转发）。
+        for (const [channel, handler] of Object.entries(apiHandlers)) {
+            // Object.entries 把参数类型抹成 unknown；处理器入口有 zod 校验兜底，此处断回参数元组
+            ipcMain.handle(channel, (_e, ...args) => handler(...(args as never[])));
+        }
+
+        // 启动成功后渲染进程请求隐藏窗口：窗口生命周期是主进程职责，走 mp:* 事件
+        // 命名空间而非 MpApi 业务契约（fire-and-forget，无需返回值）
+        ipcMain.on("mp:hide-window", () => win?.hide());
+
+        // 二次启动唤起已有实例的窗口：引导期间窗口模块未加载，引导完成后才挂监听
+        app.on("second-instance", () => showWindow());
+
         // 设置页枚举本机字体（queryLocalFonts）需要 local-fonts 权限；仅放行它一个，
         // 其余权限保持拒绝，不开口子（request + check 两个口都要放，缺一个仍会被拒）。
         // Electron 42 的权限类型联合尚未收录 "local-fonts"，故按字符串比较
@@ -57,8 +101,8 @@ if (!app.requestSingleInstanceLock()) {
 
     app.on("before-quit", () => {
         quitting = true;
-        killAllSessions(); // 终端会话随应用退出回收，避免孤儿 shell 进程
-        shutdownHotkey(); // 反注册组合键，避免残留系统级注册
+        killAllSessions?.(); // 终端会话随应用退出回收，避免孤儿 shell 进程
+        shutdownHotkey?.(); // 反注册组合键，避免残留系统级注册
     });
 
     // 窗口被隐藏而非关闭，永远不会全部关闭；不退出（macOS 惯例同样处理）
@@ -148,15 +192,3 @@ function toggleWindow(): void {
     if (win && win.isVisible() && !win.isMinimized() && win.isFocused()) win.hide();
     else showWindow();
 }
-
-// ── RPC 注册：server/api.ts 的处理器表逐个挂到 ipcMain ──
-// channel 名即方法名（getData / createGroup / …），类型契约见 server/api.ts。
-// 参数透传给处理器，由处理器入口的 zod 校验兜底（preload 是通用转发）。
-for (const [channel, handler] of Object.entries(apiHandlers)) {
-    // Object.entries 把参数类型抹成 unknown；处理器入口有 zod 校验兜底，此处断回参数元组
-    ipcMain.handle(channel, (_e, ...args) => handler(...(args as never[])));
-}
-
-// 启动成功后渲染进程请求隐藏窗口：窗口生命周期是主进程职责，走 mp:* 事件
-// 命名空间而非 MpApi 业务契约（fire-and-forget，无需返回值）
-ipcMain.on("mp:hide-window", () => win?.hide());

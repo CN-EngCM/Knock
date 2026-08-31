@@ -98,13 +98,15 @@ export function SettingsDialog({
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
+            {/* 固定高度让四个 tab 高度一致（切 tab 不跳动）；flex 能覆盖基类 grid 是因为 cn() 基于 tailwind-merge 同组后者胜 */}
+            <DialogContent className="flex h-[560px] max-h-[85vh] flex-col sm:max-w-[640px]">
                 <DialogHeader>
                     <DialogTitle>{t("settings.title")}</DialogTitle>
                 </DialogHeader>
 
                 {/* 两栏：左=分节导航（SECTION_DEFS 驱动），右=当前分节内容 */}
-                <div className="flex min-h-[22rem] gap-4">
+                {/* min-h-0 允许本行在固定高度下收缩，溢出转给右侧内容区滚动 */}
+                <div className="flex min-h-0 flex-1 gap-4">
                     <nav className="flex w-28 flex-none flex-col gap-0.5 border-r border-line pr-2">
                         {SECTION_DEFS.map((s) => (
                             <button
@@ -121,7 +123,7 @@ export function SettingsDialog({
                             </button>
                         ))}
                     </nav>
-                    <div className="grid min-w-0 flex-1 content-start gap-3">
+                    <div className="grid min-h-0 min-w-0 flex-1 content-start gap-3 overflow-y-auto">
                         {sec === "basic" && (
                             <BasicSection
                                 theme={theme}

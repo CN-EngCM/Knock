@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import {
     api,
+    type ApiError,
     type FontConfig,
     type FontPatch,
     type HotkeyId,
@@ -74,11 +75,17 @@ export function BasicSection({
     const [fontSize, setFontSize] = useState("13");
     // 剪贴板时限编辑态（秒）
     const [clipSecEdit, setClipSecEdit] = useState("5");
+    // 数据目录（null = 尚未拉取）；迁移是「搬库 → 重启」的长流程，pending 防重复触发
+    const [dataDirInfo, setDataDirInfo] = useState<{ dir: string; isDefault: boolean } | null>(null);
+    const [migrating, setMigrating] = useState(false);
 
     useEffect(() => {
         api.getAutostart().then((r) => setAutostart(r.ok ? r.data : { supported: false, enabled: false }));
         api.getHotkey().then((r) => {
             if (r.ok) setHotkey(r.data.hotkey);
+        });
+        api.getDataDir().then((r) => {
+            if (r.ok) setDataDirInfo(r.data);
         });
     }, []);
 
@@ -167,6 +174,42 @@ export function BasicSection({
         }
         const ok = await onClipSec(clamped);
         if (!ok && clipSec !== null) setClipSecEdit(String(clipSec));
+    }
+
+    /** 数据目录迁移失败提示：data-dir 按原因给文案，其余通用 */
+    function dataDirErrorToast(e: ApiError) {
+        if (e.kind === "data-dir") {
+            const key =
+                e.reason === "same"
+                    ? "settings.dataDir.err.same"
+                    : e.reason === "occupied"
+                      ? "settings.dataDir.err.occupied"
+                      : "settings.dataDir.err.failed";
+            toast.error(t(key));
+        } else {
+            toast.error(t("toast.error"));
+        }
+    }
+
+    /** 迁移数据目录（target=null = 恢复默认）：成功时进程已退出、不会有返回；
+     *  能等到返回值即失败，toast 后解除 pending */
+    async function changeDataDir(target: string | null) {
+        setMigrating(true);
+        try {
+            const r = await api.changeDataDir(target);
+            if (!r.ok) dataDirErrorToast(r.error);
+        } catch {
+            toast.error(t("toast.error"));
+        } finally {
+            setMigrating(false);
+        }
+    }
+
+    /** [更改…]：先弹原生目录框，取消则不动 */
+    async function pickAndChangeDataDir() {
+        const picked = await api.pickDirectory();
+        if (!picked.ok || picked.data === null) return;
+        await changeDataDir(picked.data);
     }
 
     return (
@@ -307,6 +350,40 @@ export function BasicSection({
                 >
                     {t("settings.importBtn")}
                 </Button>
+            </div>
+
+            <div className={row}>
+                <Label>{t("settings.dataDir")}</Label>
+                {migrating ? (
+                    <span className="text-[13px] text-muted">{t("settings.dataDir.migrating")}</span>
+                ) : dataDirInfo === null ? (
+                    <span className="text-[13px] text-muted">…</span>
+                ) : (
+                    <span className="flex min-h-9 min-w-0 items-center gap-2">
+                        {/* 长路径截断展示，悬停看全名；min-w-0 让 1fr 列允许收缩触发截断 */}
+                        <span title={dataDirInfo.dir} className="min-w-0 flex-1 truncate text-[13px] text-muted">
+                            {dataDirInfo.dir}
+                        </span>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="justify-start font-normal"
+                            onClick={() => void pickAndChangeDataDir()}
+                        >
+                            {t("settings.dataDir.change")}
+                        </Button>
+                        {!dataDirInfo.isDefault && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="justify-start font-normal"
+                                onClick={() => void changeDataDir(null)}
+                            >
+                                {t("settings.dataDir.reset")}
+                            </Button>
+                        )}
+                    </span>
+                )}
             </div>
 
             <div className={row}>

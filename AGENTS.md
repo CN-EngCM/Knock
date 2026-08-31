@@ -112,7 +112,7 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 
 ## 数据与平台
 
-- SQLite（WAL）在用户数据目录：Windows `%APPDATA%\MyPage\mypage.db`，macOS/Linux 对应 Application Support / .config。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。
+- SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。
 - 主题、界面语言、布局偏好（侧栏宽/终端高/终端开关）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。
 - 开发主力平台 Windows；平台相关代码集中在 server/shortcuts.ts（仅 Windows 快捷方式扫描）、server/autostart.ts 与 server/pty.ts（默认 shell 探测），其余保持跨平台写法。
 - 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
