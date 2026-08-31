@@ -99,6 +99,7 @@ export const api: MpApi = {
     revealPath: (path) => invoke("revealPath", path),
     statPath: (path) => invoke("statPath", path),
     pickDirectory: () => invoke("pickDirectory"),
+    pickFile: (purpose) => invoke("pickFile", purpose),
     getDataDir: () => invoke("getDataDir"),
     changeDataDir: (target) => invoke("changeDataDir", target),
     translate: (input) => invoke("translate", input),

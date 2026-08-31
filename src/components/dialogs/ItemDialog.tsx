@@ -66,6 +66,18 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
         if (r.ok && r.data !== null) setArgs(r.data);
     }
 
+    // 目标选择框：app = 选可执行文件，file = 文件/文件夹皆可选；取消与失败保持原值不动
+    async function browseTarget() {
+        const r = await api.pickFile(kind === "app" ? "app" : "path");
+        if (!r.ok || r.data === null) return;
+        setTarget(r.data);
+        // 标题为空时跟随文件名（与快捷方式选择器行为一致）
+        if (!title.trim()) {
+            const base = r.data.split(/[\\/]/).pop() ?? "";
+            setTitle(base.replace(/\.[^.]+$/, ""));
+        }
+    }
+
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         // 必填兜底：标题与目标不能为空
@@ -149,6 +161,16 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                     onClick={() => setPickerOpen(true)}
                                 >
                                     {t("item.pickShortcut")}
+                                </Button>
+                            )}
+                            {(kind === "app" || kind === "file") && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="flex-none whitespace-nowrap"
+                                    onClick={() => void browseTarget()}
+                                >
+                                    {t("btn.browse")}
                                 </Button>
                             )}
                         </div>

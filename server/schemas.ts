@@ -131,6 +131,9 @@ export type FileSearchInput = z.infer<typeof fileSearchSchema>;
 // 打开/定位动作的目标路径（文件搜索结果的行级动作，不走 DB 条目）
 export const pathArgSchema = z.object({ path: z.string().trim().min(1).max(1000) });
 
+// 原生文件选择框的目的（条目编辑「浏览…」）：app = 过滤可执行文件；path = 文件/文件夹皆可选
+export const pickFileSchema = z.object({ purpose: z.enum(["app", "path"]) });
+
 // 数据目录迁移（设置页「数据目录」行）：target 为 null = 恢复默认位置。
 // 路径只限长不做字符白名单——存在性 / 是否为空由主进程按真实文件系统校验。
 export const changeDataDirSchema = z.object({

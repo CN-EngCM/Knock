@@ -44,6 +44,7 @@ import {
     fontPatchSchema,
     importSchema,
     pathArgSchema,
+    pickFileSchema,
     translateConfigPatchSchema,
     translateSchema,
     HOTKEY_IDS,
@@ -156,6 +157,8 @@ export interface MpApi {
     statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
     /** 原生目录选择框（条目编辑「浏览…」用）：取消返回 null */
     pickDirectory(): Promise<ApiResult<string | null>>;
+    /** 原生文件选择框（条目编辑目标「浏览…」用）：app = 过滤可执行文件，path = 文件/文件夹皆可选；取消返回 null */
+    pickFile(purpose: "app" | "path"): Promise<ApiResult<string | null>>;
     // ── 数据目录（设置页展示与迁移）：目录由默认根下的指针文件决定（dataLocation.ts）──
     /** dir = 当前生效数据目录；isDefault = 是否就在默认根（决定「恢复默认」按钮显隐） */
     getDataDir(): Promise<ApiResult<{ dir: string; isDefault: boolean }>>;
@@ -530,6 +533,21 @@ export const apiHandlers: ApiHandlers = {
     // 原生目录选择框（条目编辑「浏览…」）：取消 = data null，前端保持原值不动
     pickDirectory: async () => {
         const r = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+        return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
+    },
+
+    // 原生文件选择框：app 过滤 Windows 可执行文件（exe 直启/带参 spawn 均可，lnk 仅直启）；
+    // path 同时开 openFile+openDirectory，文件与文件夹都能选。过滤名只用扩展名本身，主进程不引入界面文案
+    pickFile: async (purpose) => {
+        const v = guard(pickFileSchema, { purpose });
+        if (!v) return badRequest;
+        const r = await dialog.showOpenDialog({
+            properties: v.purpose === "app" ? ["openFile"] : ["openFile", "openDirectory"],
+            filters:
+                v.purpose === "app" && process.platform === "win32"
+                    ? [{ name: "EXE / LNK / BAT / CMD", extensions: ["exe", "lnk", "bat", "cmd"] }]
+                    : undefined,
+        });
         return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
     },
 
