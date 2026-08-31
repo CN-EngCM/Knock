@@ -45,6 +45,7 @@ declare global {
     interface Window {
         knock: {
             invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
+            hideWindow: () => void;
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;

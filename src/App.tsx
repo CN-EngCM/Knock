@@ -344,6 +344,8 @@ export default function App() {
     const lastOpenRef = useRef<{ id: number; at: number } | null>(null);
 
     // ── 打开条目：书签前端直开；终端命令驱动终端执行；应用/文件走后端启动器 ──
+    // 启动成功后隐藏窗口（用户决策 2026-08）：失败保留窗口让 toast 可见；
+    // 书签是 fire-and-forget 拿不到失败信号，打开即藏；终端命令就在本窗口里执行，不藏
     async function openItem(item: Item) {
         const now = Date.now();
         const blocked = lastOpenRef.current?.id === item.id && now - lastOpenRef.current.at < 500;
@@ -351,6 +353,7 @@ export default function App() {
         if (blocked) return;
         if (item.kind === "bookmark") {
             window.open(item.target, "_blank", "noreferrer");
+            window.knock.hideWindow();
             return;
         }
         if (item.kind === "command") {
@@ -359,7 +362,8 @@ export default function App() {
         }
         try {
             const r = await api.launch(item.id);
-            if (!r.ok) apiErrorToast(r.error);
+            if (r.ok) window.knock.hideWindow();
+            else apiErrorToast(r.error);
         } catch {
             toast.error(t("toast.error"));
         }
@@ -384,7 +388,8 @@ export default function App() {
     async function openLocalPath(path: string) {
         try {
             const r = await api.openPath(path);
-            if (!r.ok) apiErrorToast(r.error);
+            if (r.ok) window.knock.hideWindow();
+            else apiErrorToast(r.error);
         } catch {
             toast.error(t("toast.error"));
         }

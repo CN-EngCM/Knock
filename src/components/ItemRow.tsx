@@ -146,9 +146,8 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
             <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
             <ContextMenuContent>
                 {item.kind === "bookmark" && (
-                    <ContextMenuItem onClick={() => window.open(item.target, "_blank", "noreferrer")}>
-                        {t("menu.open")}
-                    </ContextMenuItem>
+                    // 走 onOpen（App 的 openItem）：与左键同款防抖 + 打开后隐藏窗口
+                    <ContextMenuItem onClick={() => onOpen(item)}>{t("menu.open")}</ContextMenuItem>
                 )}
                 <ContextMenuItem onClick={() => onEdit(item)}>{t("menu.edit")}</ContextMenuItem>
                 <ContextMenuItem variant="destructive" onClick={() => onDelete(item)}>

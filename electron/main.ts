@@ -143,8 +143,9 @@ function showWindow(): void {
     w.webContents.send("mp:focus-search", freshClipboardText());
 }
 
+// 三分支：前台可见才藏；可见但已失焦（被别的窗口盖住）时双击 Ctrl 是「提到前面」而非「藏掉」
 function toggleWindow(): void {
-    if (win && win.isVisible() && !win.isMinimized()) win.hide();
+    if (win && win.isVisible() && !win.isMinimized() && win.isFocused()) win.hide();
     else showWindow();
 }
 
@@ -155,3 +156,7 @@ for (const [channel, handler] of Object.entries(apiHandlers)) {
     // Object.entries 把参数类型抹成 unknown；处理器入口有 zod 校验兜底，此处断回参数元组
     ipcMain.handle(channel, (_e, ...args) => handler(...(args as never[])));
 }
+
+// 启动成功后渲染进程请求隐藏窗口：窗口生命周期是主进程职责，走 mp:* 事件
+// 命名空间而非 MpApi 业务契约（fire-and-forget，无需返回值）
+ipcMain.on("mp:hide-window", () => win?.hide());
