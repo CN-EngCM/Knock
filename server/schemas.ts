@@ -65,10 +65,9 @@ export const clipPasteSchema = z.object({ seconds: z.number().int().min(0).max(6
 export const SHELL_IDS = ["auto", "pwsh", "powershell", "cmd", "zsh", "bash", "fish", "sh"] as const;
 export type ShellId = (typeof SHELL_IDS)[number];
 
-// PATCH：三个字段都可选，只更新传入的部分；font 允许空串 = 回退默认等宽字体栈
+// PATCH：shell/字号可选，只更新传入的部分（字体已独立为 fontPatchSchema，见下）
 export const termPatchSchema = z.object({
     shell: z.enum(SHELL_IDS).optional(),
-    font: z.string().trim().max(200).optional(),
     fontSize: z.number().int().min(8).max(32).optional(),
 });
 export type TermPatch = z.infer<typeof termPatchSchema>;
@@ -77,7 +76,19 @@ export type TermPatch = z.infer<typeof termPatchSchema>;
 export type ShellOption = { id: ShellId; path?: string };
 
 /** 终端设置全量（读回形状）：shells 附带当前平台实际可用的候选 */
-export type TermConfig = { shell: ShellId; font: string; fontSize: number; shells: ShellOption[] };
+export type TermConfig = { shell: ShellId; fontSize: number; shells: ShellOption[] };
+
+// ── 字体设置 ──
+// 界面/等宽两个字体走同一套 schema：字体族名允许空格（如 Comic Sans MS），
+// 因此只 trim + 限长，不做字符白名单；空串 = 用内置默认字体栈。
+export const fontPatchSchema = z.object({
+    uiFont: z.string().trim().max(200).optional(),
+    monoFont: z.string().trim().max(200).optional(),
+});
+export type FontPatch = z.infer<typeof fontPatchSchema>;
+
+/** 字体设置读回形状（设置页编辑态用；空串 = 用默认字体栈） */
+export type FontConfig = { uiFont: string; monoFont: string };
 
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：

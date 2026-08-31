@@ -70,7 +70,7 @@ export function ImportDialog({ open, onClose, onImported }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="font-mono">
+            <DialogContent>
                 <DialogHeader>
                     <DialogTitle>{t("import.title")}</DialogTitle>
                     <DialogDescription className="text-dim">{t("import.step1")}</DialogDescription>

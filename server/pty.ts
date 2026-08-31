@@ -102,7 +102,6 @@ export function readTermConfig(): TermConfig {
     }
     return {
         shell,
-        font: getSetting("termFont", ""),
         fontSize: Number.isInteger(size) ? Math.min(32, Math.max(8, size)) : 13,
         shells,
     };

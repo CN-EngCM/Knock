@@ -8,6 +8,7 @@ import {
     type ApiError,
     type ApiResult,
     type AiModelConfig,
+    type FontPatch,
     type Group,
     type Item,
     type TermPatch,
@@ -29,6 +30,7 @@ import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { ImportDialog } from "./components/dialogs/ImportDialog";
 import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
 import { useDragSensors } from "./lib/dnd";
+import { applyFonts } from "./lib/fonts";
 import { useI18n } from "./i18n/useI18n";
 import { applyTheme, initialTheme, saveTheme, type ThemeMode } from "./theme";
 
@@ -120,8 +122,10 @@ export default function App() {
     // 已打开工具是纯运行时状态：每次启动强制从空开始，不落盘不还原（用户决策）
     const [openTools, setOpenTools] = useState<ToolId[]>([]);
     const [activeTool, setActiveTool] = useState<ToolId | null>(null);
-    // 终端设置（shell/字体）：字体喂 TerminalZone，设置页改这里再落库
+    // 终端设置（shell/字号）：字号喂 TerminalZone，设置页改这里再落库
     const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
+    // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈再以 props 流给终端
+    const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
     // 启动不自动开会话（TerminalZone 已无 auto-spawn），从 false 起步避免空态闪错
     const [hasSessions, setHasSessions] = useState(false);
     const [termSpawnReq, setTermSpawnReq] = useState(0);
@@ -216,10 +220,20 @@ export default function App() {
         );
     }
 
-    // 设置页提交终端设置：成功回填配置（字体由 props 流到 TerminalZone 即时生效）
+    // 设置页提交终端设置：成功回填配置（字号由 props 流到 TerminalZone 即时生效）
     function patchTerm(p: TermPatch): Promise<boolean> {
         return patchSetting(() => api.setTermConfig(p), setTermCfg);
     }
+
+    // 设置页提交字体设置：成功回填；applyFonts 随 fontCfg 变化重写 CSS 变量即全局生效
+    function patchFont(p: FontPatch): Promise<boolean> {
+        return patchSetting(() => api.setFontConfig(p), setFontCfg);
+    }
+
+    // 字体设置就绪/变更 → 写 <html> 行内 CSS 变量（fontCfg 为 null 时用空串 = 默认栈）
+    useEffect(() => {
+        applyFonts(fontCfg?.uiFont ?? "", fontCfg?.monoFont ?? "");
+    }, [fontCfg]);
 
     // 设置页提交工具别名：成功回填（SearchBox 的候选匹配随 props 即时生效）
     function patchToolAlias(p: ToolAliasPatch): Promise<boolean> {
@@ -425,7 +439,7 @@ export default function App() {
         ));
 
     return (
-        <div className="flex h-screen flex-col overflow-hidden bg-bg font-mono text-text">
+        <div className="flex h-screen flex-col overflow-hidden bg-bg font-sans text-text">
             <div className="scanlines" aria-hidden="true" />
             <Toaster
                 position="bottom-center"
@@ -574,7 +588,7 @@ export default function App() {
                                     <TerminalZone
                                         theme={theme}
                                         visible={showTerm}
-                                        font={termCfg?.font ?? ""}
+                                        monoFont={fontCfg?.monoFont ?? ""}
                                         fontSize={termCfg?.fontSize ?? 13}
                                         spawnReq={termSpawnReq}
                                         onSessionCount={handleSessionCount}
@@ -672,6 +686,8 @@ export default function App() {
                 onOpenImport={() => setDialog({ kind: "import" })}
                 termCfg={termCfg}
                 onTermPatch={patchTerm}
+                fontCfg={fontCfg}
+                onFontPatch={patchFont}
                 toolAliases={toolAliases}
                 onToolAlias={patchToolAlias}
                 clipSec={clipSec}

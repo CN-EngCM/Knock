@@ -55,6 +55,15 @@ html[data-theme="light"] {
 /* 把令牌映射为 Tailwind 颜色：bg-bg / text-text / border-line / text-dim …
    同时提供 shadcn/ui 组件依赖的语义别名（background/foreground/muted…），
    两套名字指向同一组变量，组件与本站手写样式天然同主题。 */
+/* 字体栈单独放非 inline 的 @theme 块：inline 模式下 Tailwind 把值直接内联进
+   font-sans/font-mono 工具类，运行时 setProperty("--font-mono") 覆盖不了；
+   非 inline 生成 var(--font-sans)/var(--font-mono) 引用，设置页改字体才能热生效。
+   默认值与 src/lib/fonts.ts 的 DEFAULT_*_STACK 手工同步（渲染端拿不到这里的值）。 */
+@theme {
+    --font-sans: system-ui, sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace;
+}
+
 @theme inline {
     --color-bg: var(--bg);
     --color-panel: var(--panel);
@@ -62,7 +71,6 @@ html[data-theme="light"] {
     --color-dim: var(--dim);
     --color-muted: var(--muted);
     --color-line: var(--line);
-    --font-mono: "Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace;
 
     /* shadcn 语义别名 */
     --color-background: var(--bg);

@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { toast } from "sonner";
 import { api, onPtyEvent } from "@/api/client";
+import { DEFAULT_MONO_STACK, withFallback } from "@/lib/fonts";
 import { useI18n } from "@/i18n/useI18n";
 import type { ThemeMode } from "@/theme";
 
@@ -29,14 +30,12 @@ function themeFromVars(): ITheme {
     };
 }
 
-const FONT = '"Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace';
-
 type Props = {
     theme: ThemeMode;
     /** 区域当前是否可见（隐藏时跳过 fit：0 尺寸会让 addon 抛错） */
     visible: boolean;
-    /** 终端字体（font-family 值，空串 = 用上面的默认栈）与字号，来自设置 */
-    font: string;
+    /** 等宽字体（设置页「等宽字体」，空串 = 默认栈）与字号；xterm 的字不在 CSS 变量体系里，须单独喂 */
+    monoFont: string;
     fontSize: number;
     /** 外部请求新会话的信号量：只在递增时动作（无会话时从状态栏重新呼出用） */
     spawnReq: number;
@@ -45,7 +44,7 @@ type Props = {
     onHide: () => void;
 };
 
-export function TerminalZone({ theme, visible, font, fontSize, spawnReq, onSessionCount, onHide }: Props) {
+export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onSessionCount, onHide }: Props) {
     const { t } = useI18n();
     const [sessions, setSessions] = useState<Session[]>([]);
     const [activeId, setActiveId] = useState<number | null>(null);
@@ -56,7 +55,7 @@ export function TerminalZone({ theme, visible, font, fontSize, spawnReq, onSessi
     const sessionsRef = useRef<Session[]>([]);
     const activeIdRef = useRef<number | null>(null);
     // attach 是稳定回调（不随字体设置变身份），建实例时从 ref 读当前字体
-    const fontRef = useRef({ font, fontSize });
+    const fontRef = useRef({ monoFont, fontSize });
 
     useEffect(() => {
         sessionsRef.current = sessions;
@@ -97,7 +96,7 @@ export function TerminalZone({ theme, visible, font, fontSize, spawnReq, onSessi
             containers.current.set(id, el);
             if (terms.current.has(id)) return;
             const term = new XTerm({
-                fontFamily: fontRef.current.font || FONT,
+                fontFamily: withFallback(fontRef.current.monoFont, DEFAULT_MONO_STACK),
                 fontSize: fontRef.current.fontSize,
                 lineHeight: 1.2,
                 cursorBlink: true,
@@ -200,16 +199,17 @@ export function TerminalZone({ theme, visible, font, fontSize, spawnReq, onSessi
 
     // 字体设置变化 → 已有会话同步重设（xterm 支持运行期改 fontFamily/fontSize），改完重新 fit
     useEffect(() => {
-        fontRef.current = { font, fontSize };
+        fontRef.current = { monoFont, fontSize };
+        const family = withFallback(monoFont, DEFAULT_MONO_STACK);
         for (const term of terms.current.values()) {
-            term.options.fontFamily = font || FONT;
+            term.options.fontFamily = family;
             term.options.fontSize = fontSize;
         }
         requestAnimationFrame(() => {
             const id = activeIdRef.current;
             if (id !== null) fitAndSync(id);
         });
-    }, [font, fontSize, fitAndSync]);
+    }, [monoFont, fontSize, fitAndSync]);
 
     // 会话数上报：归零时 App 隐藏整个终端区（本组件常驻不卸载，隐藏不丢会话状态）
     useEffect(() => {

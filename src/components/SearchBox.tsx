@@ -261,15 +261,13 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                 aria-label={t("search.placeholder")}
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[15px] text-text outline-none placeholder:text-muted"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-text outline-none placeholder:text-muted"
             />
             {open && (
                 <div className="absolute left-0 right-0 top-full z-50 max-h-80 overflow-y-auto rounded-sm border border-line bg-panel py-1 shadow-xl">
                     {/* 只剩推荐工具或路径动作行时不算「无匹配」——指的是没有条目/工具命中 */}
                     {hits.length === 0 && pathRows.length === 0 && (
-                        <span className="block px-2.5 py-1.5 font-mono text-[12.5px] text-muted">
-                            {t("search.noHit")}
-                        </span>
+                        <span className="block px-2.5 py-1.5 text-[12.5px] text-muted">{t("search.noHit")}</span>
                     )}
                     {/* 推荐区分隔标签的位置随布局：置顶在第 0 行前，沉底在命中区之后 */}
                     {candidates.map((c, i) => {
@@ -329,7 +327,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                     onMouseEnter={() => setHi(i)}
                                     onClick={() => select(c)}
                                     // 高亮行用反色（文字色做底）——与全站 ::selection 同一语言，最醒目
-                                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left font-mono text-[13px] ${
+                                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
                                         sel ? "bg-text text-bg" : "text-dim"
                                     }`}
                                 >

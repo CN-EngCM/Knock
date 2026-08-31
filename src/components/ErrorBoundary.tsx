@@ -16,7 +16,7 @@ export class ErrorBoundary extends Component<Props, State> {
     render() {
         if (!this.state.error) return this.props.children;
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg px-6 text-center font-mono">
+            <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
                 <p className="text-[15px] text-text">──[ 页面出错 / Something went wrong ]──</p>
                 <p className="max-w-[520px] break-all text-[12.5px] text-muted">{String(this.state.error)}</p>
                 <button

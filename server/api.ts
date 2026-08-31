@@ -26,6 +26,7 @@ import {
     createGroupSchema,
     createItemSchema,
     fileSearchSchema,
+    fontPatchSchema,
     importSchema,
     pathArgSchema,
     translateConfigPatchSchema,
@@ -45,6 +46,8 @@ import {
     type CreateExpertInput,
     type UpdateExpertInput,
     type Expert,
+    type FontConfig,
+    type FontPatch,
     type Group,
     type HotkeyId,
     type Item,
@@ -112,9 +115,13 @@ export interface MpApi {
     ptyWrite(id: number, data: string): Promise<ApiResult<null>>;
     ptyResize(id: number, cols: number, rows: number): Promise<ApiResult<null>>;
     ptyKill(id: number): Promise<ApiResult<null>>;
-    // ── 终端设置（v2.3）：shell 只对新建会话生效，字体/字号作用于全部已有会话 ──
+    // ── 终端设置（v2.3）：shell 只对新建会话生效，字号作用于全部已有会话 ──
     getTermConfig(): Promise<ApiResult<TermConfig>>;
     setTermConfig(patch: TermPatch): Promise<ApiResult<TermConfig>>;
+    // ── 字体设置（v2.4）：界面字体 + 等宽字体（终端/ASCII/JSON/代码块共用等宽栈）；
+    //    空串 = 用内置默认字体栈，改完即生效（渲染端写 CSS 变量）──
+    getFontConfig(): Promise<ApiResult<FontConfig>>;
+    setFontConfig(patch: FontPatch): Promise<ApiResult<FontConfig>>;
     // ── 内置工具别名（v2.3）：别名参与顶栏搜索的工具候选匹配 ──
     getToolAliases(): Promise<ApiResult<ToolAliases>>;
     setToolAliases(patch: ToolAliasPatch): Promise<ApiResult<ToolAliases>>;
@@ -393,9 +400,18 @@ export const apiHandlers: ApiHandlers = {
         const v = guard(termPatchSchema, patch);
         if (!v) return badRequest;
         if (v.shell !== undefined) setSetting("termShell", v.shell);
-        if (v.font !== undefined) setSetting("termFont", v.font);
         if (v.fontSize !== undefined) setSetting("termFontSize", String(v.fontSize));
         return { ok: true, data: readTermConfig() };
+    },
+
+    // ── 字体设置：settings 表键 uiFont / monoFont，空串 = 清除（回默认栈）──
+    getFontConfig: async () => ({ ok: true, data: readFontConfig() }),
+    setFontConfig: async (patch) => {
+        const v = guard(fontPatchSchema, patch);
+        if (!v) return badRequest;
+        if (v.uiFont !== undefined) setSetting("uiFont", v.uiFont);
+        if (v.monoFont !== undefined) setSetting("monoFont", v.monoFont);
+        return { ok: true, data: readFontConfig() };
     },
 
     // ── 工具别名：每工具一条 settings 记录（toolAlias:<id>），空串 = 清除 ──
@@ -567,3 +583,23 @@ function readToolAliases(): ToolAliases {
     }
     return out;
 }
+
+// 字体设置读回：空串 = 用默认字体栈（拼接在渲染端 fonts.ts 做）
+function readFontConfig(): FontConfig {
+    return { uiFont: getSetting("uiFont", ""), monoFont: getSetting("monoFont", "") };
+}
+
+// 字体键一次性迁移（幂等，风格同 experts.ensureSeeded）：旧版等宽字体存在
+// settings 键 termFont 下，且只作用于终端；字体体系改造后统一为 monoFont 键
+// （界面/终端/代码块共用），非空旧值搬过去，用户已设的终端字体不丢。
+// termFont 键保留在库里不再读取——个人工具不值得为省一行记录加删键逻辑。
+const FONTS_MIGRATED_FLAG = "fontsMigrated";
+function migrateTermFont(): void {
+    if (getSetting(FONTS_MIGRATED_FLAG, "") === "1") return;
+    db.transaction(() => {
+        const oldFont = getSetting("termFont", "");
+        if (oldFont && !getSetting("monoFont", "")) setSetting("monoFont", oldFont);
+        setSetting(FONTS_MIGRATED_FLAG, "1");
+    })();
+}
+migrateTermFont();

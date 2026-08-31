@@ -102,7 +102,7 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
 
     return (
         <Dialog open onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="font-mono sm:max-w-xl">
+            <DialogContent className="sm:max-w-xl">
                 <DialogHeader>
                     <DialogTitle>{target === "new" ? t("ai.newExpert") : t("ai.editExpert")}</DialogTitle>
                 </DialogHeader>

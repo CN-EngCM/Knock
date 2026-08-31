@@ -80,7 +80,7 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
 
     // 文字统一 12.5px：与组内「new」按钮/空态文案同基准，行高压到 ~19px
     const rowClass =
-        "rowbtn group flex w-full items-center gap-2 border border-transparent px-2 py-1 font-mono text-[12.5px] text-left " +
+        "rowbtn group flex w-full items-center gap-2 border border-transparent px-2 py-1 text-[12.5px] text-left " +
         "hover:border-line hover:bg-faint";
 
     const host = faviconHost(item);

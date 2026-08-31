@@ -35,7 +35,7 @@ export function ConfirmDialog({ open, title, description, onClose, onConfirm }: 
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="font-mono">
+            <DialogContent>
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
                     {description && <DialogDescription>{description}</DialogDescription>}

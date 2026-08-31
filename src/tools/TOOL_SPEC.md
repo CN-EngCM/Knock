@@ -71,7 +71,7 @@
   - 根容器吃满 `h-full`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
   - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；
   - 文字按钮用 `@/components/ui/button` 的 Button 组件（2026-08 用户决策）：主操作 default 实心、次操作 outline；工具内默认 **size xs**（h-6、12px 字号，与 12–12.5px 等宽密度对齐），仅空态 CTA 等焦点动作用 sm；图标类轻量动作可继续用 tbtn。按钮文案直接写动词短语，不加方括号装饰。存量工具（files/translate/qr/json）保持 tbtn 旧样式，后续另行统一；
-  - 输入框 `border-line bg-bg font-mono text-[12.5px]` 家族。
+  - 输入框 `border-line bg-bg text-[12.5px]` 家族（2026-08 字体改造后全站默认 sans，不再写 font-mono）。
 - **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。
 
 ## 8. i18n 约定

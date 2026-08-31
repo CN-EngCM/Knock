@@ -104,7 +104,7 @@ export default function ScanTool() {
                     <span className="flex-none border border-line px-1.5 py-0.5 text-[11px] text-muted">
                         {r.format}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-text">{r.text}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-text">{r.text}</span>
                     <button type="button" className={btn} onClick={() => copyText(r.text)}>
                         [ {t("scan.copy")} ]
                     </button>

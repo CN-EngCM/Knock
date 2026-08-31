@@ -43,7 +43,7 @@ export function GroupDialog({ open, initialName, onClose, onSubmit }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="font-mono">
+            <DialogContent>
                 <DialogHeader>
                     <DialogTitle>{initialName === null ? t("group.new") : t("group.rename")}</DialogTitle>
                 </DialogHeader>

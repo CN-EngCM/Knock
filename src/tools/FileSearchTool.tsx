@@ -159,7 +159,7 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
     const seg = (active: boolean) =>
         `tbtn border px-2.5 py-1 text-[12px] ${active ? "seg-on" : "border-line hover:bg-faint"}`;
     const chip = (on: boolean) =>
-        `border px-1.5 py-0.5 font-mono text-[11px] ${on ? "seg-on" : "border-line text-dim hover:bg-faint"}`;
+        `border px-1.5 py-0.5 text-[11px] ${on ? "seg-on" : "border-line text-dim hover:bg-faint"}`;
     const arrow = (key: SortKey) => (sortKey === key ? (ascending ? " ↑" : " ↓") : "");
 
     return (
@@ -170,7 +170,7 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                 onKeyDown={onKeyDown}
                 spellCheck={false}
                 placeholder={t("files.placeholder")}
-                className="flex-none border border-line bg-bg px-2.5 py-1.5 font-mono text-[12.5px] text-text outline-none placeholder:text-muted"
+                className="flex-none border border-line bg-bg px-2.5 py-1.5 text-[12.5px] text-text outline-none placeholder:text-muted"
             />
 
             <div className="flex flex-none flex-wrap items-center gap-1.5">
@@ -249,7 +249,7 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                 {status === "idle" && (
                     <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
                         <span className="text-[12.5px] text-dim">{t("files.hint")}</span>
-                        <span className="font-mono text-[11.5px] text-muted">{t("files.hintEx")}</span>
+                        <span className="text-[11.5px] text-muted">{t("files.hintEx")}</span>
                     </div>
                 )}
 
@@ -274,7 +274,7 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                                     DIR
                                 </span>
                             )}
-                            <span className="min-w-0 max-w-[45%] flex-none truncate font-mono text-[12.5px] text-text">
+                            <span className="min-w-0 max-w-[45%] flex-none truncate text-[12.5px] text-text">
                                 {h.name}
                             </span>
                             {/* 目录从头截断（rtl + plaintext 让省略号落在左侧）：保住最末几级

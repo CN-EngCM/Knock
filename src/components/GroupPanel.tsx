@@ -164,7 +164,7 @@ export function GroupPanel({
                         <button
                             type="button"
                             onClick={() => onAddItem(group)}
-                            className="flex items-center gap-2 border border-dashed border-line px-2 py-1 font-mono text-[12.5px] text-muted hover:text-text"
+                            className="flex items-center gap-2 border border-dashed border-line px-2 py-1 text-[12.5px] text-muted hover:text-text"
                         >
                             <span className="w-9 flex-none">new</span>
                             {t("item.new")}…

@@ -191,7 +191,7 @@ export default function TranslateTool({
                 onKeyDown={onKeyDown}
                 spellCheck={false}
                 placeholder={t("translate.placeholder")}
-                className="h-36 flex-none resize-none border border-line bg-bg px-2.5 py-1.5 font-mono text-[12.5px] text-text outline-none placeholder:text-muted"
+                className="h-36 flex-none resize-none border border-line bg-bg px-2.5 py-1.5 text-[12.5px] text-text outline-none placeholder:text-muted"
             />
 
             <div className="min-h-0 flex-1 overflow-auto border-t border-line pt-2">

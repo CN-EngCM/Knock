@@ -55,7 +55,7 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
     }
 
     const btn = "tbtn border border-line px-3 py-1 text-[12px] hover:bg-faint";
-    const field = "border border-line bg-bg px-2 py-1 font-mono text-[12.5px] text-text outline-none";
+    const field = "border border-line bg-bg px-2 py-1 text-[12.5px] text-text outline-none";
 
     return (
         <div className="flex h-full gap-4 p-4">

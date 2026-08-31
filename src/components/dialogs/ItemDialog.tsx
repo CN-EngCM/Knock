@@ -84,7 +84,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="font-mono">
+            <DialogContent>
                 <DialogHeader>
                     <DialogTitle>{item ? t("item.edit") : t("item.new")}</DialogTitle>
                 </DialogHeader>

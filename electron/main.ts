@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import { join } from "node:path";
 // esbuild 以 ESM 打包本文件，__dirname 由构建脚本注入的 banner 提供
 import { apiHandlers } from "../server/api";
@@ -30,6 +30,13 @@ if (!app.requestSingleInstanceLock()) {
     app.on("second-instance", () => showWindow());
 
     app.whenReady().then(() => {
+        // 设置页枚举本机字体（queryLocalFonts）需要 local-fonts 权限；仅放行它一个，
+        // 其余权限保持拒绝，不开口子（request + check 两个口都要放，缺一个仍会被拒）。
+        // Electron 42 的权限类型联合尚未收录 "local-fonts"，故按字符串比较
+        session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+            callback((permission as string) === "local-fonts");
+        });
+        session.defaultSession.setPermissionCheckHandler((_wc, permission) => (permission as string) === "local-fonts");
         createWindow();
         // 剪贴板打点：呼出时据此判断最近一次复制是否落在时限内（见 clipWatch.ts）
         startClipWatch();

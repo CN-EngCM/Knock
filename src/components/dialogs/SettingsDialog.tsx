@@ -3,6 +3,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import {
     type AiModelConfig,
+    type FontConfig,
+    type FontPatch,
     type TermConfig,
     type TermPatch,
     type ToolAliasPatch,
@@ -32,6 +34,9 @@ type Props = {
     /** 终端设置：shell 候选与当前值；提交走 onTermPatch（App 负责落库与回填） */
     termCfg: TermConfig | null;
     onTermPatch: (patch: TermPatch) => Promise<boolean>;
+    /** 字体设置（界面/等宽）：提交走 onFontPatch（App 负责落库、回填与写 CSS 变量） */
+    fontCfg: FontConfig | null;
+    onFontPatch: (patch: FontPatch) => Promise<boolean>;
     /** 工具别名：提交走 onToolAlias（App 负责落库与回填，SearchBox 随之生效） */
     toolAliases: ToolAliases | null;
     onToolAlias: (patch: ToolAliasPatch) => Promise<boolean>;
@@ -70,6 +75,8 @@ export function SettingsDialog({
     onOpenImport,
     termCfg,
     onTermPatch,
+    fontCfg,
+    onFontPatch,
     toolAliases,
     onToolAlias,
     clipSec,
@@ -91,7 +98,7 @@ export function SettingsDialog({
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="max-h-[85vh] overflow-y-auto font-mono sm:max-w-[640px]">
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
                 <DialogHeader>
                     <DialogTitle>{t("settings.title")}</DialogTitle>
                 </DialogHeader>
@@ -125,6 +132,8 @@ export function SettingsDialog({
                                 onOpenImport={onOpenImport}
                                 termCfg={termCfg}
                                 onTermPatch={onTermPatch}
+                                fontCfg={fontCfg}
+                                onFontPatch={onFontPatch}
                                 clipSec={clipSec}
                                 onClipSec={onClipSec}
                             />

@@ -4,11 +4,20 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { api, type HotkeyId, type ShellId, type TermConfig, type TermPatch } from "@/api/client";
+import {
+    api,
+    type FontConfig,
+    type FontPatch,
+    type HotkeyId,
+    type ShellId,
+    type TermConfig,
+    type TermPatch,
+} from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang, MessageKey } from "@/i18n";
 import type { ThemeMode } from "@/theme";
 import { CommitInput, row } from "./shared";
+import { FontPicker } from "./FontPicker";
 
 type AutostartStatus = { supported: boolean; enabled: boolean };
 
@@ -32,12 +41,15 @@ type Props = {
     /** 终端设置：shell 候选与当前值；提交走 onTermPatch（App 负责落库与回填） */
     termCfg: TermConfig | null;
     onTermPatch: (patch: TermPatch) => Promise<boolean>;
+    /** 字体设置（界面/等宽）：提交走 onFontPatch（App 落库回填并写 CSS 变量即全局生效） */
+    fontCfg: FontConfig | null;
+    onFontPatch: (patch: FontPatch) => Promise<boolean>;
     /** 剪贴板素材时限（秒，0 = 关闭） */
     clipSec: number | null;
     onClipSec: (seconds: number) => Promise<boolean>;
 };
 
-/** 基础设置分节：主题 / 语言 / 热键 / 剪贴板时限 / 自启 / 终端 / 书签导入 / 运行环境 */
+/** 基础设置分节：主题 / 语言 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 书签导入 / 运行环境 */
 export function BasicSection({
     theme,
     onTheme,
@@ -47,6 +59,8 @@ export function BasicSection({
     onOpenImport,
     termCfg,
     onTermPatch,
+    fontCfg,
+    onFontPatch,
     clipSec,
     onClipSec,
 }: Props) {
@@ -55,9 +69,8 @@ export function BasicSection({
     const [autostart, setAutostart] = useState<AutostartStatus | null>(null);
     const [hotkey, setHotkey] = useState<HotkeyId | null>(null);
     const [busy, setBusy] = useState(false);
-    // 终端设置的本地编辑态：shell 即选即存；字体/字号失焦（或回车）才提交
+    // 终端设置的本地编辑态：shell 即选即存；字号失焦（或回车）才提交
     const [shell, setShell] = useState<ShellId | null>(null);
-    const [font, setFont] = useState("");
     const [fontSize, setFontSize] = useState("13");
     // 剪贴板时限编辑态（秒）
     const [clipSecEdit, setClipSecEdit] = useState("5");
@@ -73,7 +86,6 @@ export function BasicSection({
     useEffect(() => {
         if (!termCfg) return;
         setShell(termCfg.shell);
-        setFont(termCfg.font);
         setFontSize(String(termCfg.fontSize));
     }, [termCfg]);
 
@@ -125,12 +137,12 @@ export function BasicSection({
         if (!ok && prev) setShell(prev);
     }
 
-    /** 字体失焦/回车提交：没改动不请求；失败回滚为已存值 */
-    async function commitFont() {
-        const v = font.trim();
-        if (!termCfg || v === termCfg.font) return;
-        const ok = await onTermPatch({ font: v });
-        if (!ok) setFont(termCfg.font);
+    /** 字体提交（界面/等宽共用）：没改动不请求；失败时 fontCfg 不回填，控件随 props 还原 */
+    async function commitFont(patch: FontPatch) {
+        if (!fontCfg) return;
+        if (patch.uiFont !== undefined && patch.uiFont === fontCfg.uiFont) return;
+        if (patch.monoFont !== undefined && patch.monoFont === fontCfg.monoFont) return;
+        await onFontPatch(patch);
     }
 
     /** 字号提交：非法输入与越界一律夹回 8–32；没改动不请求 */
@@ -242,6 +254,16 @@ export function BasicSection({
             <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.autostart.moveHint")}</div>
 
             <div className={row}>
+                <Label>{t("settings.font.ui")}</Label>
+                <FontPicker value={fontCfg?.uiFont ?? ""} onCommit={(v) => void commitFont({ uiFont: v })} />
+            </div>
+
+            <div className={row}>
+                <Label>{t("settings.font.mono")}</Label>
+                <FontPicker mono value={fontCfg?.monoFont ?? ""} onCommit={(v) => void commitFont({ monoFont: v })} />
+            </div>
+
+            <div className={row}>
                 <Label>{t("settings.term.shell")}</Label>
                 {shell === null || termCfg === null ? (
                     <span className="text-[13px] text-muted">…</span>
@@ -261,17 +283,6 @@ export function BasicSection({
                 )}
             </div>
             <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.term.shellHint")}</div>
-
-            <div className={row}>
-                <Label htmlFor="term-font">{t("settings.term.font")}</Label>
-                <CommitInput
-                    id="term-font"
-                    value={font}
-                    onChange={setFont}
-                    onCommit={() => void commitFont()}
-                    placeholder={t("settings.term.fontPlaceholder")}
-                />
-            </div>
 
             <div className={row}>
                 <Label htmlFor="term-size">{t("settings.term.fontSize")}</Label>

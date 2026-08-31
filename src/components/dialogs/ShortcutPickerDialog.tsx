@@ -38,7 +38,7 @@ export function ShortcutPickerDialog({ open, onClose, onPick }: Props) {
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent className="font-mono sm:max-w-[560px]">
+            <DialogContent className="sm:max-w-[560px]">
                 <DialogHeader>
                     <DialogTitle>{t("picker.title")}</DialogTitle>
                 </DialogHeader>

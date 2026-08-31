@@ -189,8 +189,7 @@ export default function AiTool({
         }
     }, [seq, experts, aiModels]);
 
-    const inputCls =
-        "border border-line bg-bg font-mono text-[12.5px] outline-none placeholder:text-muted focus:border-dim";
+    const inputCls = "border border-line bg-bg text-[12.5px] outline-none placeholder:text-muted focus:border-dim";
     const activeExpert = experts.find((e) => e.id === activeId) ?? null;
     const noModelsConfigured = aiModels !== null && aiModels.length === 0;
     // 「停止」态看的是当前活跃会话末条 assistant 是否仍在流式（后台专家的流不影响按钮语义）
@@ -234,7 +233,7 @@ export default function AiTool({
                         <summary className="cursor-pointer select-none text-[11.5px] text-muted">
                             {t("ai.thinking")}
                         </summary>
-                        <div className="mt-1 whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-muted">
+                        <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted">
                             {m.reasoning}
                         </div>
                     </details>
