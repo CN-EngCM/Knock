@@ -5,8 +5,8 @@ import { z } from "zod";
 // server/api.ts 的处理器入口用它做校验，非法参数返回 bad-request，
 // 且类型自动流向渲染进程的 client（MpApi 单一契约）。
 
-// 条目类型：网页收藏 / 本机应用 / 本机文件或文件夹
-export const kindSchema = z.enum(["bookmark", "app", "file"]);
+// 条目类型：网页收藏 / 本机应用 / 本机文件或文件夹 / 终端命令
+export const kindSchema = z.enum(["bookmark", "app", "file", "command"]);
 
 export const createGroupSchema = z.object({
     name: z.string().trim().min(1).max(50),
@@ -20,7 +20,7 @@ export const createItemSchema = z.object({
     kind: kindSchema,
     title: z.string().trim().min(1).max(100),
     target: z.string().trim().min(1).max(1000),
-    // app 专用启动参数；其余类型为 null
+    // app: 启动参数；command: 工作目录（可空，空 = 用户主目录）；其余类型为 null
     args: z.string().trim().max(1000).nullish(),
 });
 
@@ -47,6 +47,13 @@ export const importSchema = z.object({
 // ── 终端会话（v2.2）──
 // 输入分片走 IPC，单次上限 8KB（整屏粘贴也远小于此，防误传大负载）
 export const ptyWriteSchema = z.object({ id: z.number().int().positive(), data: z.string().max(8192) });
+// spawn 可选载荷：终端命令条目带 cwd（工作目录）与 label（会话标签 = 条目标题）；
+// 状态栏「＋新会话」不传，cwd 缺省主目录、label 用 shell 标签（见 pty.spawnSession）
+export const ptySpawnSchema = z.object({
+    cwd: z.string().trim().max(1000).optional(),
+    label: z.string().trim().max(100).optional(),
+});
+export type PtySpawnInput = z.infer<typeof ptySpawnSchema>;
 export const ptyResizeSchema = z.object({
     id: z.number().int().positive(),
     cols: z.number().int().min(2).max(500),

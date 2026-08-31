@@ -15,6 +15,10 @@ import type { ThemeMode } from "@/theme";
 
 type Session = { id: number; label: string };
 
+// App → 本组件的「开新会话」信号：seq 单调递增作边沿检测；可选载荷供终端命令
+// 条目使用——cwd/label 传给 ptySpawn，command 在会话建好后整行写入（回车执行）
+export type TermSpawnReq = { seq: number; cwd?: string; label?: string; command?: string };
+
 // 主题色从 CSS 变量现读。xterm 实例只在创建时拿到一份快照，之后
 // 「theme prop 切换」与「auto 模式下系统明暗切换」（matchMedia 监听）
 // 都要重新执行下面这段，把新令牌刷进已建实例。
@@ -37,8 +41,8 @@ type Props = {
     /** 等宽字体（设置页「等宽字体」，空串 = 默认栈）与字号；xterm 的字不在 CSS 变量体系里，须单独喂 */
     monoFont: string;
     fontSize: number;
-    /** 外部请求新会话的信号量：只在递增时动作（无会话时从状态栏重新呼出用） */
-    spawnReq: number;
+    /** 外部请求新会话的信号：只在 seq 递增时动作；可携带终端命令条目的执行载荷 */
+    spawnReq: TermSpawnReq;
     /** 会话数上报：App 据此在 0 时隐藏整个终端区 */
     onSessionCount: (n: number) => void;
     onHide: () => void;
@@ -118,15 +122,22 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
         [fitAndSync],
     );
 
-    const spawn = useCallback(async () => {
-        const r = await api.ptySpawn();
-        if (!r.ok) {
-            toast.error(t("toast.error"));
-            return;
-        }
-        setSessions((prev) => [...prev, { id: r.data.id, label: r.data.label }]);
-        setActiveId(r.data.id);
-    }, [t]);
+    const spawn = useCallback(
+        async (req?: TermSpawnReq) => {
+            const r = await api.ptySpawn(req && { cwd: req.cwd, label: req.label });
+            if (!r.ok) {
+                // 命令条目的工作目录不存在：与 App 启动失败同口径（launch.missing + 路径）
+                if (r.error.kind === "missing") toast.error(`${t("launch.missing")}: ${r.error.path}`);
+                else toast.error(t("toast.error"));
+                return;
+            }
+            setSessions((prev) => [...prev, { id: r.data.id, label: r.data.label }]);
+            setActiveId(r.data.id);
+            // 会话就绪后把整行命令 + 回车送入 shell（服务端无新写入口，复用 ptyWrite）
+            if (req?.command) void api.ptyWrite(r.data.id, `${req.command}\r`);
+        },
+        [t],
+    );
 
     const kill = useCallback(
         (id: number) => {
@@ -216,15 +227,15 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
         onSessionCount(sessions.length);
     }, [sessions.length, onSessionCount]);
 
-    // 外部（状态栏按钮）请求开新会话：只在信号量递增时动作。
-    // 终端区是懒挂载（首次呼出时 spawnReq 已是 1，挂载即触发）——StrictMode
-    // 会在挂载时把 effect 双跑一遍，记录已消费的值防止开两个会话。
+    // 外部（状态栏按钮 / 命令条目）请求开新会话：只在 seq 递增时动作。
+    // 终端区是懒挂载（首次呼出时 seq 已 ≥1，挂载即触发）——StrictMode
+    // 会在挂载时把 effect 双跑一遍，记录已消费的 seq 防止开两个会话。
     // spawn 故意不进依赖——它随语言切换变身份，进依赖会在切语言时凭空开一个会话。
-    const consumedSpawn = useRef(0);
+    const consumedSeq = useRef(0);
     useEffect(() => {
-        if (spawnReq > 0 && spawnReq !== consumedSpawn.current) {
-            consumedSpawn.current = spawnReq;
-            void spawn();
+        if (spawnReq.seq > 0 && spawnReq.seq !== consumedSeq.current) {
+            consumedSeq.current = spawnReq.seq;
+            void spawn(spawnReq);
         }
     }, [spawnReq]);
 

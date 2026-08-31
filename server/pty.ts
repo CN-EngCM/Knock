@@ -107,14 +107,16 @@ export function readTermConfig(): TermConfig {
     };
 }
 
-/** 新建会话；返回 id 与 shell 标签（渲染端做 tab 名） */
-export function spawnSession(): { id: number; label: string } {
+/** 新建会话；返回 id 与 shell 标签（渲染端做 tab 名）。
+ *  opts 供终端命令条目传入 cwd（工作目录）与 label（会话标签 = 条目标题）；
+ *  不传时 cwd 缺省主目录、label 用 shell 标签，与历史行为一致 */
+export function spawnSession(opts?: { cwd?: string; label?: string }): { id: number; label: string } {
     const shell = resolveShell();
     const id = nextId++;
     const p = spawn(shell.file, [], {
         cols: 80,
         rows: 24,
-        cwd: process.env.USERPROFILE || process.env.HOME,
+        cwd: opts?.cwd || process.env.USERPROFILE || process.env.HOME,
         name: "xterm-256color",
         env: process.env as unknown as Record<string, string>,
     });
@@ -125,7 +127,7 @@ export function spawnSession(): { id: number; label: string } {
         emit?.({ type: "exit", id });
     });
     sessions.set(id, p);
-    return { id, label: shell.label };
+    return { id, label: opts?.label || shell.label };
 }
 
 export function writeSession(id: number, data: string): boolean {

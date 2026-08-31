@@ -25,6 +25,7 @@ import { ToolsZone } from "./components/ToolsZone";
 import type { ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
+import type { TermSpawnReq } from "./components/TerminalZone";
 import { GroupDialog } from "./components/dialogs/GroupDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { ImportDialog } from "./components/dialogs/ImportDialog";
@@ -128,7 +129,8 @@ export default function App() {
     const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
     // 启动不自动开会话（TerminalZone 已无 auto-spawn），从 false 起步避免空态闪错
     const [hasSessions, setHasSessions] = useState(false);
-    const [termSpawnReq, setTermSpawnReq] = useState(0);
+    // 开新会话信号：seq 递增 = 新请求；cwd/label/command 是终端命令条目的执行载荷
+    const [termSpawnReq, setTermSpawnReq] = useState<TermSpawnReq>({ seq: 0 });
     // 粘性挂载标记：终端一旦用过就终身挂载。会话与 xterm 回滚缓冲都活在组件里，
     // 「隐藏终端但会话存活」的场景不能卸载组件——所以挂载条件是 termEverUsed
     // 而不是 showTerm，显隐只由 showTerm 决定走 CSS display:none。
@@ -341,7 +343,7 @@ export default function App() {
     // 停手超过 500ms 后的下一次点击才真正打开；侧栏与搜索候选共用此入口
     const lastOpenRef = useRef<{ id: number; at: number } | null>(null);
 
-    // ── 打开条目：书签前端直开；应用/文件走后端启动器 ──
+    // ── 打开条目：书签前端直开；终端命令驱动终端执行；应用/文件走后端启动器 ──
     async function openItem(item: Item) {
         const now = Date.now();
         const blocked = lastOpenRef.current?.id === item.id && now - lastOpenRef.current.at < 500;
@@ -351,12 +353,31 @@ export default function App() {
             window.open(item.target, "_blank", "noreferrer");
             return;
         }
+        if (item.kind === "command") {
+            runCommand(item);
+            return;
+        }
         try {
             const r = await api.launch(item.id);
             if (!r.ok) apiErrorToast(r.error);
         } catch {
             toast.error(t("toast.error"));
         }
+    }
+
+    // ── 执行终端命令条目：面板置可见（顺带首次挂载）+ 发信号；会话创建与命令写入
+    //    的所有权在 TerminalZone——它调 ptySpawn（cwd 不存在由服务端按 missing 拒绝，
+    //    TerminalZone 里 toast），建标签后再把整行命令送入。终端从未用过时组件随本
+    //    信号懒挂载，其 effect 读到当前 seq 恰好执行一次（StrictMode 双跑由 seq 去重）
+    function runCommand(item: Item) {
+        setLayout((l) => ({ ...l, termVisible: true }));
+        setTermEverUsed(true);
+        setTermSpawnReq((r) => ({
+            seq: r.seq + 1,
+            cwd: item.args ?? undefined,
+            label: item.title,
+            command: item.target,
+        }));
     }
 
     // ── 搜索框路径直达动作（打开文件 / 前往文件夹）：同样走 openPath，报错口径与 openItem 一致 ──
@@ -424,7 +445,7 @@ export default function App() {
         if (!hasSessions) {
             // 首次使用终端：置粘性挂载 + 请求开新会话；此后组件不再卸载
             setTermEverUsed(true);
-            setTermSpawnReq((n) => n + 1);
+            setTermSpawnReq((r) => ({ seq: r.seq + 1 }));
         }
     }
 

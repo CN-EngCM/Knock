@@ -10,7 +10,7 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
 // 建表语句（幂等）。
-// kind 用 CHECK 约束收窄为三种条目类型的联合，脏数据在数据库层就被挡住。
+// kind 用 CHECK 约束收窄为四种条目类型的联合，脏数据在数据库层就被挡住。
 db.exec(`
   CREATE TABLE IF NOT EXISTS groups (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,10 +21,10 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS items (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id  INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    kind      TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file')),
+    kind      TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
     title     TEXT    NOT NULL,
-    target    TEXT    NOT NULL,          -- bookmark: URL / app: 程序路径 / file: 文件或文件夹路径
-    args      TEXT,                      -- app 专用：启动参数，可空
+    target    TEXT    NOT NULL,          -- bookmark: URL / app: 程序路径 / file: 文件或文件夹路径 / command: 命令行
+    args      TEXT,                      -- app: 启动参数 / command: 工作目录，可空
     icon      TEXT,                      -- 图标缓存文件名；空 = 用首字母回退
     position  INTEGER NOT NULL DEFAULT 0
   );
@@ -57,6 +57,42 @@ db.exec(`
 const expertCols = db.prepare("PRAGMA table_info(experts)").all() as { name: string }[];
 if (!expertCols.some((c) => c.name === "effort")) {
     db.exec("ALTER TABLE experts ADD COLUMN effort TEXT NOT NULL DEFAULT 'default'");
+}
+
+// 存量库幂等迁移：items 的 CHECK 加入 'command' 需重建表（SQLite 改不了既有约束，
+// 标准做法是「建新表 → 拷数据 → 删旧表 → 改名」，包在一个事务里）。
+// 先查 sqlite_master 里 items 的 DDL 是否已含新值——新库由上面的 CREATE 直接建成
+// 新结构，同样命中跳过分支，重启可重入。
+const itemsDdl =
+    (
+        db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'items'").get() as
+            | {
+                  sql: string | null;
+              }
+            | undefined
+    )?.sql ?? "";
+if (!itemsDdl.includes("'command'")) {
+    db.transaction(() => {
+        // 新表完整复刻旧列定义（含 FK ON DELETE CASCADE）；旧表上的 idx_items_group
+        // 随 DROP 一并消失，改名后按同名重建
+        db.exec(`
+          CREATE TABLE items_new (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id  INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            kind      TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
+            title     TEXT    NOT NULL,
+            target    TEXT    NOT NULL,
+            args      TEXT,
+            icon      TEXT,
+            position  INTEGER NOT NULL DEFAULT 0
+          );
+          INSERT INTO items_new (id, group_id, kind, title, target, args, icon, position)
+            SELECT id, group_id, kind, title, target, args, icon, position FROM items;
+          DROP TABLE items;
+          ALTER TABLE items_new RENAME TO items;
+          CREATE INDEX IF NOT EXISTS idx_items_group ON items(group_id, position);
+        `);
+    })();
 }
 
 export default db;

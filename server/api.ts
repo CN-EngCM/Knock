@@ -13,6 +13,7 @@ import { getSetting, setSetting } from "./util/settings";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
+import { dialog } from "electron";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -34,6 +35,7 @@ import {
     HOTKEY_IDS,
     orderSchema,
     ptyResizeSchema,
+    ptySpawnSchema,
     ptyWriteSchema,
     termPatchSchema,
     toolAliasPatchSchema,
@@ -54,6 +56,7 @@ import {
     type CreateItemInput,
     type FileSearchInput,
     type OrderInput,
+    type PtySpawnInput,
     type TermConfig,
     type TermPatch,
     type ToolAliases,
@@ -111,7 +114,9 @@ export interface MpApi {
     /** favicon 二进制：bytes 经 IPC 结构化克隆传回，渲染进程拼 Blob */
     getFavicon(domain: string): Promise<ApiResult<{ mime: string; bytes: Uint8Array<ArrayBuffer> }>>;
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
-    ptySpawn(): Promise<ApiResult<{ id: number; label: string }>>;
+    // opts 供终端命令条目传入 cwd/label；不传时 cwd 缺省主目录、label 用 shell 标签。
+    // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
+    ptySpawn(opts?: PtySpawnInput): Promise<ApiResult<{ id: number; label: string }>>;
     ptyWrite(id: number, data: string): Promise<ApiResult<null>>;
     ptyResize(id: number, cols: number, rows: number): Promise<ApiResult<null>>;
     ptyKill(id: number): Promise<ApiResult<null>>;
@@ -134,6 +139,8 @@ export interface MpApi {
     revealPath(path: string): Promise<ApiResult<null>>;
     /** 路径探测（搜索框直达动作）：只回答「存在与否 + 是否目录」；不存在走 not-found */
     statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
+    /** 原生目录选择框（条目编辑「浏览…」用）：取消返回 null */
+    pickDirectory(): Promise<ApiResult<string | null>>;
     // ── 有道翻译（工具 translate）：请求在主进程发（渲染进程直连被 CORS 拦，密钥也不进渲染包）；
     //    密钥存 settings 表，每次翻译现读现签，设置页改完即生效 ──
     translate(input: TranslateInput): Promise<ApiResult<TranslateResult>>;
@@ -274,8 +281,10 @@ export const apiHandlers: ApiHandlers = {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
         const item = db.prepare("SELECT * FROM items WHERE id = ?").get(id) as Item | undefined;
         if (!item) return notFound;
-        if (item.kind === "bookmark") return badRequest; // 书签应前端打开，走到这里是误用
-        const err = await launchItem(item);
+        // 书签由前端 window.open、终端命令由前端驱动 pty 执行，走到这里都是误用；
+        // 提前 return 后 item.kind 已窄化为 app/file，kind 显式取出才能过 launchItem 的参数类型
+        if (item.kind === "bookmark" || item.kind === "command") return badRequest;
+        const err = await launchItem({ kind: item.kind, target: item.target, args: item.args });
         if (err) {
             // 失败带着具体路径返回（launcher.ts 约定），前端据此提示
             return { ok: false, error: { kind: err.error, path: err.path ?? "" } };
@@ -371,10 +380,19 @@ export const apiHandlers: ApiHandlers = {
         return { ok: true, data: { mime: icon.mime, bytes: new Uint8Array(icon.buf) } };
     },
 
-    // ── 终端会话：spawn 失败（shell 丢失等）按 not-found 语义返回 ──
-    ptySpawn: async () => {
+    // ── 终端会话：spawn 失败（shell 丢失等）按 not-found 语义返回；
+    //    cwd 指定但目录不存在 → missing 带路径返回，不建会话 ──
+    ptySpawn: async (opts) => {
+        const v = guard(ptySpawnSchema, opts ?? {});
+        if (!v) return badRequest;
+        if (v.cwd) {
+            const ok = await stat(v.cwd)
+                .then((s) => s.isDirectory())
+                .catch(() => false);
+            if (!ok) return { ok: false, error: { kind: "missing", path: v.cwd } };
+        }
         try {
-            return { ok: true, data: spawnSession() };
+            return { ok: true, data: spawnSession(v) };
         } catch {
             return notFound;
         }
@@ -487,6 +505,12 @@ export const apiHandlers: ApiHandlers = {
         } catch {
             return notFound;
         }
+    },
+
+    // 原生目录选择框（条目编辑「浏览…」）：取消 = data null，前端保持原值不动
+    pickDirectory: async () => {
+        const r = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+        return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
     },
 
     // ── 有道翻译：失败原因按 youdao(code)/not-configured 交给前端行内释义，不抛异常 ──

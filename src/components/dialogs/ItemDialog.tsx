@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
-import type { Group, Item, Kind } from "@/api/client";
+import { api, type Group, type Item, type Kind } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
 // 表单值：提交前保证 args 为 null（而非空串），与数据库约定一致
@@ -52,7 +52,19 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
     }, [open, item, defaultGroupId, groups]);
 
     const targetLabel =
-        kind === "bookmark" ? t("item.target.bookmark") : kind === "app" ? t("item.target.app") : t("item.target.file");
+        kind === "bookmark"
+            ? t("item.target.bookmark")
+            : kind === "app"
+              ? t("item.target.app")
+              : kind === "command"
+                ? t("item.target.command")
+                : t("item.target.file");
+
+    // 目录选择框：成功回填工作目录；取消（null）与失败都保持原值不动
+    async function browseDir() {
+        const r = await api.pickDirectory();
+        if (r.ok && r.data !== null) setArgs(r.data);
+    }
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -71,7 +83,8 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                     kind === "bookmark" && !/^https?:\/\//i.test(target.trim())
                         ? `https://${target.trim()}`
                         : target.trim(),
-                args: kind === "app" && args.trim() ? args.trim() : null,
+                // 仅 app/command 复用 args 列（启动参数 / 工作目录），其余类型一律置 null
+                args: (kind === "app" || kind === "command") && args.trim() ? args.trim() : null,
                 group_id: groupId,
             });
             onClose();
@@ -100,6 +113,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                 <SelectItem value="bookmark">{t("item.kind.bookmark")}</SelectItem>
                                 <SelectItem value="app">{t("item.kind.app")}</SelectItem>
                                 <SelectItem value="file">{t("item.kind.file")}</SelectItem>
+                                <SelectItem value="command">{t("item.kind.command")}</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -140,15 +154,29 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                         </div>
                     </div>
 
-                    {kind === "app" && (
+                    {/* args 列被 app（启动参数）与 command（工作目录）复用；command 额外给「浏览…」 */}
+                    {(kind === "app" || kind === "command") && (
                         <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                            <Label htmlFor="item-args">{t("item.args")}</Label>
-                            <Input
-                                id="item-args"
-                                value={args}
-                                onChange={(e) => setArgs(e.target.value)}
-                                maxLength={1000}
-                            />
+                            <Label htmlFor="item-args">{kind === "app" ? t("item.args") : t("item.cwd")}</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    id="item-args"
+                                    value={args}
+                                    onChange={(e) => setArgs(e.target.value)}
+                                    maxLength={1000}
+                                    className="flex-1"
+                                />
+                                {kind === "command" && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="flex-none whitespace-nowrap"
+                                        onClick={() => void browseDir()}
+                                    >
+                                        {t("btn.browse")}
+                                    </Button>
+                                )}
+                            </div>
                         </div>
                     )}
 
