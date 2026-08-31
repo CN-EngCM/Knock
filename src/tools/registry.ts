@@ -60,6 +60,13 @@ export const TOOLS: readonly ToolMeta[] = [
         // 副作用是 ai 重新回到搜索命中区（按名称/描述/别名匹配，同 scan）。
         Component: lazy(() => import("./AiTool")),
     },
+    {
+        id: "gallery",
+        nameKey: "tool.gallery.name",
+        descKey: "tool.gallery.desc",
+        // 不标 acceptsText：图库不吃文本素材（素材入口是文件拖拽/剪贴板图片）
+        Component: lazy(() => import("./GalleryTool")),
+    },
 ];
 
 export function toolMeta(id: ToolId): ToolMeta {

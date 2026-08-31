@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { PtyEvent } from "../server/pty";
 import type { AiEvent } from "../server/ai";
 
@@ -14,6 +14,8 @@ import type { AiEvent } from "../server/ai";
 //                     React 开发态 StrictMode 会把 effect 跑两遍，没有退订就会
 //                     挂两个监听器，每份数据写两遍 xterm（表现为终端整屏双行）。
 //   onAiEvent      —— 订阅 AI 对话增量流（delta/done/abort/error），返回退订函数，理由同上。
+//   filePathFor    —— 拖拽导入取本机路径：Electron 32+ 渲染进程 File 对象不再带 .path，
+//                     必须经 webUtils 在 preload 里换（页面自己拿不到）。
 // 沙箱 preload 只允许 CJS 子集，esbuild 打成 out/preload.cjs。
 // PtyEvent / AiEvent 都是 type import（编译期擦除），不会把 server 代码带进渲染进程。
 
@@ -22,6 +24,7 @@ contextBridge.exposeInMainWorld("knock", {
     hideWindow: (): void => {
         ipcRenderer.send("mp:hide-window");
     },
+    filePathFor: (file: File): string => webUtils.getPathForFile(file),
     onOpenSettings: (cb: () => void): void => {
         ipcRenderer.on("mp:open-settings", () => cb());
     },

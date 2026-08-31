@@ -49,6 +49,43 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_experts_pos ON experts(position);
 
+  -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 groups/items 表。
+  -- 图片字节级复制进数据目录 gallery/（server/gallery.ts），行里只存元数据；
+  -- 图片经 mpimg:// 协议按 id 直读（注册见 electron/main.ts），不经 IPC 传字节
+  CREATE TABLE IF NOT EXISTS gallery_groups (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    inbox      INTEGER NOT NULL DEFAULT 0,   -- 1 = 内置收件箱（不可删/改名/打 tag）
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_gallery_groups_inbox ON gallery_groups(inbox, id);
+
+  CREATE TABLE IF NOT EXISTS gallery_images (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id    INTEGER NOT NULL REFERENCES gallery_groups(id) ON DELETE CASCADE,
+    title       TEXT    NOT NULL,            -- 原文件名（显示/搜索）
+    file        TEXT    NOT NULL UNIQUE,     -- gallery/ 内最终文件名（撞名加序号后）
+    sha256      TEXT    NOT NULL UNIQUE,     -- 内容去重：同内容全库只收一份
+    bytes       INTEGER NOT NULL,
+    width       INTEGER NOT NULL DEFAULT 0,  -- svg 解不出尺寸存 0
+    height      INTEGER NOT NULL DEFAULT 0,
+    format      TEXT    NOT NULL,            -- 归一小写；jpeg 归一为 jpg
+    source_path TEXT    NOT NULL DEFAULT '', -- 导入来源路径（图片信息展示用）
+    created_at  INTEGER NOT NULL             -- 导入时间戳 ms
+  );
+  CREATE INDEX IF NOT EXISTS idx_gallery_images_group ON gallery_images(group_id, id);
+  CREATE INDEX IF NOT EXISTS idx_gallery_images_created ON gallery_images(created_at);
+
+  CREATE TABLE IF NOT EXISTS gallery_tags (
+    image_id INTEGER NOT NULL REFERENCES gallery_images(id) ON DELETE CASCADE,
+    tag      TEXT    NOT NULL,
+    PRIMARY KEY (image_id, tag)
+  );
+  CREATE INDEX IF NOT EXISTS idx_gallery_tags_tag ON gallery_tags(tag);
+
+  -- 分组级 tag 已随功能移除：旧库顺手清表（幂等），新库不再创建
+  DROP TABLE IF EXISTS gallery_group_tags;
+
   CREATE INDEX IF NOT EXISTS idx_items_group ON items(group_id, position);
 `);
 

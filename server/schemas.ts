@@ -100,7 +100,7 @@ export type FontConfig = { uiFont: string; monoFont: string };
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai"] as const;
+export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai", "gallery"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配
@@ -240,6 +240,37 @@ export type AiChatInput = z.infer<typeof aiChatSchema>;
 
 export const aiChatStopSchema = z.object({ streamId: z.number().int().positive() });
 
+// ── 图库（工具 gallery）──
+// 支持的图片格式词汇（前后端共享的「唯一事实来源」模式；渲染端手工复制一份）。
+// 存库与磁盘归一小写，jpeg 归一为 jpg（见 server/gallery.ts 的 normalizeExt）。
+export const GALLERY_FORMATS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"] as const;
+
+// 分组名：创建与改名共用一套（同 createGroupSchema 模式）
+export const galleryGroupSchema = z.object({ name: z.string().trim().min(1).max(50) });
+
+// 标签集合：图片与分组通用，单个 1–32 字符，一次最多 50 个
+export const galleryTagsSchema = z.object({ tags: z.array(z.string().trim().min(1).max(32)).max(50) });
+
+// 图片查询：group 数字 = 限定分组，"all" = 全库；tags 命中图片自身或所属分组的标签（组 tag 联动）
+export const galleryQuerySchema = z.object({
+    group: z.union([z.number().int().positive(), z.literal("all")]),
+    tags: z.array(z.string().trim().min(1).max(32)).max(20),
+    search: z.string().trim().max(200),
+    sort: z.enum(["time", "name", "size"]),
+    limit: z.number().int().min(1).max(200),
+    offset: z.number().int().min(0),
+});
+export type GalleryQueryInput = z.infer<typeof galleryQuerySchema>;
+
+// 导入：单次上限 64 个文件（渲染端按 ≤16 一批分次调用，这里是不信任前端的硬兜底）
+export const galleryImportSchema = z.object({
+    files: z.array(z.string().trim().min(1).max(1000)).min(1).max(64),
+    groupId: z.number().int().positive(),
+});
+
+// 批量 id（删除/移动共用）；移动另带 groupId，处理器追加 Number.isInteger 兜底
+export const galleryIdsSchema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) });
+
 // ── 呼出热键预设 ──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的
 // 机制分发（double-* 走 uiohook 双击检测，其余走 globalShortcut）共用这一份。
@@ -286,3 +317,32 @@ export type Expert = {
     modelId: string;
     position: number;
 };
+
+// ── 图库行类型（与 SQLite 查询结果/SQL 别名一一对应，前端经类型化 RPC 复用）──
+
+export type GalleryGroup = {
+    id: number;
+    name: string;
+    /** 1 = 内置收件箱：不可删/改名，展示名走 i18n（DB 名不参与显示） */
+    inbox: boolean;
+    count: number;
+};
+
+export type GalleryImage = {
+    id: number;
+    groupId: number;
+    title: string;
+    bytes: number;
+    /** svg 解不出尺寸存 0 */
+    width: number;
+    height: number;
+    /** 归一小写；jpeg 归一为 jpg */
+    format: string;
+    /** 导入来源路径（图片信息展示用；剪贴板粘贴的为空串） */
+    sourcePath: string;
+    /** 导入时间戳 ms */
+    createdAt: number;
+    tags: string[];
+};
+
+export type GalleryImportStats = { imported: number; skipped: number };

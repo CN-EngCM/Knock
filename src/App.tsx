@@ -475,7 +475,6 @@ export default function App() {
 
     return (
         <div className="flex h-screen flex-col overflow-hidden bg-bg font-sans text-text">
-            <div className="scanlines" aria-hidden="true" />
             <Toaster
                 position="bottom-center"
                 toastOptions={{

@@ -33,6 +33,10 @@ export type {
     CreateExpertInput,
     UpdateExpertInput,
     Expert,
+    GalleryGroup,
+    GalleryImage,
+    GalleryImportStats,
+    GalleryQueryInput,
 } from "../../server/schemas";
 export type { ApiResult, ApiError, ImportStats } from "../../server/api";
 export type { Shortcut } from "../../server/shortcuts";
@@ -46,6 +50,8 @@ declare global {
         knock: {
             invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
             hideWindow: () => void;
+            /** 拖拽导入取本机路径：Electron 32+ 渲染进程 File 不再带 .path，经 webUtils 在 preload 换 */
+            filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;
@@ -114,6 +120,20 @@ export const api: MpApi = {
     deleteExpert: (id) => invoke("deleteExpert", id),
     aiChat: (input) => invoke("aiChat", input),
     aiChatStop: (streamId) => invoke("aiChatStop", streamId),
+    galleryGroups: () => invoke("galleryGroups"),
+    galleryCreateGroup: (name) => invoke("galleryCreateGroup", name),
+    galleryRenameGroup: (id, name) => invoke("galleryRenameGroup", id, name),
+    galleryDeleteGroup: (id) => invoke("galleryDeleteGroup", id),
+    galleryImages: (input) => invoke("galleryImages", input),
+    galleryAllTags: () => invoke("galleryAllTags"),
+    galleryImport: (files, groupId) => invoke("galleryImport", files, groupId),
+    galleryPaste: (groupId) => invoke("galleryPaste", groupId),
+    gallerySetImageTags: (id, tags) => invoke("gallerySetImageTags", id, tags),
+    galleryMoveImages: (ids, groupId) => invoke("galleryMoveImages", ids, groupId),
+    galleryDeleteImages: (ids) => invoke("galleryDeleteImages", ids),
+    galleryPickFiles: () => invoke("galleryPickFiles"),
+    galleryOpenImage: (id) => invoke("galleryOpenImage", id),
+    galleryRevealImage: (id) => invoke("galleryRevealImage", id),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */

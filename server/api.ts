@@ -15,6 +15,7 @@ import { dataDir } from "./util/dataDir";
 import {
     DB_NAME,
     FAVICONS_NAME,
+    GALLERY_NAME,
     canAcceptAsDataDir,
     defaultDataRoot,
     removeDbArtifacts,
@@ -24,6 +25,22 @@ import {
 import { currentWindowState } from "../electron/windowState";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
+import {
+    allTags as galleryAllTags,
+    createGroup as galleryCreateGroup,
+    deleteGroup as galleryDeleteGroup,
+    deleteImages as galleryDeleteImages,
+    importFiles as galleryImport,
+    listGroups as galleryListGroups,
+    moveImages as galleryMove,
+    pasteFromClipboard as galleryPaste,
+    pickFiles as galleryPickFiles,
+    openImage as galleryOpenImage,
+    queryImages as galleryQuery,
+    renameGroup as galleryRenameGroup,
+    setImageTags as gallerySetImageTags,
+    revealImage as galleryRevealImage,
+} from "./gallery";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { app, dialog } from "electron";
 import { spawn } from "node:child_process";
@@ -40,6 +57,11 @@ import {
     createExpertSchema,
     createGroupSchema,
     createItemSchema,
+    galleryGroupSchema,
+    galleryIdsSchema,
+    galleryImportSchema,
+    galleryQuerySchema,
+    galleryTagsSchema,
     fileSearchSchema,
     fontPatchSchema,
     importSchema,
@@ -65,6 +87,10 @@ import {
     type Expert,
     type FontConfig,
     type FontPatch,
+    type GalleryGroup,
+    type GalleryImage,
+    type GalleryImportStats,
+    type GalleryQueryInput,
     type Group,
     type HotkeyId,
     type Item,
@@ -99,6 +125,7 @@ export type ApiError =
     | { kind: "youdao"; code: string } // 有道接口错误：code 为官方 errorCode，或 network（连不上/超时/响应异常）
     | { kind: "ai"; status?: number } // LLM 上游错误：status=HTTP 状态码，缺省=网络层失败或首字节超时
     | { kind: "not-configured" } // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
+    | { kind: "gallery"; code: "no-image" } // 图库：剪贴板里没有可粘贴的图片
     | { kind: "data-dir"; reason: "same" | "occupied" | "failed" }; // 数据目录迁移：same=与当前相同；occupied=目标非空；failed=备份/校验失败（旧数据未动，可重试）
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
@@ -183,6 +210,23 @@ export interface MpApi {
     /** 对话增量走 mp:ai-event 事件下行（照 pty 模式），此契约只交付 streamId；模型 id 未命中按 not-found */
     aiChat(input: AiChatInput): Promise<ApiResult<{ streamId: number }>>;
     aiChatStop(streamId: number): Promise<ApiResult<null>>;
+    // ── 图库（工具 gallery）：图片字节级复制进数据目录 gallery/，sha256 全库去重；
+    //    图片经 mpimg:// 协议按 id 直读（注册见 electron/main.ts），不经 IPC 传字节 ──
+    galleryGroups(): Promise<ApiResult<GalleryGroup[]>>;
+    galleryCreateGroup(name: string): Promise<ApiResult<{ id: number }>>;
+    galleryRenameGroup(id: number, name: string): Promise<ApiResult<null>>;
+    galleryDeleteGroup(id: number): Promise<ApiResult<null>>;
+    galleryImages(input: GalleryQueryInput): Promise<ApiResult<{ total: number; items: GalleryImage[] }>>;
+    galleryAllTags(): Promise<ApiResult<string[]>>;
+    galleryImport(files: string[], groupId: number): Promise<ApiResult<GalleryImportStats>>;
+    galleryPaste(groupId: number): Promise<ApiResult<GalleryImportStats>>;
+    gallerySetImageTags(id: number, tags: string[]): Promise<ApiResult<null>>;
+    galleryMoveImages(ids: number[], groupId: number): Promise<ApiResult<null>>;
+    galleryDeleteImages(ids: number[]): Promise<ApiResult<null>>;
+    galleryPickFiles(): Promise<ApiResult<string[]>>;
+    /** 系统默认程序打开 / 资源管理器定位：磁盘路径不出主进程，按 id 代劳 */
+    galleryOpenImage(id: number): Promise<ApiResult<null>>;
+    galleryRevealImage(id: number): Promise<ApiResult<null>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -579,6 +623,10 @@ export const apiHandlers: ApiHandlers = {
             if (existsSync(join(oldDir, FAVICONS_NAME))) {
                 cpSync(join(oldDir, FAVICONS_NAME), join(dest, FAVICONS_NAME), { recursive: true });
             }
+            // 图库目录同款跟进：图片是字节级复制进数据目录的，不搬走等于全丢
+            if (existsSync(join(oldDir, GALLERY_NAME))) {
+                cpSync(join(oldDir, GALLERY_NAME), join(dest, GALLERY_NAME), { recursive: true });
+            }
 
             // 校验副本可整库读，并顺手把当前窗口状态写进副本：旧库稍后会被删除，
             // 而窗口 move/resize 是 500ms 防抖落库，最后一段状态多半还没写盘——不补
@@ -705,6 +753,66 @@ export const apiHandlers: ApiHandlers = {
         const v = guard(aiChatStopSchema, { streamId });
         if (!v) return badRequest;
         return stopChat(v.streamId);
+    },
+
+    // ── 图库：业务全在 server/gallery.ts（含 inbox 组拒绝、not-found、no-image 的判定），
+    //    这里只做入口校验与转发；id 形参做 Number.isInteger 兜底（对齐 deleteExpert 先例）──
+    galleryGroups: async () => galleryListGroups(),
+    galleryCreateGroup: async (name) => {
+        const v = guard(galleryGroupSchema, { name });
+        if (!v) return badRequest;
+        return galleryCreateGroup(v.name);
+    },
+    galleryRenameGroup: async (id, name) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        const v = guard(galleryGroupSchema, { name });
+        if (!v) return badRequest;
+        return galleryRenameGroup(id, v.name);
+    },
+    galleryDeleteGroup: async (id) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        return galleryDeleteGroup(id);
+    },
+    galleryImages: async (input) => {
+        const v = guard(galleryQuerySchema, input);
+        if (!v) return badRequest;
+        return galleryQuery(v);
+    },
+    galleryAllTags: async () => galleryAllTags(),
+    galleryImport: async (files, groupId) => {
+        const v = guard(galleryImportSchema, { files, groupId });
+        if (!v) return badRequest;
+        return galleryImport(v.files, v.groupId);
+    },
+    galleryPaste: async (groupId) => {
+        if (!Number.isInteger(groupId) || groupId <= 0) return badRequest;
+        return galleryPaste(groupId);
+    },
+    gallerySetImageTags: async (id, tags) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        const v = guard(galleryTagsSchema, { tags });
+        if (!v) return badRequest;
+        return gallerySetImageTags(id, v.tags);
+    },
+    galleryMoveImages: async (ids, groupId) => {
+        const v = guard(galleryIdsSchema, { ids });
+        if (!v) return badRequest;
+        if (!Number.isInteger(groupId) || groupId <= 0) return badRequest;
+        return galleryMove(v.ids, groupId);
+    },
+    galleryDeleteImages: async (ids) => {
+        const v = guard(galleryIdsSchema, { ids });
+        if (!v) return badRequest;
+        return galleryDeleteImages(v.ids);
+    },
+    galleryPickFiles: async () => galleryPickFiles(),
+    galleryOpenImage: async (id) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        return galleryOpenImage(id);
+    },
+    galleryRevealImage: async (id) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        return galleryRevealImage(id);
     },
 };
 

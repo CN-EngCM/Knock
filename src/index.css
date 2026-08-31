@@ -98,23 +98,6 @@ body {
     color: var(--text);
 }
 
-/* CRT 扫描线：仅“生效深色”时显示（默认显示；浅色下隐藏） */
-.scanlines {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 60;
-    background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
-}
-html[data-theme="light"] .scanlines {
-    display: none;
-}
-@media (prefers-color-scheme: light) {
-    html:not([data-theme="dark"]) .scanlines {
-        display: none;
-    }
-}
-
 ::selection {
     background: var(--text);
     color: var(--bg);

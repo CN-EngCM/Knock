@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, protocol, session, shell } from "electron";
 import { join } from "node:path";
 // esbuild 以 ESM 打包本文件，__dirname 由构建脚本注入的 banner 提供
 import { createTray } from "./tray"; // 纯 electron，不触达 db，可静态加载
@@ -13,6 +13,7 @@ import { resolveDataDirOnBoot } from "./dataBoot";
 type ApiModule = typeof import("../server/api");
 type PtyModule = typeof import("../server/pty");
 type AiModule = typeof import("../server/ai");
+type GalleryModule = typeof import("../server/gallery");
 type ClipModule = typeof import("./clipWatch");
 type HotkeyModule = typeof import("./hotkey");
 type WindowStateModule = typeof import("./windowState");
@@ -22,6 +23,7 @@ let apiHandlers: ApiModule["apiHandlers"];
 let killAllSessions: PtyModule["killAllSessions"];
 let setPtySink: PtyModule["setPtySink"];
 let setAiSink: AiModule["setAiSink"];
+let serveImage: GalleryModule["serveImage"];
 let startClipWatch: ClipModule["startClipWatch"];
 let freshClipboardText: ClipModule["freshClipboardText"];
 let initHotkey: HotkeyModule["initHotkey"];
@@ -32,6 +34,13 @@ let trackWindowState: WindowStateModule["trackWindowState"];
 // ── Electron 主进程入口 ──
 // 单实例托盘常驻应用：业务逻辑（server/api.ts 处理器表 + SQLite）跑在本进程内，
 // 渲染进程经 preload 白名单 invoke 调用。
+
+// 图库图片按 id 直读（主进程 serveImage 从数据目录取字节），不经 IPC 传字节；
+// 注册自定义 scheme 必须赶在 app ready 之前，standard+stream 是 <img> 正常加载的最低要求，
+// supportFetchAPI 供查看器「复制到剪贴板」用 fetch 取原图字节
+protocol.registerSchemesAsPrivileged([
+    { scheme: "mpimg", privileges: { standard: true, stream: true, supportFetchAPI: true } },
+]);
 
 // 固定 IPv4：与 vite.config 的 server.host 保持一致（localhost 可能解析成 ::1）
 const DEV_URL = "http://127.0.0.1:5173";
@@ -55,9 +64,24 @@ if (!app.requestSingleInstanceLock()) {
         ({ apiHandlers } = await import("../server/api"));
         ({ killAllSessions, setPtySink } = await import("../server/pty"));
         ({ setAiSink } = await import("../server/ai"));
+        ({ serveImage } = await import("../server/gallery"));
         ({ startClipWatch, freshClipboardText } = await import("./clipWatch"));
         ({ initHotkey, shutdownHotkey } = await import("./hotkey"));
         ({ loadWindowState, trackWindowState } = await import("./windowState"));
+
+        // ── mpimg 协议：mpimg://<orig|thumb>/<id>，图库图片直读不走 IPC 字节 ──
+        // host 只认 orig/thumb 两个 kind，path 段必须纯数字 id，其余一律 404；
+        // 必须在数据目录引导完成后注册（serveImage 要读指针目录下的库）
+        protocol.handle("mpimg", (request) => {
+            const { host, pathname } = new URL(request.url);
+            const id = pathname.slice(1);
+            if ((host !== "orig" && host !== "thumb") || !/^\d+$/.test(id)) {
+                return new Response(null, { status: 404 });
+            }
+            const hit = serveImage(host, Number(id));
+            if (!hit) return new Response(null, { status: 404 });
+            return new Response(new Uint8Array(hit.buf), { headers: { "content-type": hit.mime } });
+        });
 
         // ── RPC 注册：server/api.ts 的处理器表逐个挂到 ipcMain ──
         // channel 名即方法名（getData / createGroup / …），类型契约见 server/api.ts。

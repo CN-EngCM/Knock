@@ -84,11 +84,11 @@ pnpm dist       # build + electron-builder → 目录版（release/win-unpacked/
 ## 架构（标准 Electron 三层）
 
 ```text
-electron/main.ts      主进程：窗口/托盘/热键/自启 + IPC 注册；加载 server 业务逻辑
-electron/preload.ts   唯一暴露面：通用 invoke(channel, ...args) + 三个事件订阅（打开设置 / 呼出含剪贴板素材 / 终端输出）
+electron/main.ts      主进程：窗口/托盘/热键/自启 + IPC 注册 + mpimg:// 协议（图库图片按 id 直读）；加载 server 业务逻辑
+electron/preload.ts   唯一暴露面：通用 invoke(channel, ...args) + 事件订阅（打开设置 / 呼出含剪贴板素材 / 终端输出 / AI 增量）+ filePathFor（webUtils 桥，拖拽 File 换本机路径）
 electron/clipWatch.ts 剪贴板轮询打点「最后复制时间」，供呼出时判素材时限
 server/api.ts         ★ MpApi 接口 = 前后端唯一契约；apiHandlers 处理器表逐方法实现
-server/*.ts           业务模块（db/launcher/favicon/shortcuts/bookmarks/autostart/pty），纯函数风格
+server/*.ts           业务模块（db/launcher/favicon/shortcuts/bookmarks/autostart/pty/gallery），纯函数风格
 src/                  渲染进程 React 界面；src/api/client.ts 按 MpApi 逐方法转发 invoke
 src/tools/            内置工具：registry.ts 注册表（acceptsText 标记；组件一律 React.lazy，关闭即卸载）+ toolInput.ts（素材注入：挂载初值 + 事件双通道）；设计规范见同目录 TOOL_SPEC.md
 src/components/       布局组件（SearchBox / GroupPanel / ToolsZone / TerminalZone / AsciiSplash / Splitter）
@@ -112,7 +112,7 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 
 ## 数据与平台
 
-- SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。
+- SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。图库（工具 gallery）三张 `gallery_*` 表存分组/图片元数据与图片 tag，图片**字节级复制**进数据目录 `gallery/` 子目录（sha256 全库去重、缩略图按需生成于 `.thumbs/`），渲染端经 `mpimg://orig|thumb/<id>` 协议直读；`gallery/` 与 favicons 同在 dataLocation 的具名迁移/清理清单里，改数据目录会整体跟随。
 - 主题、界面语言、布局偏好（侧栏宽/终端高/终端开关）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。
 - 开发主力平台 Windows；平台相关代码集中在 server/shortcuts.ts（仅 Windows 快捷方式扫描）、server/autostart.ts 与 server/pty.ts（默认 shell 探测），其余保持跨平台写法。
 - 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
