@@ -8,7 +8,8 @@
     "scripts": {
         "dev": "concurrently -k -n vite,electron -c cyan,yellow \"vite\" \"node scripts/build-main.mjs && wait-on tcp:127.0.0.1:5173 && electron .\"",
         "build": "vite build && node scripts/build-main.mjs",
-        "dist": "pnpm build && electron-builder --win dir",
+        "dist:win": "pnpm build && electron-builder --win dir",
+        "dist:mac": "pnpm build && electron-builder --mac dir",
         "postinstall": "node scripts/electron-deps.mjs",
         "typecheck": "tsc --noEmit",
         "format": "prettier --write .",

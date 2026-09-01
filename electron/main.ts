@@ -98,6 +98,9 @@ if (!app.requestSingleInstanceLock()) {
         // 二次启动唤起已有实例的窗口：引导期间窗口模块未加载，引导完成后才挂监听
         app.on("second-instance", () => showWindow());
 
+        // macOS 点 Dock 图标只激活应用不建窗口，窗口藏托盘时必须显式补一次呼出
+        app.on("activate", () => showWindow());
+
         // 设置页枚举本机字体（queryLocalFonts）需要 local-fonts 权限；仅放行它一个，
         // 其余权限保持拒绝，不开口子（request + check 两个口都要放，缺一个仍会被拒）。
         // Electron 42 的权限类型联合尚未收录 "local-fonts"，故按字符串比较

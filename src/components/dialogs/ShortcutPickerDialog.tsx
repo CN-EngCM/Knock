@@ -12,7 +12,7 @@ type Props = {
     onPick: (shortcut: Shortcut) => void;
 };
 
-// Windows 开始菜单/桌面快捷方式选择器（列表来自 GET /api/shortcuts）
+// 应用选择器：Windows 列开始菜单/桌面 .lnk，mac 列已安装 .app（列表来自 GET /api/shortcuts）
 export function ShortcutPickerDialog({ open, onClose, onPick }: Props) {
     const { t } = useI18n();
     const [shortcuts, setShortcuts] = useState<Shortcut[] | null>(null);

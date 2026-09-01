@@ -153,7 +153,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                 maxLength={1000}
                                 className="flex-1"
                             />
-                            {kind === "app" && platform === "win32" && (
+                            {kind === "app" && (platform === "win32" || platform === "darwin") && (
                                 <Button
                                     type="button"
                                     variant="outline"
@@ -229,7 +229,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                 </form>
             </DialogContent>
 
-            {/* Windows 专属：从开始菜单/桌面快捷方式列表回填路径 */}
+            {/* Windows 列开始菜单/桌面快捷方式，mac 列已安装应用（.app）；回填路径与标题 */}
             <ShortcutPickerDialog
                 open={pickerOpen}
                 onClose={() => setPickerOpen(false)}

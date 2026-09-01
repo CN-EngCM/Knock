@@ -73,10 +73,11 @@ pnpm dev        # Vite(127.0.0.1:5173) + Electron 窗口；改前端热更新，
 pnpm typecheck  # tsc --noEmit，改完代码必须先过这个
 pnpm format     # prettier --write .，改完代码必须跑（风格：双引号/分号/缩进4/行宽 120，见 .prettierrc）
 pnpm build      # vite build（dist/）+ esbuild 主进程（out/）
-pnpm dist       # build + electron-builder → 目录版（release/win-unpacked/，无单文件 exe）
+pnpm dist:win   # build + electron-builder → Windows 目录版（release/win-unpacked/，无单文件 exe）
+pnpm dist:mac   # build + electron-builder → macOS 目录版（release/mac/，arm64，未签名）
 ```
 
-- 只用 pnpm。`pnpm-workspace.yaml` 里的 `allowBuilds`（供应链放行清单）与 `nodeLinker: hoisted`（electron-builder 需要扁平 node_modules）都是必要的，别删。
+- 只用 pnpm，版本 **≥11**（`pnpm-workspace.yaml` 用了 v11 的 `allowBuilds` 供应链放行；v9 及更旧会报 packages 字段错误）。`allowBuilds` 与 `nodeLinker: hoisted`（electron-builder 需要扁平 node_modules）都是必要的，别删。
 - **`dependencies` 只放原生模块**（better-sqlite3 / uiohook-napi / node-pty），其余纯 JS 依赖一律 `devDependencies`——Vite/esbuild 会把它们打进产物，electron-builder 只按 dependencies 收 node_modules，放错位置包体积会暴涨 ~40MB。
 - **node-pty 是 NAPI 单二进制**（`prebuilds/` 随 npm 包分发，ABI 无关），不需要 electron-deps.mjs 做 ABI 切换，但 esbuild 必须标 external、electron-builder 必须 asarUnpack（见 scripts/build-main.mjs 与 electron-builder.yml）。
 - `postinstall` 会跑 `scripts/electron-deps.mjs`：把 better-sqlite3 的原生 binding 换成 **Electron ABI** 的预编译。pnpm 默认装的是 Node ABI，直接跑会报 NODE_MODULE_VERSION 不匹配。
@@ -107,13 +108,13 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 4. **注释解释「为什么」**，不复述代码；重点写类型设计意图与平台差异坑。
 5. 单仓库单 package，不引新框架/新抽象层；能十行解决不写一百行。
 6. **禁止自动 git commit / push**，除非用户明确允许；工作改完停在未提交状态由用户处置。
-7. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist`）由使用者手动执行，代理只保证 `pnpm build` 通过。
+7. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist:win` / `pnpm dist:mac`）由使用者手动执行，代理只保证 `pnpm build` 通过。
 8. **内置工具的新增与修改遵循 [src/tools/TOOL_SPEC.md](src/tools/TOOL_SPEC.md)**（形态判定、id 注册链、素材注入、状态分层、错误与 UI 约定），先读规范再动手。
 
 ## 数据与平台
 
 - SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。图库（工具 gallery）三张 `gallery_*` 表存分组/图片元数据与图片 tag，图片**字节级复制**进数据目录 `gallery/` 子目录（sha256 全库去重、缩略图按需生成于 `.thumbs/`），渲染端经 `mpimg://orig|thumb/<id>` 协议直读；`gallery/` 与 favicons 同在 dataLocation 的具名迁移/清理清单里，改数据目录会整体跟随。
 - 主题、界面语言、布局偏好（侧栏宽/终端高/终端开关）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。
-- 开发主力平台 Windows；平台相关代码集中在 server/shortcuts.ts（仅 Windows 快捷方式扫描）、server/autostart.ts 与 server/pty.ts（默认 shell 探测），其余保持跨平台写法。
-- 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
+- 开发平台 Windows 与 macOS；平台相关代码集中在：server/shortcuts.ts（win 扫开始菜单/桌面 .lnk，mac 扫 /Applications 等处 .app）、server/everything.ts 与 server/spotlight.ts（文件搜索双后端：win 走 Everything/es.exe，mac 走 mdfind）、server/launcher.ts（mac 的 .app 带参走 open -a）、server/autostart.ts 与 server/pty.ts（默认 shell 探测）、server/api.ts 的 revealPath（explorer /select vs open -R）、electron/tray.ts（mac 托盘模板图），其余保持跨平台写法。
+- 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；**macOS 需「辅助功能」授权**（启动时检测，未授权弹原生引导并报 `unauthorized`，授权后重启生效），mac 默认预设为双击 Command（libuiohook 键名 Meta）。预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
 

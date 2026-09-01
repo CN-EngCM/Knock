@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
@@ -8,16 +8,47 @@ const execFileAsync = promisify(execFile);
 
 export type Shortcut = {
     name: string; // 快捷方式显示名（去扩展名）
-    lnk: string; // .lnk 文件路径
-    target: string; // 解析出的目标路径（可能为空）
+    lnk: string; // .lnk 文件路径（mac 为 .app bundle 路径）
+    target: string; // 解析出的目标路径（可能为空；mac 与 lnk 相同）
 };
 
-// ── Windows 快捷方式扫描器（v1 仅 Windows）──
-// 扫描开始菜单（用户 + 公共）与桌面（用户 + 公共）的 .lnk，
-// 用一次 PowerShell 调用批量解析目标路径（WScript.Shell COM）。
-// 结果在进程内缓存；非 Windows 平台返回空数组。
+// ── 应用快捷方式扫描器 ──
+// Windows：扫开始菜单（用户 + 公共）与桌面（用户 + 公共）的 .lnk，
+//   用一次 PowerShell 调用批量解析目标路径（WScript.Shell COM）。
+// macOS：扫 /Applications、/System/Applications 及各自 Utilities 子目录与
+//   ~/Applications 下的 .app bundle——bundle 本身就是「快捷方式 = 目标」，
+//   不解析到内层可执行文件（启动走 open，见 launcher.ts）。
+// 结果在进程内缓存；其余平台返回空数组。
 
 let cache: Shortcut[] | null = null;
+
+/** mac 应用目录清单（Utilities 单列——浅层扫描不递归，系统工具都在子目录里） */
+const MAC_APP_DIRS = [
+    "/Applications",
+    "/Applications/Utilities",
+    "/System/Applications",
+    "/System/Applications/Utilities",
+    join(homedir(), "Applications"),
+];
+
+/** mac：各目录浅层扫 *.app，bundle 路径同时充当 lnk 与 target */
+function scanMacApps(): Shortcut[] {
+    const out: Shortcut[] = [];
+    for (const dir of MAC_APP_DIRS) {
+        let entries;
+        try {
+            entries = readdirSync(dir, { withFileTypes: true });
+        } catch {
+            continue; // 目录不存在（如无 ~/Applications）或不可读，跳过
+        }
+        for (const e of entries) {
+            if (!e.isDirectory() || !e.name.endsWith(".app")) continue;
+            const p = join(dir, e.name);
+            out.push({ name: e.name.slice(0, -".app".length), lnk: p, target: p });
+        }
+    }
+    return out;
+}
 
 function scanDirs(): string[] {
     const appData = process.env.APPDATA ?? "";
@@ -33,8 +64,12 @@ function scanDirs(): string[] {
 }
 
 export async function scanShortcuts(refresh = false): Promise<Shortcut[]> {
-    if (process.platform !== "win32") return [];
     if (cache && !refresh) return cache;
+    if (process.platform === "darwin") {
+        cache = scanMacApps();
+        return cache;
+    }
+    if (process.platform !== "win32") return [];
 
     const dirs = scanDirs();
     if (dirs.length === 0) {

@@ -5,6 +5,7 @@ import { ensureSeeded } from "./experts";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
 import { parseNetscapeBookmarks } from "./bookmarks";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
+import { searchSpotlight } from "./spotlight";
 import { loadFavicon } from "./favicon";
 import { applyHotkey, currentHotkey } from "../electron/hotkey";
 import { launchItem } from "./launcher";
@@ -119,6 +120,7 @@ export type ApiError =
     | { kind: "bad-request" } // 入参校验失败
     | { kind: "not-found" } // 目标分组/条目/专家不存在，或 favicon、AI 模型配置未命中
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
+    | { kind: "unauthorized" } // macOS 辅助功能未授权：双击热键的键盘钩子无法启动（主进程已弹引导）
     | { kind: "missing"; path: string } // 启动目标路径不存在
     | { kind: "failed"; path: string } // 启动器执行失败
     | { kind: "everything" } // Everything 未运行（es.exe 退出码 8）或当前平台不支持
@@ -424,9 +426,9 @@ export const apiHandlers: ApiHandlers = {
     getHotkey: async () => ({ ok: true, data: { hotkey: currentHotkey(), presets: HOTKEY_IDS } }),
     setHotkey: async (hotkey) => {
         if (!(HOTKEY_IDS as readonly string[]).includes(hotkey)) return badRequest;
-        // applyHotkey 失败 = 组合键被其他程序占用；旧热键保持不变
+        // applyHotkey 失败：组合键被占用（旧热键保持不变）或 mac 未授权辅助功能（已弹引导）
         const r = applyHotkey(hotkey);
-        if (!r.ok) return { ok: false, error: { kind: "conflict" } };
+        if (!r.ok) return { ok: false, error: { kind: r.error === "unauthorized" ? "unauthorized" : "conflict" } };
         setSetting("hotkey", hotkey);
         return { ok: true, data: { hotkey: currentHotkey() } };
     },
@@ -520,11 +522,13 @@ export const apiHandlers: ApiHandlers = {
         return { ok: true, data: { seconds: v.seconds } };
     },
 
-    // ── 文件搜索：es.exe 只在 Windows 有意义，其余平台并入 everything 错误（前端引导页） ──
+    // ── 文件搜索：Windows 走 Everything（es.exe），macOS 走 Spotlight（mdfind）；
+    //     其余平台并入 everything 错误（前端提示页） ──
     fileSearch: async (input) => {
         const v = guard(fileSearchSchema, input);
         if (!v) return badRequest;
-        if (process.platform !== "win32") return { ok: false, error: { kind: "everything" } };
+        if (process.platform !== "win32" && process.platform !== "darwin")
+            return { ok: false, error: { kind: "everything" } };
         const opts: FileSearchOptions = {
             only: v.only,
             exts: v.exts,
@@ -532,7 +536,10 @@ export const apiHandlers: ApiHandlers = {
             ascending: v.ascending,
             limit: v.limit,
         };
-        const r = await searchEverything(v.query, opts);
+        const r =
+            process.platform === "darwin"
+                ? await searchSpotlight(v.query, opts)
+                : await searchEverything(v.query, opts);
         if (r.ok) return { ok: true, data: { hits: r.hits } };
         // 搜索失败没有具体路径可言，path 置空（前端按 toast 处理）
         return r.error === "everything"
@@ -548,11 +555,15 @@ export const apiHandlers: ApiHandlers = {
         return err ? { ok: false, error: { kind: err.error, path: err.path ?? "" } } : { ok: true, data: null };
     },
 
-    // 资源管理器中定位：explorer /select 选中目标；explorer 即使失败也常返回 1，不检查退出码
+    // 系统文件管理器中定位并选中目标；GUI 程序失败会自弹系统告警，不检查退出码
     revealPath: async (path) => {
         const v = guard(pathArgSchema, { path });
         if (!v) return badRequest;
         if (!existsSync(v.path)) return { ok: false, error: { kind: "missing", path: v.path } };
+        if (process.platform === "darwin") {
+            spawn("open", ["-R", v.path], { detached: true }).unref();
+            return { ok: true, data: null };
+        }
         // 实测坑：windowsHide 会让 explorer（GUI 程序）的窗口隐藏启动——点了没反应；
         // 文件夹行路径带尾随 \，/select 解析不动，先剥掉；盘根（D:\）剥完只剩 D:，
         // /select 无意义，直接原样传路径打开该盘
@@ -581,7 +592,9 @@ export const apiHandlers: ApiHandlers = {
     },
 
     // 原生文件选择框：app 过滤 Windows 可执行文件（exe 直启/带参 spawn 均可，lnk 仅直启）；
-    // path 同时开 openFile+openDirectory，文件与文件夹都能选。过滤名只用扩展名本身，主进程不引入界面文案
+    // path 同时开 openFile+openDirectory，文件与文件夹都能选。过滤名只用扩展名本身，主进程不引入界面文案。
+    // macOS 不加过滤：.app 走应用选择器体验更好（文件框双击 bundle 会直接启动而不是选中），
+    // 且命令行工具/脚本常无扩展名，过滤反而挡路
     pickFile: async (purpose) => {
         const v = guard(pickFileSchema, { purpose });
         if (!v) return badRequest;

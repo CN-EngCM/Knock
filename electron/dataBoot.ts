@@ -41,6 +41,9 @@ export async function resolveDataDirOnBoot(): Promise<void> {
 
 /** 首次引导：数据存哪里？[使用默认位置] / [选择文件夹…]（Esc / 关闭 = 默认） */
 async function firstBoot(zh: boolean): Promise<void> {
+    // 此刻窗口还没建，dialog 没有父窗口——macOS 不会自动把应用带到前台，
+    // 弹窗会藏在其他应用后面像「没反应」，先抢一次焦点（Windows 无感）
+    app.focus();
     const root = defaultDataRoot();
     for (;;) {
         const { response } = await dialog.showMessageBox({
@@ -117,6 +120,7 @@ async function firstBoot(zh: boolean): Promise<void> {
 
 /** 指针目标不可用的恢复流程：所选目录必须已有 mypage.db（指回已有数据） */
 async function recoverUnavailable(zh: boolean, dir: string): Promise<void> {
+    app.focus(); // 同 firstBoot：无父窗口的弹窗在 mac 要先抢前台才可见
     for (;;) {
         const { response } = await dialog.showMessageBox({
             type: "warning",

@@ -1,5 +1,5 @@
-# electron-builder 配置：Windows 目录版（需求 §3.7 / §10.5，v2.1 起不再出单文件 exe）
-# 打包命令：pnpm dist（= vite build + esbuild 主进程 + electron-builder --win dir）
+# electron-builder 配置：目录版（需求 §3.7 / §10.5，v2.1 起不再出单文件 exe）
+# 打包命令：pnpm dist:win / pnpm dist:mac（各自 = vite build + esbuild 主进程 + 对应平台 dir 目标）
 appId: com.knock.app
 productName: Knock
 directories:
@@ -17,7 +17,9 @@ files:
     # es.exe 不进 asar：它经 extraResources 单独放到 resources/（exe 无法从 asar 内 spawn）
     - "!assets/es.exe"
     - package.json
-    # ── 原生模块瘦身：运行时只需要 win32-x64 的 .node，其余是源码/构建残留/他平台预编译 ──
+    # ── 原生模块瘦身：删源码/构建残留/明确用不到的预编译 ──
+    # 注意：darwin 预编译不在这里排除（mac 包运行时需要），win 包的 darwin 裁剪
+    # 由 afterPack.cjs 按平台完成，否则 mac 包原生模块加载失败
     - "!node_modules/better-sqlite3/deps/**"
     - "!node_modules/better-sqlite3/src/**"
     - "!node_modules/better-sqlite3/docs/**"
@@ -25,13 +27,11 @@ files:
     - "!node_modules/better-sqlite3/build/Release/*.lib"
     - "!node_modules/uiohook-napi/libuiohook/**"
     - "!node_modules/uiohook-napi/src/**"
-    - "!node_modules/uiohook-napi/prebuilds/darwin-**"
     - "!node_modules/uiohook-napi/prebuilds/linux-**"
     - "!node_modules/uiohook-napi/prebuilds/win32-arm64/**"
     - "!node_modules/node-pty/src/**"
     - "!node_modules/node-pty/scripts/**"
     - "!node_modules/node-pty/typings/**"
-    - "!node_modules/node-pty/prebuilds/darwin-**"
     - "!node_modules/node-pty/prebuilds/win32-arm64/**"
     - "!node_modules/node-pty/third_party/**"
     - "!node_modules/node-pty/**/*.pdb"
@@ -50,3 +50,10 @@ win:
         - target: dir
           arch: [x64]
     icon: assets/icon.png
+# mac 目录版：图标暂缺（icon.png 仅 256px，转 icns 需 ≥512，后续补 1024 图启用 mac.icon）；
+# identity: null = 不签名（无开发者证书；对外分发需签名+公证才能过 Gatekeeper）
+mac:
+    target:
+        - target: dir
+          arch: [arm64]
+    identity: null

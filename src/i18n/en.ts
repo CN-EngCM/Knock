@@ -24,6 +24,7 @@ export const en: Record<MessageKey, string> = {
     "settings.autostart.moveHint": "Moving the app folder breaks autostart — just toggle it on again",
     "settings.hotkey": "Summon hotkey",
     "settings.hotkey.double-ctrl": "Double Ctrl",
+    "settings.hotkey.double-cmd": "Double Command",
     "settings.hotkey.double-alt": "Double Alt",
     "settings.hotkey.double-shift": "Double Shift",
     "settings.hotkey.alt-space": "Alt+Space",
@@ -229,6 +230,7 @@ export const en: Record<MessageKey, string> = {
     "tool.files.name": "files",
     "tool.files.desc": "Search files via Everything",
     "files.placeholder": "Search all local files (Everything syntax works, e.g. ext:pdf dm:yesterday)…",
+    "files.placeholderMac": "Search all files by name (Spotlight index)…",
     "files.filter.all": "All",
     "files.filter.file": "Files",
     "files.filter.folder": "Folders",
@@ -244,6 +246,8 @@ export const en: Record<MessageKey, string> = {
     "files.none": "(no results)",
     "files.hint":
         "Type to search all local files; the query is passed to Everything as-is, so all of its syntax works.",
+    "files.hintMac":
+        "Type a name fragment to search all local files on macOS (Spotlight); use the buttons above to filter and sort.",
     "files.hintEx":
         "e.g. ext:pdf by extension · dm:yesterday changed yesterday · D:\\ limit to drive · /a-d files only",
     "files.count": "results",
@@ -256,7 +260,7 @@ export const en: Record<MessageKey, string> = {
         "File search needs Everything (voidtools) running in the background; get it from the official site if not installed.",
     "files.everything.site": "open website",
     "files.everything.retry": "retry",
-    "files.winOnly": "File search is Windows-only (requires Everything).",
+    "files.winOnly": "File search supports Windows (Everything) and macOS (Spotlight).",
 
     "tool.translate.name": "translate",
     "tool.translate.desc": "Text translation via Youdao",

@@ -5,8 +5,9 @@ import open from "open";
 // ── 启动器：把一个条目在本机打开 ──
 // - 应用（无参数）、文件、文件夹 → open 库走系统默认方式
 //   （Windows: explorer/start，macOS: open，Linux: xdg-open）
-// - 应用（带参数）→ 直接 spawn，参数走 argv 数组不经 shell，
-//   路径含空格天然安全；此时要求 target 是真实 exe（不支持 .lnk）
+// - 应用（带参数）→ Windows: 直接 spawn，参数走 argv 数组不经 shell，
+//   路径含空格天然安全；此时要求 target 是真实 exe（不支持 .lnk）。
+//   macOS: .app 是 bundle 目录不能直接 exec，改走 open -a <app> --args <argv>。
 
 /** 把参数字符串按引号规则切成 argv（"C:\a b" --flag → ['C:\a b', '--flag']） */
 export function parseArgs(s: string): string[] {
@@ -51,12 +52,20 @@ export async function launchItem(item: {
 
     try {
         if (item.kind === "app" && item.args) {
-            // detached + unref：让子进程脱离本服务独立存活
-            const child = spawn(item.target, parseArgs(item.args), {
-                detached: true,
-                windowsHide: true,
-            });
-            child.unref();
+            if (process.platform === "darwin" && item.target.endsWith(".app")) {
+                // bundle 不能直接 exec；open -a 由 LaunchServices 拉起，--args 后全是应用参数
+                const child = spawn("open", ["-a", item.target, "--args", ...parseArgs(item.args)], {
+                    detached: true,
+                });
+                child.unref();
+            } else {
+                // detached + unref：让子进程脱离本服务独立存活
+                const child = spawn(item.target, parseArgs(item.args), {
+                    detached: true,
+                    windowsHide: true,
+                });
+                child.unref();
+            }
         } else {
             await open(item.target);
         }

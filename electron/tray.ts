@@ -11,7 +11,12 @@ function iconPath(): string {
 }
 
 export function createTray(getWin: () => BrowserWindow | null, onSettings: () => void): Tray {
-    const icon = nativeImage.createFromPath(iconPath()).resize({ width: 16, height: 16 });
+    let icon = nativeImage.createFromPath(iconPath()).resize({ width: 16, height: 16 });
+    if (process.platform === "darwin") {
+        // mac 菜单栏惯例是模板图：系统只取 alpha 通道、按明暗自动反色——
+        // 直接沿用彩色图标，彩色在暗色菜单栏下会看不清
+        icon.setTemplateImage(true);
+    }
     const tray = new Tray(icon);
     tray.setToolTip("敲敲 Knock");
 

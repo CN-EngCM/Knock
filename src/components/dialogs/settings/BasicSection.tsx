@@ -25,6 +25,7 @@ type AutostartStatus = { supported: boolean; enabled: boolean };
 // 热键预设 id → i18n key 的映射（id 集合来自后端 schemas.HOTKEY_IDS）
 const HOTKEY_LABEL: Record<HotkeyId, MessageKey> = {
     "double-ctrl": "settings.hotkey.double-ctrl",
+    "double-cmd": "settings.hotkey.double-cmd",
     "double-alt": "settings.hotkey.double-alt",
     "double-shift": "settings.hotkey.double-shift",
     "alt-space": "settings.hotkey.alt-space",

@@ -5,7 +5,8 @@ import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
 import { useToolInput } from "./toolInput";
 
-// 文件搜索：查询经主进程 es.exe 交给正在运行的 Everything（仅 Windows）。
+// 文件搜索：查询经主进程交给平台后端——Windows 为 Everything（es.exe），
+// macOS 为 Spotlight（mdfind，按名匹配，过滤/排序在后端 JS 完成）。
 // 竞态约定：每次请求带序号，晚归的旧结果直接丢弃，快速输入不闪结果。
 // 查询词与过滤状态都是运行时状态：关闭工具即丢弃，下次从空开始（用户决策，勿加还原）。
 
@@ -62,11 +63,15 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
     const [retryTick, setRetryTick] = useState(0);
     const seq = useRef(0);
     const listRef = useRef<HTMLDivElement>(null);
+    // 平台（win32 走 Everything 语法，darwin 走 Spotlight 名匹配）：提示文案据此切换
+    const [platform, setPlatform] = useState("");
 
-    // 平台守卫：非 Windows 直接展示提示页（不再发查询）
+    // 平台守卫：Windows/macOS 之外直接展示提示页（不再发查询）
     useEffect(() => {
         void api.session().then((r) => {
-            if (r.ok && r.data.platform !== "win32") setStatus("winOnly");
+            if (!r.ok) return;
+            setPlatform(r.data.platform);
+            if (r.data.platform !== "win32" && r.data.platform !== "darwin") setStatus("winOnly");
         });
     }, []);
 
@@ -169,7 +174,7 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onKeyDown}
                 spellCheck={false}
-                placeholder={t("files.placeholder")}
+                placeholder={t(platform === "darwin" ? "files.placeholderMac" : "files.placeholder")}
                 className="flex-none border border-line bg-bg px-2.5 py-1.5 text-[12.5px] text-text outline-none placeholder:text-muted"
             />
 
@@ -248,8 +253,10 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
 
                 {status === "idle" && (
                     <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                        <span className="text-[12.5px] text-dim">{t("files.hint")}</span>
-                        <span className="text-[11.5px] text-muted">{t("files.hintEx")}</span>
+                        <span className="text-[12.5px] text-dim">
+                            {t(platform === "darwin" ? "files.hintMac" : "files.hint")}
+                        </span>
+                        {platform !== "darwin" && <span className="text-[11.5px] text-muted">{t("files.hintEx")}</span>}
                     </div>
                 )}
 

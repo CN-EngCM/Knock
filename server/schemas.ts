@@ -274,7 +274,15 @@ export const galleryIdsSchema = z.object({ ids: z.array(z.number().int().positiv
 // ── 呼出热键预设 ──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的
 // 机制分发（double-* 走 uiohook 双击检测，其余走 globalShortcut）共用这一份。
-export const HOTKEY_IDS = ["double-ctrl", "double-alt", "double-shift", "alt-space", "ctrl-alt-space"] as const;
+// double-cmd 即双击 Command（macOS 惯例呼出键；libuiohook 键名叫 Meta），其余平台选了也无害
+export const HOTKEY_IDS = [
+    "double-ctrl",
+    "double-cmd",
+    "double-alt",
+    "double-shift",
+    "alt-space",
+    "ctrl-alt-space",
+] as const;
 export type HotkeyId = (typeof HOTKEY_IDS)[number];
 
 export const hotkeySchema = z.object({ hotkey: z.enum(HOTKEY_IDS) });
