@@ -113,11 +113,14 @@ function CandThumb({ index }: { index: number }) {
 }
 
 type Props = {
+    /** 解锁密码：组名查重按解锁视角查组——否则已存在同名私密组在锁定视角不可见，
+     *  会建出第二个同名普通组 */
+    password?: string;
     onClose: () => void;
     onImported: () => void;
 };
 
-export function UrlImport({ onClose, onImported }: Props) {
+export function UrlImport({ password, onClose, onImported }: Props) {
     const { t } = useI18n();
     const [phase, setPhase] = useState<Phase>("form");
     const [url, setUrl] = useState("");
@@ -279,7 +282,7 @@ export function UrlImport({ onClose, onImported }: Props) {
 
     /** 确认导入时解析落点分组：单独成组——组名首选网页 <title>，后备站点域名（去 www.），
      *  均限长 50 对齐 schema；已有同名组则复用（同站多次导入归拢一组，配合 sha 去重不收重图）；
-     *  解析失败返回 null */
+     *  解析失败返回 null。兜底名是固定串（i18n 文案入库，切语言后同站会对不上名） */
     async function resolveGroupId(): Promise<number | null> {
         let name = titleRef.current ?? "";
         if (!name) {
@@ -289,8 +292,8 @@ export function UrlImport({ onClose, onImported }: Props) {
                 /* 表单已校验 http(s)，走兜底名 */
             }
         }
-        name = name.slice(0, 50) || t("gallery.urlImport");
-        const gs = await api.galleryGroups();
+        name = name.slice(0, 50) || "Imported";
+        const gs = await api.galleryGroups(password);
         const existing = gs.ok ? gs.data.find((g) => !g.inbox && g.name === name) : undefined;
         if (existing) return existing.id;
         const r = await api.galleryCreateGroup(name);

@@ -27,6 +27,7 @@ import { currentWindowState } from "../electron/windowState";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
 import {
+    addTagsToImages as galleryAddTagsToImages,
     allTags as galleryAllTags,
     collectDiscard as galleryCollectDiscard,
     collectStart as galleryCollectStart,
@@ -258,6 +259,8 @@ export interface MpApi {
     galleryImport(files: string[], groupId: number): Promise<ApiResult<GalleryImportStats>>;
     galleryPaste(groupId: number): Promise<ApiResult<GalleryImportStats>>;
     gallerySetImageTags(id: number, tags: string[]): Promise<ApiResult<null>>;
+    /** 批量给多张图添加标签（并集幂等，单事务）；单张整体替换用 gallerySetImageTags */
+    galleryAddTagsToImages(ids: number[], tags: string[]): Promise<ApiResult<null>>;
     /** 词级删除：从所有图片移除该标签（渲染端配确认框） */
     galleryDeleteTag(tag: string): Promise<ApiResult<null>>;
     galleryMoveImages(ids: number[], groupId: number): Promise<ApiResult<null>>;
@@ -881,6 +884,13 @@ export const apiHandlers: ApiHandlers = {
         const v = guard(galleryTagsSchema, { tags });
         if (!v) return badRequest;
         return gallerySetImageTags(id, v.tags);
+    },
+    galleryAddTagsToImages: async (ids, tags) => {
+        const vi = guard(galleryIdsSchema, { ids });
+        if (!vi) return badRequest;
+        const vt = guard(galleryTagsSchema, { tags });
+        if (!vt) return badRequest;
+        return galleryAddTagsToImages(vi.ids, vt.tags);
     },
     galleryDeleteTag: async (tag) => {
         const v = guard(galleryTagSchema, { tag });

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, onAiEvent } from "@/api/client";
+import { api, onAiEvent, type AiEffortId } from "@/api/client";
 
 // ── AI 会话的模块级 store ──
 // 为什么放模块层：工具 tab 关闭 = 组件卸载（TOOL_SPEC §3 铁律），但 AI 助手是用户决策的
@@ -22,6 +22,8 @@ export type Conv = {
     msgs: Msg[];
     /** 会话内临时切换的模型 id（不写回专家配置；清空会话时也保留） */
     override: string | null;
+    /** 会话内临时切换的思考强度（语义同 override；null = 跟随专家配置） */
+    effortOverride: AiEffortId | null;
 };
 
 /** useAiSessions 的快照形状：lastEid 供界面区分「前台会话更新」与「后台会话增量」 */
@@ -63,7 +65,7 @@ export function getActive(): number | null {
 /** 发送一轮问答的 UI 先行：user + 占位 assistant（status streaming，delta 追加进占位）。
  *  两行总是一起 push —— 单轮界面的「一问一答一卡」分组依赖这个成对约定 */
 export function appendExchange(eid: number, userText: string): void {
-    const cur = convs[eid] ?? { msgs: [], override: null };
+    const cur = convs[eid] ?? { msgs: [], override: null, effortOverride: null };
     convs = {
         ...convs,
         [eid]: {
@@ -128,17 +130,25 @@ export function stopExpertStreams(eid: number): void {
 
 /** 会话内模型临时切换：只改 conv.override 不写回专家配置 */
 export function setOverride(eid: number, modelId: string | null): void {
-    const cur = convs[eid] ?? { msgs: [], override: null };
-    convs = { ...convs, [eid]: { msgs: cur.msgs, override: modelId } };
+    const cur = convs[eid] ?? { msgs: [], override: null, effortOverride: null };
+    convs = { ...convs, [eid]: { ...cur, override: modelId } };
     lastEid = eid;
     commit();
 }
 
-/** 清空对话历史但保留 override（override 是「这个会话怎么配」，不是内容） */
+/** 会话内思考强度临时切换：语义与 setOverride 一致（不写回专家配置） */
+export function setEffortOverride(eid: number, effort: AiEffortId | null): void {
+    const cur = convs[eid] ?? { msgs: [], override: null, effortOverride: null };
+    convs = { ...convs, [eid]: { ...cur, effortOverride: effort } };
+    lastEid = eid;
+    commit();
+}
+
+/** 清空对话历史但保留 override（模型/思考强度是「这个会话怎么配」，不是内容） */
 export function clearConv(eid: number): void {
     const cur = convs[eid];
     if (!cur) return;
-    convs = { ...convs, [eid]: { msgs: [], override: cur.override } };
+    convs = { ...convs, [eid]: { msgs: [], override: cur.override, effortOverride: cur.effortOverride } };
     lastEid = eid;
     commit();
 }

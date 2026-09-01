@@ -137,6 +137,7 @@ export const api: MpApi = {
     galleryImport: (files, groupId) => invoke("galleryImport", files, groupId),
     galleryPaste: (groupId) => invoke("galleryPaste", groupId),
     gallerySetImageTags: (id, tags) => invoke("gallerySetImageTags", id, tags),
+    galleryAddTagsToImages: (ids, tags) => invoke("galleryAddTagsToImages", ids, tags),
     galleryDeleteTag: (tag) => invoke("galleryDeleteTag", tag),
     galleryMoveImages: (ids, groupId) => invoke("galleryMoveImages", ids, groupId),
     galleryDeleteImages: (ids) => invoke("galleryDeleteImages", ids),

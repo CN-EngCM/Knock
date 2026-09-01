@@ -3,8 +3,9 @@ import { Copy } from "lucide-react";
 import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { api, type AiModelConfig, type AiProviderId, type Expert } from "@/api/client";
+import { api, type AiEffortId, type AiModelConfig, type AiProviderId, type Expert } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import type { MessageKey } from "@/i18n/zh";
 import { useExperts } from "@/lib/experts";
 import {
     appendExchange,
@@ -13,6 +14,7 @@ import {
     registerStream,
     rollbackLastExchange,
     setActive,
+    setEffortOverride,
     setOverride,
     stopExpertStreams,
     useAiSessions,
@@ -35,6 +37,16 @@ import { aiErrKey } from "./aiErr";
 // 供应商词汇表：须与 server/schemas.AI_PROVIDER_IDS 手工对齐（渲染进程禁止运行时
 // import server/ 的值，zod 在主进程仍会兜底校验）。键是 id、值是显示名。
 const PROVIDER_LABEL: Record<AiProviderId, string> = { deepseek: "DeepSeek", zhipu: "智谱" };
+
+// 思考强度词汇表：与 EditExpertDialog 同一份手工对齐（server/schemas.AI_EFFORT_IDS）。
+// default = 请求不带 reasoning_effort 参数。
+const EFFORT_IDS: readonly AiEffortId[] = ["default", "low", "high", "max"];
+const EFFORT_LABEL: Record<AiEffortId, MessageKey> = {
+    default: "ai.effort.default",
+    low: "ai.effort.low",
+    high: "ai.effort.high",
+    max: "ai.effort.max",
+};
 
 /** select 的哨兵 value：模型未绑定时让下拉显示出「未绑定」又不可再选回空值 */
 const NO_MODEL = ":unbound";
@@ -111,6 +123,11 @@ export default function AiTool({
         return convs[expert.id]?.override ?? expert.modelId;
     }
 
+    /** 活跃专家当前生效的思考强度（会话 override 优先于专家配置） */
+    function effectiveEffort(expert: Expert): AiEffortId {
+        return convs[expert.id]?.effortOverride ?? expert.effort;
+    }
+
     /**
      * 发送一轮对话。targetId 缺省取当前选中（输入区路径）；素材注入路径显式传专家。
      * 同一专家已在流式中重发 = 先停它自己的旧流（已收部分就地标停止），新问答照常进行；
@@ -134,7 +151,7 @@ export default function AiTool({
         }
 
         // 多轮带完整 history（完成态的消息才可信）；单轮只发当条
-        const conv = convs[eid] ?? { msgs: [], override: null };
+        const conv = convs[eid] ?? { msgs: [], override: null, effortOverride: null };
         const history = (
             expert.multi ? conv.msgs.filter((m) => !m.status).map(({ role, content }) => ({ role, content })) : []
         ).concat({ role: "user", content: trimmed });
@@ -151,7 +168,7 @@ export default function AiTool({
                 modelId,
                 system: expert.prompt,
                 messages: history,
-                effort: expert.effort, // default 由主进程过滤为不发 reasoning_effort 参数
+                effort: effectiveEffort(expert), // default 由主进程过滤为不发 reasoning_effort 参数
             });
             if (!r.ok) {
                 // not-found ≈ 配置表刚被改动（模型被删）：撤掉两条占位，行内引导去绑定
@@ -372,6 +389,19 @@ export default function AiTool({
                             {(aiModels ?? []).map((m) => (
                                 <option key={m.id} value={m.id}>
                                     {PROVIDER_LABEL[m.provider]} · {m.model}
+                                </option>
+                            ))}
+                        </select>
+                        {/* 会话内思考强度临时切换：语义与模型切换一致，不写回专家配置 */}
+                        <select
+                            className={`${inputCls} w-20 flex-none px-1 py-0.5 text-[12px]`}
+                            value={effectiveEffort(activeExpert)}
+                            onChange={(e) => setEffortOverride(activeExpert.id, e.target.value as AiEffortId)}
+                            title={t("ai.effort")}
+                        >
+                            {EFFORT_IDS.map((id) => (
+                                <option key={id} value={id}>
+                                    {t(EFFORT_LABEL[id])}
                                 </option>
                             ))}
                         </select>

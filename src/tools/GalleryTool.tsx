@@ -169,7 +169,7 @@ export default function GalleryTool() {
                 }
                 setStatus("done");
             });
-    }, [query, reloadTick, unlocked, t]);
+    }, [query, reloadTick, unlocked]); // 依赖故意不含 t：语言切换不值得整轮重查（错误 toast 瞬时显示，旧语言无感）
 
     // 搜索框防抖进 query（trim 后相同就不动对象，避免多余 refetch）
     useEffect(() => {
@@ -611,20 +611,24 @@ export default function GalleryTool() {
                 toast.error(t("toast.error"));
                 return false;
             }
+            setItems((prev) => prev.map((it) => (it.id === tg.image.id ? { ...it, tags } : it)));
         } else {
-            // 接口是整体替换语义，批量「添加」= 对每张求旧∪新再写回
-            for (const id of tg.ids) {
-                const old = items.find((it) => it.id === id)?.tags ?? [];
-                const merged = Array.from(new Set([...old, ...tags]));
-                const r = await api.gallerySetImageTags(id, merged);
-                if (!r.ok) {
-                    toast.error(t("toast.error"));
-                    return false;
-                }
+            const r = await api.galleryAddTagsToImages(tg.ids, tags);
+            if (!r.ok) {
+                toast.error(t("toast.error"));
+                return false;
             }
+            const ids = new Set(tg.ids);
+            setItems((prev) =>
+                prev.map((it) => (ids.has(it.id) ? { ...it, tags: Array.from(new Set([...it.tags, ...tags])) } : it)),
+            );
         }
         toast.success(t("toast.saved"));
-        refreshAll();
+        // 本地补丁行集不变——打标签不该把网格滚回顶部（同画廊操作的补丁先例），
+        // 分组计数/画廊都不受影响，只有标签池可能出新词，重拉它一把即可
+        void api.galleryAllTags().then((r) => {
+            if (r.ok) setAllTags(r.data);
+        });
         return true;
     }
 
@@ -873,7 +877,13 @@ export default function GalleryTool() {
                 />
             )}
 
-            {urlImport && <UrlImport onClose={() => setUrlImport(false)} onImported={refreshAll} />}
+            {urlImport && (
+                <UrlImport
+                    password={unlocked ?? undefined}
+                    onClose={() => setUrlImport(false)}
+                    onImported={refreshAll}
+                />
+            )}
 
             {slideshow && <Slideshow password={unlocked ?? undefined} onClose={() => setSlideshow(false)} />}
 

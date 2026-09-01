@@ -66,9 +66,15 @@ function ensureInbox(): void {
     ).run(Date.now());
 }
 
+// 导入/删除等热路径循环里反复用的语句提为模块级复用（better-sqlite3 不缓存
+// prepared statement，函数内每次调用都重新编译）；就近声明，读函数不用跳转
+const stmtGroupById = db.prepare("SELECT id, inbox FROM gallery_groups WHERE id = ?");
+const stmtShaExists = db.prepare("SELECT 1 FROM gallery_images WHERE sha256 = ?");
+const stmtImageExists = db.prepare("SELECT 1 FROM gallery_images WHERE id = ?");
+const stmtFileTaken = db.prepare("SELECT 1 FROM gallery_images WHERE file = ?");
+
 function getGroup(id: number): { id: number; inbox: number } | undefined {
-    return db.prepare("SELECT id, inbox FROM gallery_groups WHERE id = ?").get(id) as
-        { id: number; inbox: number } | undefined;
+    return stmtGroupById.get(id) as { id: number; inbox: number } | undefined;
 }
 
 /** 删原图与缩略图（缩略图按源格式定名：jpg 存 .jpg，其余 .png，svg 不生成）。
@@ -229,9 +235,16 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
         params.push(escapeLike(input.search));
     }
     if (input.tags.length > 0) {
-        const marks = input.tags.map(() => "?").join(", ");
-        where.push(`id IN (SELECT image_id FROM gallery_tags WHERE tag IN (${marks}))`);
-        params.push(...input.tags);
+        // 多标签交集（AND）：同图须命中全部所选 tag 才进结果。入参先去重——重复词会让
+        // HAVING 计数永不命中（表主键保证同图同 tag 只有一行）；计数直接用去重后的
+        // tags.length（数字插值，无用户输入参与拼接）
+        const tags = [...new Set(input.tags)];
+        const marks = tags.map(() => "?").join(", ");
+        where.push(
+            `id IN (SELECT image_id FROM gallery_tags WHERE tag IN (${marks}) ` +
+                `GROUP BY image_id HAVING COUNT(*) = ${tags.length})`,
+        );
+        params.push(...tags);
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     // ORDER BY 取自固定词表，无用户输入参与拼接。画廊的「时间」序 = 加入顺序（position，
@@ -350,20 +363,25 @@ function normalizeExt(path: string): string {
 function uniqueName(original: string): string {
     const ext = extname(original);
     const stem = original.slice(0, original.length - ext.length);
-    const fileTaken = db.prepare("SELECT 1 FROM gallery_images WHERE file = ?");
     let candidate = original;
-    for (let n = 2; existsSync(join(galleryDir(), candidate)) || fileTaken.get(candidate); n++) {
+    for (let n = 2; existsSync(join(galleryDir(), candidate)) || stmtFileTaken.get(candidate); n++) {
         candidate = `${stem} (${n})${ext}`;
     }
     return candidate;
 }
 
 function shaExists(sha: string): boolean {
-    return !!db.prepare("SELECT 1 FROM gallery_images WHERE sha256 = ?").get(sha);
+    return !!stmtShaExists.get(sha);
 }
 
+const stmtInsertImage = db.prepare(
+    "INSERT INTO gallery_images (group_id, title, file, sha256, bytes, width, height, format, source_path, created_at) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+);
+
 /** 落盘 + 落库（import 与 paste 共用的收尾路径）；buf 已经过 hash 去重判定。
- *  size 由「已探过尺寸的调用方」（网址导入候选）传入免二次解码；缺省现读 */
+ *  size 由「已探过尺寸的调用方」（网址导入候选）传入免二次解码；缺省现解手上的
+ *  buf（纯内存，不读回磁盘）——webp nativeImage 解不了，走 webpSize 头解析兜底 */
 function saveImage(
     groupId: number,
     title: string,
@@ -376,13 +394,21 @@ function saveImage(
     // svg / 解不动的图存 0×0，前端按无尺寸处理
     let s = size;
     if (!s) {
-        const img = nativeImage.createFromPath(join(galleryDir(), file));
-        s = img.isEmpty() ? { width: 0, height: 0 } : img.getSize();
+        const img = nativeImage.createFromBuffer(buf);
+        s = img.isEmpty() ? (webpSize(buf) ?? { width: 0, height: 0 }) : img.getSize();
     }
-    db.prepare(
-        "INSERT INTO gallery_images (group_id, title, file, sha256, bytes, width, height, format, source_path, created_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).run(groupId, title, file, sha, buf.length, s.width, s.height, normalizeExt(file), sourcePath, Date.now());
+    stmtInsertImage.run(
+        groupId,
+        title,
+        file,
+        sha,
+        buf.length,
+        s.width,
+        s.height,
+        normalizeExt(file),
+        sourcePath,
+        Date.now(),
+    );
 }
 
 export function importFiles(files: string[], groupId: number): ApiResult<GalleryImportStats> {
@@ -443,6 +469,8 @@ export function pasteFromClipboard(groupId: number): ApiResult<GalleryImportStat
 
 const STAGING_NAME = "knock-gallery-candidates";
 const PAGE_TIMEOUT_MS = 15000;
+// 页面 HTML 响应体上限（正常页面 <2MB，8MB 已很宽裕）：无界 res.text() 读超大页会撑内存
+const PAGE_MAX_BYTES = 8 * 1024 * 1024;
 // 伪装常规浏览器 UA：不少站点对非浏览器 UA 直接 403（favicon 取器名会被拦）
 const BROWSER_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -629,7 +657,13 @@ export async function fetchPage(url: string): Promise<ApiResult<GalleryPageResul
         if (!/text\/html|application\/xhtml/.test(mime)) {
             return { ok: false, error: { kind: "gallery", code: "fetch" } };
         }
+        // 响应体上限（与 downloadCandidates 的 maxBytes 同哲学）：先看 content-length，
+        // 缺失/说谎时读后再兜一刀（字符数近似字节数，作上限够用）
+        if (Number(res.headers.get("content-length") ?? 0) > PAGE_MAX_BYTES) {
+            return { ok: false, error: { kind: "gallery", code: "fetch" } };
+        }
         html = await res.text();
+        if (html.length > PAGE_MAX_BYTES) return { ok: false, error: { kind: "gallery", code: "fetch" } };
         // res.url 是重定向后的最终地址，相对路径以它为基准
         return {
             ok: true,
@@ -655,6 +689,28 @@ const MIME_TO_FORMAT: Record<string, string> = {
     "image/svg+xml": "svg",
 };
 
+// 隐藏窗口渲染的并发上限：每次调用开一个独立渲染进程（BrowserWindow），翻页收集时
+// 渲染端逐页并行触发，不限流 N 页就是同时 N 个隐藏 Chromium 进程（内存峰值）
+const RENDER_LIMIT = 3;
+let renderRunning = 0;
+const renderWaiting: (() => void)[] = [];
+
+/** 简易信号量：超限的调用排队等前一个收尾（渲染再慢也有 15s 超时上限，槽位必然归还） */
+async function withRenderSlot<T>(job: () => Promise<T>): Promise<T> {
+    if (renderRunning >= RENDER_LIMIT) await new Promise<void>((r) => renderWaiting.push(r));
+    renderRunning++;
+    try {
+        return await job();
+    } finally {
+        renderRunning--;
+        renderWaiting.shift()?.();
+    }
+}
+
+export function pageDisplaySizes(url: string): Promise<ApiResult<null>> {
+    return withRenderSlot(() => renderPageSizes(url));
+}
+
 /** 隐藏窗口渲染页面，读每个图片 URL 在页面上的**实际显示尺寸**（CSS 布局结果，
  *  静态解析拿不到），结果并进会话 displaySizes。约定：
  *  - 图片允许真实加载（实测教训：images:false 下进入懒加载视口的图会「尝试加载→失败」
@@ -669,7 +725,7 @@ const MIME_TO_FORMAT: Record<string, string> = {
  *  - 同一 URL 出现多处取最大显示尺寸（既是缩略图又是正文大图 = 算显示过大的）。
  *  - 页面脚本真实执行：nodeIntegration 关、弹窗全拦，用完即销毁；失败/超时静默降级
  *    （结果写主进程控制台，pnpm dev 终端可排查）。 */
-export async function pageDisplaySizes(url: string): Promise<ApiResult<null>> {
+async function renderPageSizes(url: string): Promise<ApiResult<null>> {
     const win = new BrowserWindow({
         show: false,
         width: 1280,
@@ -945,12 +1001,27 @@ export function importCandidates(input: GalleryImportCandidatesInput): ApiResult
 // ── 图片批量操作 ──
 
 export function setImageTags(id: number, tags: string[]): ApiResult<null> {
-    if (!db.prepare("SELECT 1 FROM gallery_images WHERE id = ?").get(id)) return notFound;
+    if (!stmtImageExists.get(id)) return notFound;
     const list = [...new Set(tags)];
     db.transaction(() => {
         db.prepare("DELETE FROM gallery_tags WHERE image_id = ?").run(id);
         const ins = db.prepare("INSERT INTO gallery_tags (image_id, tag) VALUES (?, ?)");
         for (const t of list) ins.run(id, t);
+    })();
+    return { ok: true, data: null };
+}
+
+/** 批量给多张图添加标签（并集幂等）：表主键 (image_id, tag) 让 INSERT OR IGNORE 天然
+ *  去重；一个事务一次往返（取代渲染端对每张图 N 次串行调用的旧法）。
+ *  行已不存在的 id 静默跳过（同 wallAddInner：渲染端列表过期不炸） */
+export function addTagsToImages(ids: number[], tags: string[]): ApiResult<null> {
+    const list = [...new Set(tags)];
+    const ins = db.prepare("INSERT OR IGNORE INTO gallery_tags (image_id, tag) VALUES (?, ?)");
+    db.transaction(() => {
+        for (const id of ids) {
+            if (!stmtImageExists.get(id)) continue;
+            for (const t of list) ins.run(id, t);
+        }
     })();
     return { ok: true, data: null };
 }
@@ -971,19 +1042,22 @@ export function moveImages(ids: number[], groupId: number): ApiResult<null> {
     return { ok: true, data: null };
 }
 
+const stmtImageForDelete = db.prepare("SELECT id, file, format FROM gallery_images WHERE id = ?");
+const stmtDeleteImage = db.prepare("DELETE FROM gallery_images WHERE id = ?");
+
 export function deleteImages(ids: number[]): ApiResult<null> {
-    const get = db.prepare("SELECT id, file, format FROM gallery_images WHERE id = ?") as {
-        get: (id: number) => { id: number; file: string; format: string } | undefined;
-    };
-    const del = db.prepare("DELETE FROM gallery_images WHERE id = ?");
+    // 同 deleteGroup 的顺序约定：行删了就再也找不到磁盘上的图，先在事务里收集清单并删行，
+    // 文件 IO 放事务外（rmSync 不占事务持锁时间）
+    const files: { id: number; file: string; format: string }[] = [];
     db.transaction(() => {
         for (const id of ids) {
-            const row = get.get(id);
+            const row = stmtImageForDelete.get(id) as { id: number; file: string; format: string } | undefined;
             if (!row) continue;
-            removeImageFiles(row.id, row.file, row.format);
-            del.run(id);
+            files.push(row);
+            stmtDeleteImage.run(id);
         }
     })();
+    for (const f of files) removeImageFiles(f.id, f.file, f.format);
     return { ok: true, data: null };
 }
 
