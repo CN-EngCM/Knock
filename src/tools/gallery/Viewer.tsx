@@ -26,8 +26,9 @@ type Props = {
     onNav: (index: number) => void;
     onClose: () => void;
     onEditTags: (img: GalleryImage) => void;
-    /** 删除走父组件的确认弹窗（顺带处理列表移除与相邻跳转） */
-    onDelete: (img: GalleryImage) => void;
+    /** 删除走父组件的确认弹窗（顺带处理列表移除与相邻跳转）。
+     *  不传 = 该入口禁删（画廊视图打开时：策展面不做库级删除，与网格右键菜单同规） */
+    onDelete?: (img: GalleryImage) => void;
 };
 
 const MIN_SCALE = 0.05;
@@ -381,14 +382,16 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     >
                         <Tag size={15} />
                     </button>
-                    <button
-                        type="button"
-                        className={`${vbtn} hover:text-destructive`}
-                        title={t("gallery.view.delete")}
-                        onClick={() => onDelete(img)}
-                    >
-                        <Trash2 size={15} />
-                    </button>
+                    {onDelete && (
+                        <button
+                            type="button"
+                            className={`${vbtn} hover:text-destructive`}
+                            title={t("gallery.view.delete")}
+                            onClick={() => onDelete(img)}
+                        >
+                            <Trash2 size={15} />
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

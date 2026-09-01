@@ -54,8 +54,9 @@ function thumbsDir(): string {
     return dir;
 }
 
-// better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界断言成行类型（同 api.ts 的 as* 约定）
-type ImageRow = Omit<GalleryImage, "tags">;
+// better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界断言成行类型（同 api.ts 的 as* 约定）。
+// inWall 在 SQL 里是 EXISTS 的 0/1，查询收尾处再折成 boolean
+type ImageRow = Omit<GalleryImage, "tags" | "inWall"> & { inWall: number };
 
 /** 幂等播种内置收件箱：name 固定存「收件箱」，渲染端对 inbox=1 的组用 i18n 键显示，DB 名不参与展示 */
 function ensureInbox(): void {
@@ -201,7 +202,14 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
     // where 片段与参数严格按同一顺序推进（group → search → tags），别打乱
     const where: string[] = [];
     const params: (string | number)[] = [];
-    if (input.group !== "all") {
+    if (input.group === "wall") {
+        // 画廊视图：成员籍交集。私密图仅解锁视角下发（画廊是用户主动策展的，
+        // 解锁后要能放进放映——与「全部」解锁也不混入私密的规则刻意不同）
+        where.push("id IN (SELECT image_id FROM gallery_wall)");
+        if (!unlockedView(input.password)) {
+            where.push("group_id NOT IN (SELECT id FROM gallery_groups WHERE private = 1)");
+        }
+    } else if (input.group !== "all") {
         // 私密分组在锁定视角下拒绝（渲染端锁定时根本拿不到该组，属兜底）；
         // 组不存在照走空结果（与既有行为一致）
         const grp = db.prepare("SELECT private FROM gallery_groups WHERE id = ?").get(input.group) as
@@ -226,14 +234,19 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
         params.push(...input.tags);
     }
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    // ORDER BY 取自固定词表，无用户输入参与拼接
-    const orderBy = ORDER_BY[input.sort];
+    // ORDER BY 取自固定词表，无用户输入参与拼接。画廊的「时间」序 = 加入顺序（position，
+    // 即放映顺序）——对画廊来说 created_at（图片导入时间）反而是错的维度
+    const orderBy =
+        input.group === "wall" && input.sort === "time"
+            ? "(SELECT position FROM gallery_wall WHERE image_id = gallery_images.id) ASC"
+            : ORDER_BY[input.sort];
 
     const total = (db.prepare(`SELECT COUNT(*) AS n FROM gallery_images ${whereSql}`).get(...params) as { n: number })
         .n;
     const rows = db
         .prepare(
-            `SELECT id, group_id AS groupId, title, bytes, width, height, format, source_path AS sourcePath, created_at AS createdAt
+            `SELECT id, group_id AS groupId, title, bytes, width, height, format, source_path AS sourcePath, created_at AS createdAt,
+                    EXISTS(SELECT 1 FROM gallery_wall WHERE image_id = id) AS inWall
              FROM gallery_images ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
         )
         .all(...params, input.limit, input.offset) as ImageRow[];
@@ -251,7 +264,69 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
             tagsOf.set(r.image_id, list);
         }
     }
-    return { ok: true, data: { total, items: rows.map((r) => ({ ...r, tags: tagsOf.get(r.id) ?? [] })) } };
+    return {
+        ok: true,
+        data: { total, items: rows.map((r) => ({ ...r, inWall: r.inWall !== 0, tags: tagsOf.get(r.id) ?? [] })) },
+    };
+}
+
+// ── 画廊（放映墙）──
+// 跨分组的成员籍叠加：图片仍属原分组（gallery_images.group_id 不动），这里只记在册状态。
+// 快照语义：整组加入收的是那一刻的成员，之后组内增删不自动跟随（再整组加入 = 幂等并集）。
+// 图片删除/分组删除时 FK ON DELETE CASCADE 自动移出画廊（foreign_keys 已开，见 db.ts）。
+
+/** 画廊可见计数（侧栏行）：锁定视角剔除私密组的图——与画廊查询同一隔离边界 */
+export function wallCount(password?: string): ApiResult<{ count: number }> {
+    const privateFilter = unlockedView(password)
+        ? ""
+        : " AND group_id NOT IN (SELECT id FROM gallery_groups WHERE private = 1)";
+    const n = (
+        db
+            .prepare(
+                `SELECT COUNT(*) AS n FROM gallery_images
+                 WHERE id IN (SELECT image_id FROM gallery_wall)${privateFilter}`,
+            )
+            .get() as { n: number }
+    ).n;
+    return { ok: true, data: { count: n } };
+}
+
+/** 批量加入画廊（ids 须已过 zod 校验）；已在册/不存在的 id 幂等跳过，返回真正新增数 */
+function wallAddInner(ids: number[]): { added: number } {
+    const exists = db.prepare("SELECT 1 FROM gallery_images WHERE id = ?");
+    const ins = db.prepare("INSERT OR IGNORE INTO gallery_wall (image_id, position, added_at) VALUES (?, ?, ?)");
+    let pos = (db.prepare("SELECT IFNULL(MAX(position), 0) AS m FROM gallery_wall").get() as { m: number }).m;
+    let added = 0;
+    db.transaction(() => {
+        for (const id of ids) {
+            if (!exists.get(id)) continue; // 行已不存在（渲染端列表过期）：跳过不炸
+            const r = ins.run(id, pos + 1, Date.now());
+            if (r.changes > 0) {
+                pos += 1;
+                added += 1;
+            }
+        }
+    })();
+    return { added };
+}
+
+export function wallAdd(ids: number[]): ApiResult<{ added: number }> {
+    return { ok: true, data: wallAddInner(ids) };
+}
+
+/** 整组加入（含收件箱）：服务端直接取组内成员入册，免去渲染端翻页收集 id */
+export function wallAddGroup(groupId: number): ApiResult<{ added: number }> {
+    if (!getGroup(groupId)) return notFound;
+    const ids = db.prepare("SELECT id FROM gallery_images WHERE group_id = ?").all(groupId) as { id: number }[];
+    return { ok: true, data: wallAddInner(ids.map((r) => r.id)) };
+}
+
+export function wallRemove(ids: number[]): ApiResult<null> {
+    const del = db.prepare("DELETE FROM gallery_wall WHERE image_id = ?");
+    db.transaction(() => {
+        for (const id of ids) del.run(id);
+    })();
+    return { ok: true, data: null };
 }
 
 export function allTags(): ApiResult<string[]> {

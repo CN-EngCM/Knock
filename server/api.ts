@@ -52,6 +52,10 @@ import {
     deleteTag as galleryDeleteTag,
     revealImage as galleryRevealImage,
     unlockLibrary as galleryUnlock,
+    wallAdd as galleryWallAdd,
+    wallAddGroup as galleryWallAddGroup,
+    wallCount as galleryWallCount,
+    wallRemove as galleryWallRemove,
 } from "./gallery";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { app, dialog } from "electron";
@@ -262,6 +266,15 @@ export interface MpApi {
     /** 系统默认程序打开 / 资源管理器定位：磁盘路径不出主进程，按 id 代劳 */
     galleryOpenImage(id: number): Promise<ApiResult<null>>;
     galleryRevealImage(id: number): Promise<ApiResult<null>>;
+    // ── 画廊（放映墙）：跨分组成员籍（图片仍属原分组）；快照语义，重复加入幂等并集 ──
+    /** 批量加入画廊，返回真正新增数（渲染端 toast 区分「已加入 n 张」与「已在画廊」） */
+    galleryWallAdd(ids: number[]): Promise<ApiResult<{ added: number }>>;
+    /** 整组加入画廊（服务端直取组内成员，含收件箱） */
+    galleryWallAddGroup(groupId: number): Promise<ApiResult<{ added: number }>>;
+    /** 从画廊移除（只动成员籍，图片本体不动） */
+    galleryWallRemove(ids: number[]): Promise<ApiResult<null>>;
+    /** 画廊可见计数（侧栏行；锁定视角剔除私密组的图） */
+    galleryWallCount(password?: string): Promise<ApiResult<{ count: number }>>;
     // ── 从网址导入：渲染端驱动翻页/分批下载（进度与取消自然落在渲染端循环里），
     //    主进程只维护一个暂存会话（候选字节在 os.tmpdir，入库才进 gallery/）──
     galleryCollectStart(): Promise<ApiResult<null>>;
@@ -893,6 +906,26 @@ export const apiHandlers: ApiHandlers = {
     galleryRevealImage: async (id) => {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
         return galleryRevealImage(id);
+    },
+    // ── 画廊：同图库其余部分，这里只做入口校验与转发 ──
+    galleryWallAdd: async (ids) => {
+        const v = guard(galleryIdsSchema, { ids });
+        if (!v) return badRequest;
+        return galleryWallAdd(v.ids);
+    },
+    galleryWallAddGroup: async (groupId) => {
+        if (!Number.isInteger(groupId) || groupId <= 0) return badRequest;
+        return galleryWallAddGroup(groupId);
+    },
+    galleryWallRemove: async (ids) => {
+        const v = guard(galleryIdsSchema, { ids });
+        if (!v) return badRequest;
+        return galleryWallRemove(v.ids);
+    },
+    galleryWallCount: async (password) => {
+        const v = guard(galleryOptionalPasswordSchema, { password });
+        if (!v) return badRequest;
+        return galleryWallCount(v.password);
     },
     // ── 从网址导入：同样只做入口校验与转发（业务见 server/gallery.ts 的「从网址导入」一节）──
     galleryCollectStart: async () => galleryCollectStart(),

@@ -254,11 +254,12 @@ export const galleryTagsSchema = z.object({ tags: z.array(z.string().trim().min(
 // 单个标签词（词级删除用，约束同集合里的单条）
 export const galleryTagSchema = z.object({ tag: z.string().trim().min(1).max(32) });
 
-// 图片查询：group 数字 = 限定分组，"all" = 全库；tags 命中图片自身的标签。
-// password 是图库密码（工具级一个，明文存 settings 表）：锁定时由渲染端随查询携带，
-// 携带正确密码 = 解锁视角（私密分组内容可见），见 server/gallery.ts。
+// 图片查询：group 数字 = 限定分组，"all" = 全库（私密图永不混入），"wall" = 画廊成员
+// （私密图仅解锁视角下发——画廊是用户主动策展的，与「全部」的隔离规则不同）；
+// tags 命中图片自身的标签。password 是图库密码（工具级一个，明文存 settings 表）：
+// 锁定时由渲染端随查询携带，携带正确密码 = 解锁视角（私密分组内容可见），见 server/gallery.ts。
 export const galleryQuerySchema = z.object({
-    group: z.union([z.number().int().positive(), z.literal("all")]),
+    group: z.union([z.number().int().positive(), z.literal("all"), z.literal("wall")]),
     tags: z.array(z.string().trim().min(1).max(32)).max(20),
     search: z.string().trim().max(200),
     sort: z.enum(["time", "name", "size"]),
@@ -421,6 +422,8 @@ export type GalleryImage = {
     /** 导入时间戳 ms */
     createdAt: number;
     tags: string[];
+    /** 是否已在画廊（普通视图右键「加入画廊」的置灰依据；画廊视图里的行恒 true） */
+    inWall: boolean;
 };
 
 export type GalleryImportStats = { imported: number; skipped: number };

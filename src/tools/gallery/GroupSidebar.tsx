@@ -16,9 +16,13 @@ type Props = {
     groups: GalleryGroup[] | null;
     /** 「全部图片」伪条目的计数（各组之和；锁定视角的 groups 本就不含私密分组） */
     allCount: number;
-    active: number | "all";
+    /** 「画廊」伪条目的计数（锁定视角已剔除私密图，与画廊查询同一边界） */
+    wallCount: number;
+    active: number | "all" | "wall";
     /** 分组标记/取消私密（标记时未设图库密码由调用方先引导设密码） */
     onTogglePrivate: (group: GalleryGroup, isPrivate: boolean) => void;
+    /** 整组加入画廊（快照语义：此刻组内成员一次性入册） */
+    onWallAddGroup: (group: GalleryGroup) => void;
     /** 图库密码是否已设（未设 = 私密体系未启用，锁入口不显示——同主流相册未开无入口） */
     pwSet: boolean;
     /** true = 锁定中（点锁弹密码框解锁）；false = 已解锁（点开锁重新锁定） */
@@ -32,7 +36,7 @@ type Props = {
     onToggleTag: (tag: string) => void;
     /** 词级删除某个标签（从所有图片移除，调用方配确认框） */
     onTagDelete: (tag: string) => void;
-    onSelect: (group: number | "all") => void;
+    onSelect: (group: number | "all" | "wall") => void;
     /** 返回 true = 创建成功（收起内联输入） */
     onCreate: (name: string) => Promise<boolean>;
     onRename: (id: number, name: string) => void;
@@ -43,14 +47,16 @@ type Props = {
     onUrlImport: () => void;
 };
 
-// 左侧分组栏：全部图片（伪条目）→ 收件箱（内置，不可删/改名）→ 用户分组（创建序）
-// → 底部「＋ 新建分组」与「从网址导入」。分组行右键菜单 + 文件拖放目标（dragover 高亮）。
+// 左侧分组栏：全部图片（伪条目）→ 收件箱（内置，不可删/改名）→ 画廊（伪条目）→ 用户分组
+// （创建序）→ 底部「＋ 新建分组」与「从网址导入」。分组行右键菜单 + 文件拖放目标（dragover 高亮）。
 // 私密分组只在解锁视角出现（锁定时后端不下发，这里无需处理锁定态）。
 export function GroupSidebar({
     groups,
     allCount,
+    wallCount,
     active,
     onTogglePrivate,
+    onWallAddGroup,
     pwSet,
     locked,
     onLockClick,
@@ -192,6 +198,9 @@ export function GroupSidebar({
                     <ContextMenuItem onClick={() => onTogglePrivate(group, !group.private)}>
                         {group.private ? t("gallery.group.clearPrivate") : t("gallery.group.setPrivate")}
                     </ContextMenuItem>
+                    <ContextMenuItem onClick={() => onWallAddGroup(group)}>
+                        {t("gallery.wall.addGroup")}
+                    </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem variant="destructive" onClick={() => onDelete(group)}>
                         {t("gallery.menu.delete")}
@@ -213,6 +222,11 @@ export function GroupSidebar({
                         <span className="flex-none text-[10.5px] tabular-nums text-muted">{allCount}</span>
                     </div>
                     {inbox && groupEntry(inbox)}
+                    {/* 「画廊」伪条目：跨分组的放映池，count 由后端按锁定视角算好 */}
+                    <div className={rowCls(active === "wall")} onClick={() => onSelect("wall")}>
+                        <span className="min-w-0 flex-1 truncate">{t("gallery.wall")}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-muted">{wallCount}</span>
+                    </div>
                     {userGroups.map((g) => groupEntry(g))}
                     {groups === null && <div className="px-2 py-1.5 text-[12px] text-muted">…</div>}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,6 +11,7 @@ import type { MessageKey } from "@/i18n/zh";
 import { GroupSidebar } from "./gallery/GroupSidebar";
 import { ImageGrid } from "./gallery/ImageGrid";
 import { PasswordDialog } from "./gallery/PasswordDialog";
+import { Slideshow } from "./gallery/Slideshow";
 import { TagEditor } from "./gallery/TagEditor";
 import { UrlImport } from "./gallery/UrlImport";
 import { Viewer } from "./gallery/Viewer";
@@ -26,7 +27,7 @@ const DEBOUNCE_MS = 350; // 搜索输入防抖
 const IMPORT_BATCH = 16; // 导入分批大小（渲染端约定）
 
 type SortId = "time" | "name" | "size";
-type Query = { group: number | "all"; tags: string[]; search: string; sort: SortId };
+type Query = { group: number | "all" | "wall"; tags: string[]; search: string; sort: SortId };
 type ImportState = { total: number; done: number; skipped: number };
 type TagTarget = { mode: "image"; image: GalleryImage } | { mode: "batch"; ids: number[] };
 type ConfirmTarget =
@@ -76,6 +77,9 @@ export default function GalleryTool() {
     const [pwTarget, setPwTarget] = useState<PwTarget | null>(null);
     // 从网址导入：入口在侧栏（导入内容自动单独成组，不落当前视图）
     const [urlImport, setUrlImport] = useState(false);
+    // 画廊：侧栏计数 + 放映覆盖层（快照取全量，见 Slideshow）
+    const [wallCount, setWallCount] = useState(0);
+    const [slideshow, setSlideshow] = useState(false);
 
     function exitSelectMode() {
         setSelectMode(false);
@@ -103,14 +107,16 @@ export default function GalleryTool() {
      *  pw = 解锁密码：锁定视角（缺省）下私密分组不随列表下发；密码状态顺带同步
      *  （设置页改密后，锁入口显隐与解锁态在这里追平） */
     async function refreshGroups(pw?: string): Promise<GalleryGroup[]> {
-        const [g, tg, ps] = await Promise.all([
+        const [g, tg, ps, wc] = await Promise.all([
             api.galleryGroups(pw),
             api.galleryAllTags(),
             api.galleryPasswordState(),
+            api.galleryWallCount(pw),
         ]);
         if (g.ok) setGroups(g.data);
         if (tg.ok) setAllTags(tg.data);
         if (ps.ok) setPwSet(ps.data.has);
+        if (wc.ok) setWallCount(wc.data.count);
         return g.ok ? g.data : [];
     }
 
@@ -251,6 +257,7 @@ export default function GalleryTool() {
             // ToolsZone 用 display:none 保活非活动 tab：offsetParent 为 null 时按键不归我们管
             if (rootRef.current?.offsetParent == null) return false;
             if (viewerIndex != null) return false; // 查看器自己吃按键
+            if (slideshow) return false; // 放映层同理
             if (document.querySelector("[role=dialog]")) return false; // 弹窗打开时不抢
             return true;
         }
@@ -268,13 +275,13 @@ export default function GalleryTool() {
         }
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [items, viewerIndex, selectMode]);
+    }, [items, viewerIndex, selectMode, slideshow]);
 
     // ── 粘贴导入 ──
-    /** 粘贴/导入落点：组视图 = 当前组；all 视图 = 收件箱（groups 未就绪先刷一把） */
+    /** 粘贴/导入落点：组视图 = 当前组；all/wall 视图 = 收件箱（groups 未就绪先刷一把） */
     async function targetGroupId(): Promise<number | null> {
         const q = queryRef.current;
-        if (q.group !== "all") return q.group;
+        if (q.group !== "all" && q.group !== "wall") return q.group;
         const gs = groupsRef.current ?? (await refreshGroups(unlockedRef.current ?? undefined));
         return gs.find((g) => g.inbox)?.id ?? null;
     }
@@ -408,12 +415,13 @@ export default function GalleryTool() {
 
     // ── 图库密码（工具级一个）：解锁态 = 手上握着明文密码，锁定开关在工具条 ──
 
-    /** 锁定：立即收回私密内容。上锁永远免密；清掉可能含私密图的弹窗/查看器，
+    /** 锁定：立即收回私密内容。上锁永远免密；清掉可能含私密图的弹窗/查看器/放映层，
      *  当前组是私密则退回全部。分组表与「全部」由 [unlocked] effect 与主查询 effect 重拉 */
     function lockLibrary() {
         setUnlocked(null);
         setPwTarget(null);
         setViewerIndex(null);
+        setSlideshow(false);
         setTagTarget(null);
         setConfirmTarget(null);
         const q = queryRef.current;
@@ -493,6 +501,59 @@ export default function GalleryTool() {
     function askDeleteMenu() {
         if (menuIds.length === 0) return;
         setConfirmTarget({ kind: "images", ids: [...menuIds] });
+    }
+
+    // ── 画廊（放映墙）：成员籍操作，图片本体与分组归属都不动 ──
+    // 三者都不走 refreshAll（reloadTick 会把网格滚动归零）：画廊成员籍不影响当前视图
+    // 的行集与顺序，本地补丁 + 重拉侧栏计数即可，滚动位置原地不动（用户实测反馈）。
+
+    /** 加入结果统一提示：有新增报数量，全在册报「已在画廊」（幂等并集的诚实反馈） */
+    function wallToast(added: number) {
+        toast.success(added > 0 ? fmt(t("gallery.wall.added"), { n: added }) : t("gallery.wall.already"));
+    }
+
+    /** 重拉侧栏（分组计数 + 画廊计数），不动网格 */
+    function refreshWallCount() {
+        void refreshGroups(unlockedRef.current ?? undefined);
+    }
+
+    async function wallAddMenu() {
+        if (menuIds.length === 0) return;
+        const r = await api.galleryWallAdd(menuIds);
+        if (!r.ok) {
+            toast.error(t("toast.error"));
+            return;
+        }
+        wallToast(r.data.added);
+        // 只补 inWall 标记（右键「加入画廊」的置灰依据），行集不变
+        setItems((prev) => prev.map((it) => (menuIds.includes(it.id) ? { ...it, inWall: true } : it)));
+        refreshWallCount();
+    }
+    async function wallRemoveMenu() {
+        if (menuIds.length === 0) return;
+        const r = await api.galleryWallRemove(menuIds);
+        if (!r.ok) {
+            toast.error(t("toast.error"));
+            return;
+        }
+        toast.success(fmt(t("gallery.wall.removed"), { n: menuIds.length }));
+        // 画廊视图内就地过滤（同查看器删除的本地补丁先例）：行消失、滚动不跳
+        const removed = new Set(menuIds);
+        setItems((prev) => prev.filter((it) => !removed.has(it.id)));
+        setTotal((v) => Math.max(0, v - removed.size));
+        setSelectedIds((prev) => new Set([...prev].filter((id) => !removed.has(id))));
+        refreshWallCount();
+    }
+    async function wallAddGroup(group: GalleryGroup) {
+        const r = await api.galleryWallAddGroup(group.id);
+        if (!r.ok) {
+            toast.error(t("toast.error"));
+            return;
+        }
+        wallToast(r.data.added);
+        // 可见行里属于该组的补上 inWall；组内其余行不在当前视图，无需动
+        setItems((prev) => prev.map((it) => (it.groupId === group.id ? { ...it, inWall: true } : it)));
+        refreshWallCount();
     }
 
     // ── 确认删除（图片批量 / 分组 / 标签词）──
@@ -628,8 +689,10 @@ export default function GalleryTool() {
             <GroupSidebar
                 groups={groups}
                 allCount={allCount}
+                wallCount={wallCount}
                 active={query.group}
                 onTogglePrivate={togglePrivate}
+                onWallAddGroup={(g) => void wallAddGroup(g)}
                 pwSet={pwSet}
                 locked={unlocked == null}
                 onLockClick={() => (unlocked == null ? setPwTarget({ mode: "unlock" }) : lockLibrary())}
@@ -683,6 +746,19 @@ export default function GalleryTool() {
                             ))}
                         </SelectContent>
                     </Select>
+                    {/* 画廊视图专属：放映（空画廊置灰；放映层自取画廊快照，不受当前搜索/排序影响） */}
+                    {query.group === "wall" && (
+                        <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled={wallCount === 0}
+                            onClick={() => setSlideshow(true)}
+                        >
+                            <Play />
+                            {t("gallery.wall.play")}
+                        </Button>
+                    )}
                 </div>
 
                 {/* 导入进度 */}
@@ -711,6 +787,8 @@ export default function GalleryTool() {
                     selectMode={selectMode}
                     groups={groups ?? []}
                     menuIds={menuIds}
+                    wallView={query.group === "wall"}
+                    onWall={() => (query.group === "wall" ? void wallRemoveMenu() : void wallAddMenu())}
                     resetKey={resetKey}
                     dropHint={dragOver}
                     onOpen={(i) => {
@@ -765,7 +843,12 @@ export default function GalleryTool() {
                     onNav={setViewerIndex}
                     onClose={() => setViewerIndex(null)}
                     onEditTags={(img) => setTagTarget({ mode: "image", image: img })}
-                    onDelete={(img) => setConfirmTarget({ kind: "images", ids: [img.id], fromViewer: true })}
+                    // 画廊视图打开的查看器不带删除（策展面禁删，与网格右键菜单同规）
+                    onDelete={
+                        query.group === "wall"
+                            ? undefined
+                            : (img) => setConfirmTarget({ kind: "images", ids: [img.id], fromViewer: true })
+                    }
                 />
             )}
 
@@ -791,6 +874,8 @@ export default function GalleryTool() {
             )}
 
             {urlImport && <UrlImport onClose={() => setUrlImport(false)} onImported={refreshAll} />}
+
+            {slideshow && <Slideshow password={unlocked ?? undefined} onClose={() => setSlideshow(false)} />}
 
             <ConfirmDialog
                 open={confirmTarget !== null}

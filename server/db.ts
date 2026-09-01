@@ -84,6 +84,14 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_gallery_tags_tag ON gallery_tags(tag);
 
+  -- 画廊（放映墙）：跨分组的成员籍叠加——图片仍属原分组，这里只记「在不在画廊」。
+  -- position = 加入顺序（放映顺序，同批按入参顺序递增）；图片删除时 FK 级联自动移出
+  CREATE TABLE IF NOT EXISTS gallery_wall (
+    image_id INTEGER PRIMARY KEY REFERENCES gallery_images(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    added_at INTEGER NOT NULL
+  );
+
   -- 分组级 tag 已随功能移除：旧库顺手清表（幂等），新库不再创建
   DROP TABLE IF EXISTS gallery_group_tags;
 

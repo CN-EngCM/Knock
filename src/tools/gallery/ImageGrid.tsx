@@ -25,6 +25,10 @@ type Props = {
     groups: GalleryGroup[];
     /** 右键菜单的作用目标（选中集或单图），父组件据此执行批量动作 */
     menuIds: number[];
+    /** 当前是否画廊视图：右键出「从画廊移除」（普通视图出「加入画廊」，单选目标已在册则置灰） */
+    wallView: boolean;
+    /** 右键「加入画廊/从画廊移除」（父组件按 wallView 分派） */
+    onWall: () => void;
     /** 变化时把滚动位置归零（查询切换/刷新） */
     resetKey: string;
     /** 根容器正在拖文件悬停：网格区给个底色反馈 */
@@ -79,6 +83,8 @@ export function ImageGrid({
     selectMode,
     groups,
     menuIds,
+    wallView,
+    onWall,
     resetKey,
     dropHint,
     onOpen,
@@ -140,10 +146,14 @@ export function ImageGrid({
             {status === "done" && items.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                     <span className="text-[13px] text-dim">{t("gallery.empty")}</span>
-                    <span className="text-[11.5px] text-muted">{t("gallery.emptyHint")}</span>
-                    <Button type="button" size="sm" onClick={onImportCta}>
-                        {t("gallery.import")}
-                    </Button>
+                    <span className="text-[11.5px] text-muted">
+                        {t(wallView ? "gallery.wall.emptyHint" : "gallery.emptyHint")}
+                    </span>
+                    {!wallView && (
+                        <Button type="button" size="sm" onClick={onImportCta}>
+                            {t("gallery.import")}
+                        </Button>
+                    )}
                 </div>
             )}
 
@@ -213,17 +223,31 @@ export function ImageGrid({
                                 <ContextMenuItem onClick={onAddTags}>
                                     {menuIds.length === 1 ? t("gallery.menu.editTags") : t("gallery.menu.addTags")}
                                 </ContextMenuItem>
+                                {/* 单选且已在册 → 置灰（比点了没反应诚实）；多选混合态保持可点，后端幂等跳过 */}
+                                <ContextMenuItem
+                                    disabled={!wallView && menuIds.length === 1 && targets[0]?.inWall === true}
+                                    onClick={onWall}
+                                >
+                                    {wallView ? t("gallery.wall.remove") : t("gallery.wall.add")}
+                                    {!wallView && menuIds.length > 1 ? ` (${menuIds.length})` : ""}
+                                </ContextMenuItem>
                                 <ContextMenuItem disabled={menuIds.length !== 1} onClick={onOpenSingle}>
                                     {t("gallery.menu.openWith")}
                                 </ContextMenuItem>
                                 <ContextMenuItem disabled={menuIds.length !== 1} onClick={onRevealSingle}>
                                     {t("gallery.menu.reveal")}
                                 </ContextMenuItem>
-                                <ContextMenuSeparator />
-                                <ContextMenuItem variant="destructive" onClick={onDelete}>
-                                    {t("gallery.menu.delete")}
-                                    {menuIds.length > 1 ? ` (${menuIds.length})` : ""}
-                                </ContextMenuItem>
+                                {/* 画廊视图是策展面：只有「移出」，库级删除（破坏性）不在此提供，
+                                    防整理放映内容时顺手误删原图——要删去分组视图删 */}
+                                {!wallView && (
+                                    <>
+                                        <ContextMenuSeparator />
+                                        <ContextMenuItem variant="destructive" onClick={onDelete}>
+                                            {t("gallery.menu.delete")}
+                                            {menuIds.length > 1 ? ` (${menuIds.length})` : ""}
+                                        </ContextMenuItem>
+                                    </>
+                                )}
                             </ContextMenuContent>
                         </ContextMenu>
                     );
