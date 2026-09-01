@@ -56,6 +56,7 @@ db.exec(`
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT    NOT NULL,
     inbox      INTEGER NOT NULL DEFAULT 0,   -- 1 = 内置收件箱（不可删/改名/打 tag）
+    private    INTEGER NOT NULL DEFAULT 0,   -- 1 = 私密分组：图库锁定（未携有效密码）时不随列表下发
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_gallery_groups_inbox ON gallery_groups(inbox, id);
@@ -94,6 +95,20 @@ db.exec(`
 const expertCols = db.prepare("PRAGMA table_info(experts)").all() as { name: string }[];
 if (!expertCols.some((c) => c.name === "effort")) {
     db.exec("ALTER TABLE experts ADD COLUMN effort TEXT NOT NULL DEFAULT 'default'");
+}
+
+// 存量库幂等迁移：gallery_groups 的 private 列是后加的（私密分组），PRAGMA 探测后
+// ALTER 补列。同时把未发布旧方案遗留在库里的 password 列（非空 = 私密组）迁成
+// private 标记后废弃——图库密码已统一存 settings 表，分组行不再存密码。
+const galleryGroupCols = db.prepare("PRAGMA table_info(gallery_groups)").all() as { name: string }[];
+if (!galleryGroupCols.some((c) => c.name === "private")) {
+    db.exec("ALTER TABLE gallery_groups ADD COLUMN private INTEGER NOT NULL DEFAULT 0");
+    if (galleryGroupCols.some((c) => c.name === "password")) {
+        db.exec(`
+          UPDATE gallery_groups SET private = 1 WHERE password IS NOT NULL;
+          ALTER TABLE gallery_groups DROP COLUMN password;
+        `);
+    }
 }
 
 // 存量库幂等迁移：items 的 CHECK 加入 'command' 需重建表（SQLite 改不了既有约束，

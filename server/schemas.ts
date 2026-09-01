@@ -251,7 +251,12 @@ export const galleryGroupSchema = z.object({ name: z.string().trim().min(1).max(
 // 标签集合：图片与分组通用，单个 1–32 字符，一次最多 50 个
 export const galleryTagsSchema = z.object({ tags: z.array(z.string().trim().min(1).max(32)).max(50) });
 
-// 图片查询：group 数字 = 限定分组，"all" = 全库；tags 命中图片自身或所属分组的标签（组 tag 联动）
+// 单个标签词（词级删除用，约束同集合里的单条）
+export const galleryTagSchema = z.object({ tag: z.string().trim().min(1).max(32) });
+
+// 图片查询：group 数字 = 限定分组，"all" = 全库；tags 命中图片自身的标签。
+// password 是图库密码（工具级一个，明文存 settings 表）：锁定时由渲染端随查询携带，
+// 携带正确密码 = 解锁视角（私密分组内容可见），见 server/gallery.ts。
 export const galleryQuerySchema = z.object({
     group: z.union([z.number().int().positive(), z.literal("all")]),
     tags: z.array(z.string().trim().min(1).max(32)).max(20),
@@ -259,8 +264,17 @@ export const galleryQuerySchema = z.object({
     sort: z.enum(["time", "name", "size"]),
     limit: z.number().int().min(1).max(200),
     offset: z.number().int().min(0),
+    password: z.string().min(1).max(64).optional(),
 });
 export type GalleryQueryInput = z.infer<typeof galleryQuerySchema>;
+
+// 图库密码本体（明文本地存储）：设置/修改/解锁共用；不 trim——设什么存什么，解锁输一样即可
+export const galleryPasswordSchema = z.object({ password: z.string().min(1).max(64) });
+
+// 列表/标签池请求可携带的密码（缺省 = 锁定视角：私密分组不下发）
+export const galleryOptionalPasswordSchema = z.object({
+    password: z.string().min(1).max(64).optional(),
+});
 
 // 导入：单次上限 64 个文件（渲染端按 ≤16 一批分次调用，这里是不信任前端的硬兜底）
 export const galleryImportSchema = z.object({
@@ -270,6 +284,60 @@ export const galleryImportSchema = z.object({
 
 // 批量 id（删除/移动共用）；移动另带 groupId，处理器追加 Number.isInteger 兜底
 export const galleryIdsSchema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) });
+
+// ── 从网址导入：渲染端驱动翻页/分批下载（进度与取消自然落在渲染端循环里），主进程单次请求无状态 ──
+
+// 只认 http(s)：data: / javascript: / file: 等一律拒绝
+const httpUrl = z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .refine((u) => /^https?:\/\//i.test(u));
+
+export const galleryPageSchema = z.object({ url: httpUrl });
+
+// 下载一批候选：referer 为防盗链来源（会话首页地址，直链场景传空串）
+export const galleryDownloadSchema = z.object({
+    referer: z.string().trim().max(2000),
+    urls: z.array(httpUrl).min(1).max(50),
+    maxBytes: z.number().int().min(1).max(2_000_000_000),
+    concurrency: z.number().int().min(1).max(16),
+    timeoutMs: z.number().int().min(3000).max(120000),
+});
+export type GalleryDownloadInput = z.infer<typeof galleryDownloadSchema>;
+
+// 候选入库：indices 为暂存编号（渲染端按 ≤16 一批分次调用，与 galleryImport 同哲学）
+export const galleryImportCandidatesSchema = z.object({
+    indices: z.array(z.number().int().positive()).min(1).max(64),
+    groupId: z.number().int().positive(),
+});
+export type GalleryImportCandidatesInput = z.infer<typeof galleryImportCandidatesSchema>;
+
+// 抓页结果：isImage = 输入本身就是图片直链（无翻页语义，imageUrls 即单张候选）；
+// title = <title> 文本（服务端已清洗截断），导入单独成组时的组名首选
+export type GalleryPageResult = {
+    imageUrls: string[];
+    nextUrl: string | null;
+    isImage: boolean;
+    title: string | null;
+};
+
+// 候选条目：ok=false 为失败占位（下载失败/超时/超体积），无暂存编号不可入库
+export type GalleryCandidate =
+    | {
+          ok: true;
+          index: number; // 暂存编号：导入与 mpimg://cand/<n> 缩略图寻址共用
+          url: string;
+          format: string;
+          width: number; // 文件真实宽（解不出=0，渲染端尺寸过滤自然视为不达标）
+          height: number;
+          bytes: number;
+          displayW: number; // 页面上的显示宽（隐藏窗口渲染探得；0 = 未知，显示过滤时视为不达标）
+          displayH: number;
+          inLibrary: boolean; // sha256 已在库：导入必跳过，渲染端标徽标默认不勾
+      }
+    | { ok: false; url: string; reason: "fetch" | "too-large" | "not-image" };
 
 // ── 呼出热键预设 ──
 // id 是前后端唯一事实来源：前端下拉框、zod 校验、electron/hotkey.ts 的
@@ -333,6 +401,8 @@ export type GalleryGroup = {
     name: string;
     /** 1 = 内置收件箱：不可删/改名，展示名走 i18n（DB 名不参与显示） */
     inbox: boolean;
+    /** 私密分组：图库锁定（未携有效密码）时整行不下发——渲染端无需自行过滤 */
+    private: boolean;
     count: number;
 };
 

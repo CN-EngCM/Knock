@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlus, SquareCheckBig } from "lucide-react";
+import { ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, type GalleryGroup, type GalleryImage } from "@/api/client";
@@ -9,7 +10,9 @@ import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
 import { GroupSidebar } from "./gallery/GroupSidebar";
 import { ImageGrid } from "./gallery/ImageGrid";
+import { PasswordDialog } from "./gallery/PasswordDialog";
 import { TagEditor } from "./gallery/TagEditor";
+import { UrlImport } from "./gallery/UrlImport";
 import { Viewer } from "./gallery/Viewer";
 import { FORMATS, extOf, fmt } from "./gallery/util";
 
@@ -26,7 +29,13 @@ type SortId = "time" | "name" | "size";
 type Query = { group: number | "all"; tags: string[]; search: string; sort: SortId };
 type ImportState = { total: number; done: number; skipped: number };
 type TagTarget = { mode: "image"; image: GalleryImage } | { mode: "batch"; ids: number[] };
-type ConfirmTarget = { kind: "images"; ids: number[]; fromViewer?: boolean } | { kind: "group"; group: GalleryGroup };
+type ConfirmTarget =
+    | { kind: "images"; ids: number[]; fromViewer?: boolean }
+    | { kind: "group"; group: GalleryGroup }
+    | { kind: "tag"; tag: string };
+/** 密码框目标：unlock = 解锁图库；set = 未设密码时「设为私密」的引导（设完顺手标记
+ *  thenPrivateId 组）；修改/清除密码走设置弹窗的图库分节，不经这里 */
+type PwTarget = { mode: "unlock" | "set"; thenPrivateId?: number };
 
 const SORTS: readonly { id: SortId; key: MessageKey }[] = [
     { id: "time", key: "gallery.sort.time" },
@@ -60,6 +69,13 @@ export default function GalleryTool() {
     const [viewerIndex, setViewerIndex] = useState<number | null>(null);
     const [tagTarget, setTagTarget] = useState<TagTarget | null>(null);
     const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
+    // 图库密码与解锁态：解锁 = 持有明文密码（随列表/查询携带）。只存组件 state
+    // ——工具关闭即卸载释放，重开回到锁定（解锁不跨会话，用户需求）
+    const [pwSet, setPwSet] = useState(false); // 是否设了图库密码（锁定开关显隐的依据）
+    const [unlocked, setUnlocked] = useState<string | null>(null);
+    const [pwTarget, setPwTarget] = useState<PwTarget | null>(null);
+    // 从网址导入：入口在侧栏（导入内容自动单独成组，不落当前视图）
+    const [urlImport, setUrlImport] = useState(false);
 
     function exitSelectMode() {
         setSelectMode(false);
@@ -77,26 +93,38 @@ export default function GalleryTool() {
     queryRef.current = query;
     const groupsRef = useRef(groups);
     groupsRef.current = groups;
+    const unlockedRef = useRef(unlocked);
+    unlockedRef.current = unlocked;
 
-    const allCount = (groups ?? []).reduce((s, g) => s + g.count, 0);
+    // 「全部图片」计数与后端隔离边界一致：私密分组永远不计（解锁与否都不进全部视图）
+    const allCount = (groups ?? []).filter((g) => !g.private).reduce((s, g) => s + g.count, 0);
 
-    /** 重拉分组 + 全局 tag 池，返回新分组表（供「all 视图落收件箱」即时取用） */
-    async function refreshGroups(): Promise<GalleryGroup[]> {
-        const [g, tg] = await Promise.all([api.galleryGroups(), api.galleryAllTags()]);
+    /** 重拉分组 + 全局 tag 池 + 密码状态，返回新分组表（供「all 视图落收件箱」即时取用）。
+     *  pw = 解锁密码：锁定视角（缺省）下私密分组不随列表下发；密码状态顺带同步
+     *  （设置页改密后，锁入口显隐与解锁态在这里追平） */
+    async function refreshGroups(pw?: string): Promise<GalleryGroup[]> {
+        const [g, tg, ps] = await Promise.all([
+            api.galleryGroups(pw),
+            api.galleryAllTags(),
+            api.galleryPasswordState(),
+        ]);
         if (g.ok) setGroups(g.data);
         if (tg.ok) setAllTags(tg.data);
+        if (ps.ok) setPwSet(ps.data.has);
         return g.ok ? g.data : [];
     }
 
     /** 任何变更操作后的统一刷新：重拉 groups + tags，图片查询重置到第一页 */
     function refreshAll() {
-        void refreshGroups();
+        void refreshGroups(unlockedRef.current ?? undefined);
         setReloadTick((v) => v + 1);
     }
 
+    // 解锁/锁定切换：分组表内容集随之变化，统一在此驱动（挂载首拉也走这里，
+    // 密码状态一并同步）；图片重查由主查询 effect 对 unlocked 的依赖自动完成
     useEffect(() => {
-        void refreshGroups();
-    }, []);
+        void refreshGroups(unlocked ?? undefined);
+    }, [unlocked]);
 
     // 图片查询主链路：依赖一变立即查（防抖只作用于打字，见 searchInput effect）；
     // 序号对不上的晚归旧包直接丢弃
@@ -113,6 +141,7 @@ export default function GalleryTool() {
                 sort: query.sort,
                 limit: PAGE,
                 offset: 0,
+                password: unlocked ?? undefined,
             })
             .then((r) => {
                 if (my !== seq.current) return;
@@ -122,11 +151,19 @@ export default function GalleryTool() {
                 } else {
                     setItems([]);
                     setTotal(0);
-                    toast.error(t("toast.error"));
+                    // locked = 解锁态已失效（如密码在设置里被改掉）：回到锁定并重拉
+                    // （[unlocked] effect 随之收回私密分组），退回全部并提示重新解锁
+                    if (r.error.kind === "gallery" && r.error.code === "locked") {
+                        setUnlocked(null);
+                        setQuery((q) => ({ ...q, group: "all" }));
+                        toast.error(t("gallery.pw.locked"));
+                    } else {
+                        toast.error(t("toast.error"));
+                    }
                 }
                 setStatus("done");
             });
-    }, [query, reloadTick, t]);
+    }, [query, reloadTick, unlocked, t]);
 
     // 搜索框防抖进 query（trim 后相同就不动对象，避免多余 refetch）
     useEffect(() => {
@@ -160,6 +197,7 @@ export default function GalleryTool() {
                 sort: query.sort,
                 limit: PAGE,
                 offset: items.length,
+                password: unlockedRef.current ?? undefined,
             })
             .then((r) => {
                 fetchingMore.current = false;
@@ -237,7 +275,7 @@ export default function GalleryTool() {
     async function targetGroupId(): Promise<number | null> {
         const q = queryRef.current;
         if (q.group !== "all") return q.group;
-        const gs = groupsRef.current ?? (await refreshGroups());
+        const gs = groupsRef.current ?? (await refreshGroups(unlockedRef.current ?? undefined));
         return gs.find((g) => g.inbox)?.id ?? null;
     }
 
@@ -320,6 +358,10 @@ export default function GalleryTool() {
         await runImport(r.data, gid);
     }
 
+    function openUrlImport() {
+        setUrlImport(true);
+    }
+
     function onRootDrop(e: React.DragEvent) {
         e.preventDefault();
         e.stopPropagation();
@@ -364,6 +406,69 @@ export default function GalleryTool() {
         setConfirmTarget({ kind: "group", group });
     }
 
+    // ── 图库密码（工具级一个）：解锁态 = 手上握着明文密码，锁定开关在工具条 ──
+
+    /** 锁定：立即收回私密内容。上锁永远免密；清掉可能含私密图的弹窗/查看器，
+     *  当前组是私密则退回全部。分组表与「全部」由 [unlocked] effect 与主查询 effect 重拉 */
+    function lockLibrary() {
+        setUnlocked(null);
+        setPwTarget(null);
+        setViewerIndex(null);
+        setTagTarget(null);
+        setConfirmTarget(null);
+        const q = queryRef.current;
+        if (q.group !== "all") {
+            const grp = groupsRef.current?.find((g) => g.id === q.group);
+            if (grp?.private) setQuery((x) => ({ ...x, group: "all" }));
+        }
+    }
+
+    /** 分组标记/取消私密。未设密码时标记无从生效——先引导设密码，设完顺手标记 */
+    function togglePrivate(group: GalleryGroup, isPrivate: boolean) {
+        if (isPrivate && !pwSet) {
+            setPwTarget({ mode: "set", thenPrivateId: group.id });
+            return;
+        }
+        void api.gallerySetGroupPrivate(group.id, isPrivate).then((r) => {
+            if (!r.ok) {
+                toast.error(t("toast.error"));
+                return;
+            }
+            toast.success(t(isPrivate ? "gallery.pw.setPrivateDone" : "gallery.pw.clearPrivateDone"));
+            refreshAll();
+        });
+    }
+
+    /** 密码框提交：unlock = 校验通过即解锁；set = 落库后顺手解锁（不打断当前视图） */
+    async function submitPassword(pw: string): Promise<boolean> {
+        const tg = pwTarget;
+        if (!tg) return false;
+        if (tg.mode === "unlock") {
+            const r = await api.galleryUnlock(pw);
+            if (!r.ok) {
+                if (r.error.kind === "gallery" && r.error.code === "wrong-password") {
+                    toast.error(t("gallery.pw.wrong"));
+                } else {
+                    toast.error(t("toast.error"));
+                }
+                return false; // 框留着，改一下重试
+            }
+            setUnlocked(pw); // 分组表与图片集由 effects 跟随刷新
+            return true;
+        }
+        if (tg.thenPrivateId != null) {
+            const pr = await api.gallerySetGroupPrivate(tg.thenPrivateId, true);
+            if (!pr.ok) {
+                toast.error(t("toast.error"));
+                return false;
+            }
+        }
+        setPwSet(true);
+        setUnlocked(pw); // [unlocked] effect 重拉的分组表此时已含私密标记
+        toast.success(t("gallery.pw.setDone"));
+        return true;
+    }
+
     // ── 网格菜单动作（作用于 menuIds）──
     async function moveMenuTo(groupId: number) {
         if (menuIds.length === 0) return;
@@ -390,10 +495,22 @@ export default function GalleryTool() {
         setConfirmTarget({ kind: "images", ids: [...menuIds] });
     }
 
-    // ── 确认删除（图片批量 / 分组）──
+    // ── 确认删除（图片批量 / 分组 / 标签词）──
     async function confirmDelete() {
         const tg = confirmTarget;
         if (!tg) return;
+        if (tg.kind === "tag") {
+            const r = await api.galleryDeleteTag(tg.tag);
+            if (!r.ok) {
+                toast.error(t("toast.error"));
+                return;
+            }
+            // 该词可能正被用作过滤器，删除后一并摘掉
+            setQuery((q) => ({ ...q, tags: q.tags.filter((x) => x !== tg.tag) }));
+            toast.success(t("toast.deleted"));
+            refreshAll();
+            return;
+        }
         if (tg.kind === "group") {
             const r = await api.galleryDeleteGroup(tg.group.id);
             if (!r.ok) {
@@ -471,15 +588,25 @@ export default function GalleryTool() {
         ? ""
         : confirmTarget.kind === "images"
           ? t("gallery.delImagesTitle")
-          : t("gallery.delGroupTitle");
+          : confirmTarget.kind === "group"
+            ? t("gallery.delGroupTitle")
+            : t("gallery.tag.delTitle");
     const confirmDesc = !confirmTarget
         ? ""
         : confirmTarget.kind === "images"
           ? fmt(t("gallery.delImagesDesc"), { n: confirmTarget.ids.length })
-          : fmt(t("gallery.delGroupDesc"), {
-                name: confirmTarget.group.inbox ? t("gallery.inbox") : confirmTarget.group.name,
-                n: confirmTarget.group.count,
-            });
+          : confirmTarget.kind === "group"
+            ? fmt(t("gallery.delGroupDesc"), {
+                  name: confirmTarget.group.inbox ? t("gallery.inbox") : confirmTarget.group.name,
+                  n: confirmTarget.group.count,
+              })
+            : fmt(t("gallery.tag.delDesc"), { tag: confirmTarget.tag });
+    // set 模式唯一入口 = 未设密码时右键「设为私密」的引导（修改/清除密码走设置弹窗的图库分节）
+    const pwTitle = !pwTarget
+        ? ""
+        : pwTarget.mode === "unlock"
+          ? t("gallery.pw.unlockTitle")
+          : t("gallery.pw.setTitle");
 
     return (
         <div
@@ -502,32 +629,40 @@ export default function GalleryTool() {
                 groups={groups}
                 allCount={allCount}
                 active={query.group}
+                onTogglePrivate={togglePrivate}
+                pwSet={pwSet}
+                locked={unlocked == null}
+                onLockClick={() => (unlocked == null ? setPwTarget({ mode: "unlock" }) : lockLibrary())}
                 allTags={allTags}
                 activeTags={query.tags}
                 onToggleTag={toggleTagFilter}
+                onTagDelete={(tag) => setConfirmTarget({ kind: "tag", tag })}
                 onSelect={(g) => setQuery((q) => ({ ...q, group: g }))}
                 onCreate={createGroup}
                 onRename={renameGroup}
                 onDelete={askDeleteGroup}
                 onDropFiles={(paths, gid) => void runImport(paths, gid)}
+                onUrlImport={openUrlImport}
             />
 
             <section className="flex min-w-0 flex-1 flex-col">
                 {/* 工具条 */}
                 <div className="flex flex-none flex-wrap items-center gap-1.5 px-2 py-1.5">
-                    <Button type="button" size="xs" onClick={() => void importFiles()}>
+                    <Button type="button" size="xs" variant="outline" onClick={() => void importFiles()}>
                         <ImagePlus />
                         {t("gallery.import")}
                     </Button>
-                    <Button
-                        type="button"
-                        size="xs"
-                        variant={selectMode ? "default" : "outline"}
-                        onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
-                    >
-                        <SquareCheckBig />
-                        {selectMode ? t("gallery.select.exit") : t("gallery.select.start")}
-                    </Button>
+                    {/* 选择模式用开关而非按钮：状态一目了然，也免去「选择/退出选择」两态文案切换 */}
+                    <span className="flex items-center gap-1.5">
+                        <Switch
+                            id="gallery-select-mode"
+                            checked={selectMode}
+                            onCheckedChange={(v) => (v ? setSelectMode(true) : exitSelectMode())}
+                        />
+                        <label htmlFor="gallery-select-mode" className="cursor-pointer text-[12px] text-dim">
+                            {t("gallery.select.mode")}
+                        </label>
+                    </span>
                     <input
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
@@ -536,7 +671,8 @@ export default function GalleryTool() {
                         className="h-6 w-44 flex-none border border-line bg-bg px-2 text-[12px] text-text outline-none placeholder:text-muted focus:border-dim"
                     />
                     <Select value={query.sort} onValueChange={(v) => setQuery((q) => ({ ...q, sort: v as SortId }))}>
-                        <SelectTrigger size="sm" className="h-6 w-28 px-2 text-[12px]">
+                        {/* h-6 必须 !：SelectTrigger 内部 data-[size=sm]:h-8 带属性选择器，普通 h-6 压不过 */}
+                        <SelectTrigger size="sm" className="h-6! w-28 px-2 text-[12px]">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -597,7 +733,17 @@ export default function GalleryTool() {
                         if (idx >= 0) setViewerIndex(idx);
                     }}
                     onMove={(gid) => void moveMenuTo(gid)}
-                    onAddTags={() => setTagTarget({ mode: "batch", ids: [...menuIds] })}
+                    onAddTags={() => {
+                        // 单选直接开编辑框（chip 可 × 删除），多选保持批量添加（并集）
+                        if (menuIds.length === 1) {
+                            const img = items.find((it) => it.id === menuIds[0]);
+                            if (img) {
+                                setTagTarget({ mode: "image", image: img });
+                                return;
+                            }
+                        }
+                        setTagTarget({ mode: "batch", ids: [...menuIds] });
+                    }}
                     onOpenSingle={() => void openSingle()}
                     onRevealSingle={() => void revealSingle()}
                     onDelete={askDeleteMenu}
@@ -633,6 +779,18 @@ export default function GalleryTool() {
                     onClose={() => setTagTarget(null)}
                 />
             )}
+
+            {pwTarget && (
+                <PasswordDialog
+                    title={pwTitle}
+                    hint={pwTarget.mode === "unlock" ? t("gallery.pw.unlockHint") : undefined}
+                    confirmLabel={pwTarget.mode === "unlock" ? t("gallery.pw.unlockBtn") : t("common.save")}
+                    onSubmit={submitPassword}
+                    onClose={() => setPwTarget(null)}
+                />
+            )}
+
+            {urlImport && <UrlImport onClose={() => setUrlImport(false)} onImported={refreshAll} />}
 
             <ConfirmDialog
                 open={confirmTarget !== null}

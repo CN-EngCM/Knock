@@ -24,6 +24,7 @@ let killAllSessions: PtyModule["killAllSessions"];
 let setPtySink: PtyModule["setPtySink"];
 let setAiSink: AiModule["setAiSink"];
 let serveImage: GalleryModule["serveImage"];
+let serveCandidate: GalleryModule["serveCandidate"];
 let startClipWatch: ClipModule["startClipWatch"];
 let freshClipboardText: ClipModule["freshClipboardText"];
 let initHotkey: HotkeyModule["initHotkey"];
@@ -64,21 +65,21 @@ if (!app.requestSingleInstanceLock()) {
         ({ apiHandlers } = await import("../server/api"));
         ({ killAllSessions, setPtySink } = await import("../server/pty"));
         ({ setAiSink } = await import("../server/ai"));
-        ({ serveImage } = await import("../server/gallery"));
+        ({ serveImage, serveCandidate } = await import("../server/gallery"));
         ({ startClipWatch, freshClipboardText } = await import("./clipWatch"));
         ({ initHotkey, shutdownHotkey } = await import("./hotkey"));
         ({ loadWindowState, trackWindowState } = await import("./windowState"));
 
-        // ── mpimg 协议：mpimg://<orig|thumb>/<id>，图库图片直读不走 IPC 字节 ──
-        // host 只认 orig/thumb 两个 kind，path 段必须纯数字 id，其余一律 404；
-        // 必须在数据目录引导完成后注册（serveImage 要读指针目录下的库）
+        // ── mpimg 协议：mpimg://<orig|thumb>/<id>（库内图）与 mpimg://cand/<n>（网址导入候选），
+        //    图片直读不走 IPC 字节。host 只认三个 kind，path 段必须纯数字，其余一律 404；
+        //    必须在数据目录引导完成后注册（serveImage 要读指针目录下的库）──
         protocol.handle("mpimg", (request) => {
             const { host, pathname } = new URL(request.url);
             const id = pathname.slice(1);
-            if ((host !== "orig" && host !== "thumb") || !/^\d+$/.test(id)) {
+            if ((host !== "orig" && host !== "thumb" && host !== "cand") || !/^\d+$/.test(id)) {
                 return new Response(null, { status: 404 });
             }
-            const hit = serveImage(host, Number(id));
+            const hit = host === "cand" ? serveCandidate(Number(id)) : serveImage(host as "orig" | "thumb", Number(id));
             if (!hit) return new Response(null, { status: 404 });
             return new Response(new Uint8Array(hit.buf), { headers: { "content-type": hit.mime } });
         });

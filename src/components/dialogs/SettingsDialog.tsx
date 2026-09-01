@@ -19,6 +19,7 @@ import { BasicSection } from "./settings/BasicSection";
 import { ToolsSection } from "./settings/ToolsSection";
 import { TranslateSection } from "./settings/TranslateSection";
 import { AiSection } from "./settings/AiSection";
+import { GallerySection } from "./settings/GallerySection";
 
 type Props = {
     open: boolean;
@@ -59,6 +60,7 @@ const SECTION_DEFS = [
     { id: "tools", labelKey: "settings.tools" },
     { id: "translate", labelKey: "settings.translate" },
     { id: "ai", labelKey: "settings.ai" },
+    { id: "gallery", labelKey: "settings.gallery" },
 ] as const;
 export type SectionId = (typeof SECTION_DEFS)[number]["id"];
 
@@ -145,6 +147,7 @@ export function SettingsDialog({
                             <TranslateSection translateCfg={translateCfg} onTranslateCfg={onTranslateCfg} />
                         )}
                         {sec === "ai" && <AiSection aiModels={aiModels} onAiModels={onAiModels} />}
+                        {sec === "gallery" && <GallerySection />}
                     </div>
                 </div>
 

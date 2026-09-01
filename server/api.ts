@@ -28,19 +28,30 @@ import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
 import {
     allTags as galleryAllTags,
+    collectDiscard as galleryCollectDiscard,
+    collectStart as galleryCollectStart,
     createGroup as galleryCreateGroup,
     deleteGroup as galleryDeleteGroup,
     deleteImages as galleryDeleteImages,
+    downloadCandidates as galleryDownloadCandidates,
+    fetchPage as galleryFetchPage,
+    importCandidates as galleryImportCandidates,
     importFiles as galleryImport,
     listGroups as galleryListGroups,
     moveImages as galleryMove,
+    pageDisplaySizes as galleryPageDisplaySizes,
+    passwordState as galleryPasswordState,
     pasteFromClipboard as galleryPaste,
     pickFiles as galleryPickFiles,
     openImage as galleryOpenImage,
     queryImages as galleryQuery,
     renameGroup as galleryRenameGroup,
     setImageTags as gallerySetImageTags,
+    setGroupPrivate as gallerySetGroupPrivate,
+    setLibraryPassword as gallerySetPassword,
+    deleteTag as galleryDeleteTag,
     revealImage as galleryRevealImage,
+    unlockLibrary as galleryUnlock,
 } from "./gallery";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { app, dialog } from "electron";
@@ -61,7 +72,13 @@ import {
     galleryGroupSchema,
     galleryIdsSchema,
     galleryImportSchema,
+    galleryDownloadSchema,
+    galleryImportCandidatesSchema,
+    galleryPageSchema,
+    galleryOptionalPasswordSchema,
+    galleryPasswordSchema,
     galleryQuerySchema,
+    galleryTagSchema,
     galleryTagsSchema,
     fileSearchSchema,
     fontPatchSchema,
@@ -88,9 +105,13 @@ import {
     type Expert,
     type FontConfig,
     type FontPatch,
+    type GalleryCandidate,
+    type GalleryDownloadInput,
     type GalleryGroup,
     type GalleryImage,
+    type GalleryImportCandidatesInput,
     type GalleryImportStats,
+    type GalleryPageResult,
     type GalleryQueryInput,
     type Group,
     type HotkeyId,
@@ -127,7 +148,7 @@ export type ApiError =
     | { kind: "youdao"; code: string } // 有道接口错误：code 为官方 errorCode，或 network（连不上/超时/响应异常）
     | { kind: "ai"; status?: number } // LLM 上游错误：status=HTTP 状态码，缺省=网络层失败或首字节超时
     | { kind: "not-configured" } // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
-    | { kind: "gallery"; code: "no-image" } // 图库：剪贴板里没有可粘贴的图片
+    | { kind: "gallery"; code: "no-image" | "fetch" | "locked" | "wrong-password" } // 图库：剪贴板无图；抓页失败；查询私密分组未携有效密码；解锁密码不匹配
     | { kind: "data-dir"; reason: "same" | "occupied" | "failed" }; // 数据目录迁移：same=与当前相同；occupied=目标非空；failed=备份/校验失败（旧数据未动，可重试）
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
@@ -214,21 +235,41 @@ export interface MpApi {
     aiChatStop(streamId: number): Promise<ApiResult<null>>;
     // ── 图库（工具 gallery）：图片字节级复制进数据目录 gallery/，sha256 全库去重；
     //    图片经 mpimg:// 协议按 id 直读（注册见 electron/main.ts），不经 IPC 传字节 ──
-    galleryGroups(): Promise<ApiResult<GalleryGroup[]>>;
+    /** 分组列表：锁定视角（未携有效密码）不下发私密分组行 */
+    galleryGroups(password?: string): Promise<ApiResult<GalleryGroup[]>>;
     galleryCreateGroup(name: string): Promise<ApiResult<{ id: number }>>;
     galleryRenameGroup(id: number, name: string): Promise<ApiResult<null>>;
     galleryDeleteGroup(id: number): Promise<ApiResult<null>>;
+    /** 分组标记/取消私密（私密生效前提：已设图库密码） */
+    gallerySetGroupPrivate(id: number, isPrivate: boolean): Promise<ApiResult<null>>;
+    /** 图库密码（工具级一个，明文本地存 settings 表）：是否已设（锁定开关显隐的依据） */
+    galleryPasswordState(): Promise<ApiResult<{ has: boolean }>>;
+    /** 设置（非 null）/清除（null）图库密码；改密不校验旧密码（明文威胁模型，见 gallery.ts） */
+    gallerySetPassword(password: string | null): Promise<ApiResult<null>>;
+    /** 解锁校验，密码不匹配返回 wrong-password */
+    galleryUnlock(password: string): Promise<ApiResult<null>>;
     galleryImages(input: GalleryQueryInput): Promise<ApiResult<{ total: number; items: GalleryImage[] }>>;
+    /** 标签池：全量（私密只隔离图片内容，不隔离标签词——共用标签不消失） */
     galleryAllTags(): Promise<ApiResult<string[]>>;
     galleryImport(files: string[], groupId: number): Promise<ApiResult<GalleryImportStats>>;
     galleryPaste(groupId: number): Promise<ApiResult<GalleryImportStats>>;
     gallerySetImageTags(id: number, tags: string[]): Promise<ApiResult<null>>;
+    /** 词级删除：从所有图片移除该标签（渲染端配确认框） */
+    galleryDeleteTag(tag: string): Promise<ApiResult<null>>;
     galleryMoveImages(ids: number[], groupId: number): Promise<ApiResult<null>>;
     galleryDeleteImages(ids: number[]): Promise<ApiResult<null>>;
     galleryPickFiles(): Promise<ApiResult<string[]>>;
     /** 系统默认程序打开 / 资源管理器定位：磁盘路径不出主进程，按 id 代劳 */
     galleryOpenImage(id: number): Promise<ApiResult<null>>;
     galleryRevealImage(id: number): Promise<ApiResult<null>>;
+    // ── 从网址导入：渲染端驱动翻页/分批下载（进度与取消自然落在渲染端循环里），
+    //    主进程只维护一个暂存会话（候选字节在 os.tmpdir，入库才进 gallery/）──
+    galleryCollectStart(): Promise<ApiResult<null>>;
+    galleryCollectDiscard(): Promise<ApiResult<null>>;
+    galleryFetchPage(url: string): Promise<ApiResult<GalleryPageResult>>;
+    galleryPageDisplaySizes(url: string): Promise<ApiResult<null>>;
+    galleryDownloadCandidates(input: GalleryDownloadInput): Promise<ApiResult<{ items: GalleryCandidate[] }>>;
+    galleryImportCandidates(input: GalleryImportCandidatesInput): Promise<ApiResult<GalleryImportStats>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -770,7 +811,11 @@ export const apiHandlers: ApiHandlers = {
 
     // ── 图库：业务全在 server/gallery.ts（含 inbox 组拒绝、not-found、no-image 的判定），
     //    这里只做入口校验与转发；id 形参做 Number.isInteger 兜底（对齐 deleteExpert 先例）──
-    galleryGroups: async () => galleryListGroups(),
+    galleryGroups: async (password) => {
+        const v = guard(galleryOptionalPasswordSchema, { password });
+        if (!v) return badRequest;
+        return galleryListGroups(v.password);
+    },
     galleryCreateGroup: async (name) => {
         const v = guard(galleryGroupSchema, { name });
         if (!v) return badRequest;
@@ -785,6 +830,23 @@ export const apiHandlers: ApiHandlers = {
     galleryDeleteGroup: async (id) => {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
         return galleryDeleteGroup(id);
+    },
+    gallerySetGroupPrivate: async (id, isPrivate) => {
+        if (!Number.isInteger(id) || id <= 0) return badRequest;
+        if (typeof isPrivate !== "boolean") return badRequest;
+        return gallerySetGroupPrivate(id, isPrivate);
+    },
+    galleryPasswordState: async () => galleryPasswordState(),
+    gallerySetPassword: async (password) => {
+        if (password == null) return gallerySetPassword(null); // null = 清除密码，无需校验
+        const v = guard(galleryPasswordSchema, { password });
+        if (!v) return badRequest;
+        return gallerySetPassword(v.password);
+    },
+    galleryUnlock: async (password) => {
+        const v = guard(galleryPasswordSchema, { password });
+        if (!v) return badRequest;
+        return galleryUnlock(v.password);
     },
     galleryImages: async (input) => {
         const v = guard(galleryQuerySchema, input);
@@ -807,6 +869,11 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         return gallerySetImageTags(id, v.tags);
     },
+    galleryDeleteTag: async (tag) => {
+        const v = guard(galleryTagSchema, { tag });
+        if (!v) return badRequest;
+        return galleryDeleteTag(v.tag);
+    },
     galleryMoveImages: async (ids, groupId) => {
         const v = guard(galleryIdsSchema, { ids });
         if (!v) return badRequest;
@@ -826,6 +893,29 @@ export const apiHandlers: ApiHandlers = {
     galleryRevealImage: async (id) => {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
         return galleryRevealImage(id);
+    },
+    // ── 从网址导入：同样只做入口校验与转发（业务见 server/gallery.ts 的「从网址导入」一节）──
+    galleryCollectStart: async () => galleryCollectStart(),
+    galleryCollectDiscard: async () => galleryCollectDiscard(),
+    galleryFetchPage: async (url) => {
+        const v = guard(galleryPageSchema, { url });
+        if (!v) return badRequest;
+        return galleryFetchPage(v.url);
+    },
+    galleryPageDisplaySizes: async (url) => {
+        const v = guard(galleryPageSchema, { url });
+        if (!v) return badRequest;
+        return galleryPageDisplaySizes(v.url);
+    },
+    galleryDownloadCandidates: async (input) => {
+        const v = guard(galleryDownloadSchema, input);
+        if (!v) return badRequest;
+        return galleryDownloadCandidates(v);
+    },
+    galleryImportCandidates: async (input) => {
+        const v = guard(galleryImportCandidatesSchema, input);
+        if (!v) return badRequest;
+        return galleryImportCandidates(v);
     },
 };
 

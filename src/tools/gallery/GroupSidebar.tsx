@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Globe, Lock, LockOpen } from "lucide-react";
 import {
     ContextMenu,
     ContextMenuContent,
@@ -13,14 +14,24 @@ import { useI18n } from "@/i18n/useI18n";
 type Props = {
     /** null = 首拉未就绪，列表区留白 */
     groups: GalleryGroup[] | null;
-    /** 「全部图片」伪条目的计数（各组之和） */
+    /** 「全部图片」伪条目的计数（各组之和；锁定视角的 groups 本就不含私密分组） */
     allCount: number;
     active: number | "all";
+    /** 分组标记/取消私密（标记时未设图库密码由调用方先引导设密码） */
+    onTogglePrivate: (group: GalleryGroup, isPrivate: boolean) => void;
+    /** 图库密码是否已设（未设 = 私密体系未启用，锁入口不显示——同主流相册未开无入口） */
+    pwSet: boolean;
+    /** true = 锁定中（点锁弹密码框解锁）；false = 已解锁（点开锁重新锁定） */
+    locked: boolean;
+    /** 锁入口点击 */
+    onLockClick: () => void;
     /** 全局 tag 池（过滤 chips 的词源） */
     allTags: string[];
     /** 已激活的过滤 tag（命中 chips 高亮） */
     activeTags: string[];
     onToggleTag: (tag: string) => void;
+    /** 词级删除某个标签（从所有图片移除，调用方配确认框） */
+    onTagDelete: (tag: string) => void;
     onSelect: (group: number | "all") => void;
     /** 返回 true = 创建成功（收起内联输入） */
     onCreate: (name: string) => Promise<boolean>;
@@ -28,22 +39,31 @@ type Props = {
     onDelete: (group: GalleryGroup) => void;
     /** 拖文件到组行 = 导入进该组 */
     onDropFiles: (paths: string[], groupId: number) => void;
+    /** 打开「从网址导入」对话框（导入内容自动单独成组，不落当前视图） */
+    onUrlImport: () => void;
 };
 
 // 左侧分组栏：全部图片（伪条目）→ 收件箱（内置，不可删/改名）→ 用户分组（创建序）
-// → 底部「＋ 新建分组」。分组行右键菜单 + 文件拖放目标（dragover 高亮）。
+// → 底部「＋ 新建分组」与「从网址导入」。分组行右键菜单 + 文件拖放目标（dragover 高亮）。
+// 私密分组只在解锁视角出现（锁定时后端不下发，这里无需处理锁定态）。
 export function GroupSidebar({
     groups,
     allCount,
     active,
+    onTogglePrivate,
+    pwSet,
+    locked,
+    onLockClick,
     allTags,
     activeTags,
     onToggleTag,
+    onTagDelete,
     onSelect,
     onCreate,
     onRename,
     onDelete,
     onDropFiles,
+    onUrlImport,
 }: Props) {
     const { t } = useI18n();
     const [creating, setCreating] = useState(false);
@@ -109,7 +129,7 @@ export function GroupSidebar({
         }
     }
 
-    /** 组行内容：改名中显示内联输入 */
+    /** 组行内容：改名中显示内联输入；私密组带开锁小图标示意（仅解锁视角可见该行） */
     function groupRow(group: GalleryGroup, on: boolean, dragging: boolean) {
         const name = group.inbox ? t("gallery.inbox") : group.name;
         return (
@@ -133,9 +153,12 @@ export function GroupSidebar({
                         className="min-w-0 flex-1 border border-line bg-bg px-1 text-[12px] text-text outline-none"
                     />
                 ) : (
-                    <span className="min-w-0 flex-1 truncate">{name}</span>
+                    <>
+                        <span className="min-w-0 flex-1 truncate">{name}</span>
+                        {group.private && <LockOpen size={11} className="flex-none text-muted" />}
+                        <span className="flex-none text-[10.5px] tabular-nums text-muted">{group.count}</span>
+                    </>
                 )}
-                <span className="flex-none text-[10.5px] tabular-nums text-muted">{group.count}</span>
             </div>
         );
     }
@@ -166,6 +189,9 @@ export function GroupSidebar({
                     >
                         {t("gallery.group.rename")}
                     </ContextMenuItem>
+                    <ContextMenuItem onClick={() => onTogglePrivate(group, !group.private)}>
+                        {group.private ? t("gallery.group.clearPrivate") : t("gallery.group.setPrivate")}
+                    </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem variant="destructive" onClick={() => onDelete(group)}>
                         {t("gallery.menu.delete")}
@@ -177,36 +203,61 @@ export function GroupSidebar({
 
     return (
         <aside className="flex w-48 flex-none flex-col border-r border-line">
-            <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
-                {/* 「全部图片」伪条目：count = 各组之和 */}
-                <div className={rowCls(active === "all")} onClick={() => onSelect("all")}>
-                    <span className="min-w-0 flex-1 truncate">{t("gallery.all")}</span>
-                    <span className="flex-none text-[10.5px] tabular-nums text-muted">{allCount}</span>
-                </div>
-                {inbox && groupEntry(inbox)}
-                {userGroups.map((g) => groupEntry(g))}
-                {groups === null && <div className="px-2 py-1.5 text-[12px] text-muted">…</div>}
+            {/* 滚动区外套一层 flex 列：内容滚动，锁入口钉在滚动区底部（贴「新建分组」
+                上方分隔线），不随内容多少浮动 */}
+            <div className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
+                    {/* 「全部图片」伪条目：count = 各组之和 */}
+                    <div className={rowCls(active === "all")} onClick={() => onSelect("all")}>
+                        <span className="min-w-0 flex-1 truncate">{t("gallery.all")}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-muted">{allCount}</span>
+                    </div>
+                    {inbox && groupEntry(inbox)}
+                    {userGroups.map((g) => groupEntry(g))}
+                    {groups === null && <div className="px-2 py-1.5 text-[12px] text-muted">…</div>}
 
-                {/* 全局 tag 过滤：分组列表下方一条分隔线隔开，不占缩略图区 */}
-                {allTags.length > 0 && (
-                    <>
-                        <div className="mx-2 my-1.5 border-t border-line" aria-hidden />
-                        <div className="flex flex-wrap gap-1 px-2 pb-1">
-                            {allTags.map((tag) => (
-                                <button
-                                    key={tag}
-                                    type="button"
-                                    className={chipCls(activeTags.includes(tag))}
-                                    onClick={() => onToggleTag(tag)}
-                                >
-                                    {tag}
-                                </button>
-                            ))}
-                        </div>
-                    </>
+                    {/* 全局 tag 过滤：分组列表下方一条分隔线隔开，不占缩略图区 */}
+                    {allTags.length > 0 && (
+                        <>
+                            <div className="mx-2 my-1.5 border-t border-line" aria-hidden />
+                            <div className="flex flex-wrap gap-1 px-2 pb-1">
+                                {allTags.map((tag) => (
+                                    <ContextMenu key={tag}>
+                                        <ContextMenuTrigger asChild>
+                                            <button
+                                                type="button"
+                                                className={chipCls(activeTags.includes(tag))}
+                                                onClick={() => onToggleTag(tag)}
+                                            >
+                                                {tag}
+                                            </button>
+                                        </ContextMenuTrigger>
+                                        <ContextMenuContent>
+                                            <ContextMenuItem variant="destructive" onClick={() => onTagDelete(tag)}>
+                                                {t("gallery.tag.deleteAll")}
+                                            </ContextMenuItem>
+                                        </ContextMenuContent>
+                                    </ContextMenu>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* 私密锁入口：主流相册式的隐晦入口——钉在列表区最底部（「新建分组」
+                    上方分隔线之上）、纯图标右对齐、低调灰；解锁后变成开锁图标（点击重新锁定） */}
+                {pwSet && (
+                    <button
+                        type="button"
+                        onClick={onLockClick}
+                        aria-label={locked ? t("gallery.pw.unlockBtn") : t("gallery.pw.lockBtn")}
+                        className="flex w-full flex-none justify-end px-2 py-1 text-muted hover:text-dim"
+                    >
+                        {locked ? <Lock size={12} /> : <LockOpen size={12} />}
+                    </button>
                 )}
             </div>
-            <div className="flex-none border-t border-line p-1.5">
+            <div className="flex-none space-y-1.5 border-t border-line p-1.5">
                 {creating ? (
                     <input
                         autoFocus
@@ -234,6 +285,10 @@ export function GroupSidebar({
                         ＋ {t("gallery.newGroup")}
                     </Button>
                 )}
+                <Button type="button" variant="outline" size="xs" className="w-full" onClick={onUrlImport}>
+                    <Globe />
+                    {t("gallery.urlImport")}
+                </Button>
             </div>
         </aside>
     );

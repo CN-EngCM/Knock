@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, Dispatch, useEffect, useMemo, useRef, SetStateAction, useState } from "react";
 import { Toaster, toast } from "sonner";
-import { Check, Pencil, Settings, Terminal } from "lucide-react";
+import { Check, Pencil, PanelLeft, Settings, Terminal } from "lucide-react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
@@ -64,18 +64,20 @@ type DialogState =
 // 与主题、语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
 type Layout = {
     sidebarW: number;
+    sidebarVisible: boolean;
     termH: number;
     termVisible: boolean;
 };
 
 function loadLayout(): Layout {
-    const fallback: Layout = { sidebarW: 300, termH: 230, termVisible: true };
+    const fallback: Layout = { sidebarW: 300, sidebarVisible: true, termH: 230, termVisible: true };
     try {
         const raw = localStorage.getItem("mypage-layout");
         if (!raw) return fallback;
         const s = JSON.parse(raw) as Partial<Layout>;
         return {
             sidebarW: typeof s.sidebarW === "number" ? Math.min(480, Math.max(190, s.sidebarW)) : fallback.sidebarW,
+            sidebarVisible: s.sidebarVisible !== false,
             termH: typeof s.termH === "number" ? Math.min(600, Math.max(110, s.termH)) : fallback.termH,
             termVisible: s.termVisible !== false,
         };
@@ -535,52 +537,65 @@ export default function App() {
                     )}
                 </main>
             ) : (
-                /* 三区工作区：左=分组侧栏，右列上=工具区（有 tab 才出现），右列下=终端 */
+                /* 三区工作区：左=分组侧栏（可整栏收起，偏好持久化），右列上=工具区（有 tab 才出现），右列下=终端 */
                 <div className="flex min-h-0 flex-1">
-                    <aside className="flex flex-none flex-col overflow-y-auto" style={{ width: layout.sidebarW }}>
-                        {editing ? (
-                            /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
-                            <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
-                                <SortableContext items={groups.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-                                    {sidebarGroups(true)}
-                                    <button
-                                        className="mx-2.5 mt-2 flex items-center justify-center border border-dashed border-line px-3 py-2.5 text-[12.5px] text-muted hover:text-text"
-                                        onClick={() => setDialog({ kind: "group-create" })}
+                    {layout.sidebarVisible && (
+                        <aside className="flex flex-none flex-col overflow-y-auto" style={{ width: layout.sidebarW }}>
+                            {editing ? (
+                                /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
+                                <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
+                                    <SortableContext
+                                        items={groups.map((g) => g.id)}
+                                        strategy={verticalListSortingStrategy}
                                     >
-                                        ＋ {t("group.new")}
-                                    </button>
-                                </SortableContext>
-                            </DndContext>
-                        ) : (
-                            sidebarGroups(false)
-                        )}
+                                        {sidebarGroups(true)}
+                                        <button
+                                            className="mx-2.5 mt-2 flex items-center justify-center border border-dashed border-line px-3 py-2.5 text-[12.5px] text-muted hover:text-text"
+                                            onClick={() => setDialog({ kind: "group-create" })}
+                                        >
+                                            ＋ {t("group.new")}
+                                        </button>
+                                    </SortableContext>
+                                </DndContext>
+                            ) : (
+                                sidebarGroups(false)
+                            )}
 
-                        {/* 编辑模式多选操作条：勾了条目才出现，吸在侧栏滚动区底部 */}
-                        {editing && selectedIds.size > 0 && (
-                            <div className="sticky bottom-0 z-10 flex flex-none items-center justify-between gap-2 border-t border-line bg-panel px-3 py-1.5 text-[12.5px]">
-                                <span className="text-dim">
-                                    {t("edit.selected")}: {selectedIds.size}
-                                </span>
-                                <span className="flex items-center gap-2">
-                                    <button type="button" className="tbtn" onClick={() => setSelectedIds(new Set())}>
-                                        [ {t("edit.clear")} ]
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="tbtn"
-                                        onClick={() => setDialog({ kind: "items-bulk-delete", ids: [...selectedIds] })}
-                                    >
-                                        [ {t("edit.deleteSelected")} ]
-                                    </button>
-                                </span>
-                            </div>
-                        )}
-                    </aside>
+                            {/* 编辑模式多选操作条：勾了条目才出现，吸在侧栏滚动区底部 */}
+                            {editing && selectedIds.size > 0 && (
+                                <div className="sticky bottom-0 z-10 flex flex-none items-center justify-between gap-2 border-t border-line bg-panel px-3 py-1.5 text-[12.5px]">
+                                    <span className="text-dim">
+                                        {t("edit.selected")}: {selectedIds.size}
+                                    </span>
+                                    <span className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            className="tbtn"
+                                            onClick={() => setSelectedIds(new Set())}
+                                        >
+                                            [ {t("edit.clear")} ]
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="tbtn"
+                                            onClick={() =>
+                                                setDialog({ kind: "items-bulk-delete", ids: [...selectedIds] })
+                                            }
+                                        >
+                                            [ {t("edit.deleteSelected")} ]
+                                        </button>
+                                    </span>
+                                </div>
+                            )}
+                        </aside>
+                    )}
 
-                    <Splitter
-                        orientation="vertical"
-                        onDrag={(e) => setLayout((l) => ({ ...l, sidebarW: clamp(e.clientX, 190, 480) }))}
-                    />
+                    {layout.sidebarVisible && (
+                        <Splitter
+                            orientation="vertical"
+                            onDrag={(e) => setLayout((l) => ({ ...l, sidebarW: clamp(e.clientX, 190, 480) }))}
+                        />
+                    )}
 
                     <div ref={rightRef} className="flex min-w-0 flex-1 flex-col">
                         {openTools.length > 0 && (
@@ -646,6 +661,15 @@ export default function App() {
                     <span>
                         {serverOk === null ? "…" : serverOk ? t("status.serverUp") : t("status.serverDown")} | <Clock />
                     </span>
+                    <button
+                        type="button"
+                        className="tbtn"
+                        aria-pressed={layout.sidebarVisible}
+                        onClick={() => setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))}
+                        title={t("btn.sidebar")}
+                    >
+                        <PanelLeft size={14} />
+                    </button>
                     <button
                         type="button"
                         className="tbtn"

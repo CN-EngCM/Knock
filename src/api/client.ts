@@ -37,6 +37,10 @@ export type {
     GalleryImage,
     GalleryImportStats,
     GalleryQueryInput,
+    GalleryPageResult,
+    GalleryCandidate,
+    GalleryDownloadInput,
+    GalleryImportCandidatesInput,
 } from "../../server/schemas";
 export type { ApiResult, ApiError, ImportStats } from "../../server/api";
 export type { Shortcut } from "../../server/shortcuts";
@@ -120,20 +124,31 @@ export const api: MpApi = {
     deleteExpert: (id) => invoke("deleteExpert", id),
     aiChat: (input) => invoke("aiChat", input),
     aiChatStop: (streamId) => invoke("aiChatStop", streamId),
-    galleryGroups: () => invoke("galleryGroups"),
+    galleryGroups: (password) => invoke("galleryGroups", password),
     galleryCreateGroup: (name) => invoke("galleryCreateGroup", name),
     galleryRenameGroup: (id, name) => invoke("galleryRenameGroup", id, name),
     galleryDeleteGroup: (id) => invoke("galleryDeleteGroup", id),
+    gallerySetGroupPrivate: (id, isPrivate) => invoke("gallerySetGroupPrivate", id, isPrivate),
+    galleryPasswordState: () => invoke("galleryPasswordState"),
+    gallerySetPassword: (password) => invoke("gallerySetPassword", password),
+    galleryUnlock: (password) => invoke("galleryUnlock", password),
     galleryImages: (input) => invoke("galleryImages", input),
     galleryAllTags: () => invoke("galleryAllTags"),
     galleryImport: (files, groupId) => invoke("galleryImport", files, groupId),
     galleryPaste: (groupId) => invoke("galleryPaste", groupId),
     gallerySetImageTags: (id, tags) => invoke("gallerySetImageTags", id, tags),
+    galleryDeleteTag: (tag) => invoke("galleryDeleteTag", tag),
     galleryMoveImages: (ids, groupId) => invoke("galleryMoveImages", ids, groupId),
     galleryDeleteImages: (ids) => invoke("galleryDeleteImages", ids),
     galleryPickFiles: () => invoke("galleryPickFiles"),
     galleryOpenImage: (id) => invoke("galleryOpenImage", id),
     galleryRevealImage: (id) => invoke("galleryRevealImage", id),
+    galleryCollectStart: () => invoke("galleryCollectStart"),
+    galleryCollectDiscard: () => invoke("galleryCollectDiscard"),
+    galleryFetchPage: (url) => invoke("galleryFetchPage", url),
+    galleryPageDisplaySizes: (url) => invoke("galleryPageDisplaySizes", url),
+    galleryDownloadCandidates: (input) => invoke("galleryDownloadCandidates", input),
+    galleryImportCandidates: (input) => invoke("galleryImportCandidates", input),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */

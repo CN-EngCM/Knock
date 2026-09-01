@@ -210,7 +210,9 @@ export function ImageGrid({
                                         ))}
                                     </ContextMenuSubContent>
                                 </ContextMenuSub>
-                                <ContextMenuItem onClick={onAddTags}>{t("gallery.menu.addTags")}</ContextMenuItem>
+                                <ContextMenuItem onClick={onAddTags}>
+                                    {menuIds.length === 1 ? t("gallery.menu.editTags") : t("gallery.menu.addTags")}
+                                </ContextMenuItem>
                                 <ContextMenuItem disabled={menuIds.length !== 1} onClick={onOpenSingle}>
                                     {t("gallery.menu.openWith")}
                                 </ContextMenuItem>
