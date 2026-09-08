@@ -151,9 +151,12 @@ export const api: MpApi = {
     galleryCollectStart: () => invoke("galleryCollectStart"),
     galleryCollectDiscard: () => invoke("galleryCollectDiscard"),
     galleryFetchPage: (url) => invoke("galleryFetchPage", url),
-    galleryPageDisplaySizes: (url) => invoke("galleryPageDisplaySizes", url),
+    galleryRenderPage: (url) => invoke("galleryRenderPage", url),
     galleryDownloadCandidates: (input) => invoke("galleryDownloadCandidates", input),
     galleryImportCandidates: (input) => invoke("galleryImportCandidates", input),
+    galleryChromeLogin: (url) => invoke("galleryChromeLogin", url),
+    galleryChromeSync: (url) => invoke("galleryChromeSync", url),
+    galleryChromeClear: () => invoke("galleryChromeClear"),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */

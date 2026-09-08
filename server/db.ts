@@ -50,7 +50,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_experts_pos ON experts(position);
 
   -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 groups/items 表。
-  -- 图片字节级复制进数据目录 gallery/（server/gallery.ts），行里只存元数据；
+  -- 图片字节级复制进数据目录 gallery/<组文件夹>/（server/gallery.ts），行里只存元数据；
   -- 图片经 mpimg:// 协议按 id 直读（注册见 electron/main.ts），不经 IPC 传字节
   CREATE TABLE IF NOT EXISTS gallery_groups (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +65,7 @@ db.exec(`
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id    INTEGER NOT NULL REFERENCES gallery_groups(id) ON DELETE CASCADE,
     title       TEXT    NOT NULL,            -- 原文件名（显示/搜索）
-    file        TEXT    NOT NULL UNIQUE,     -- gallery/ 内最终文件名（撞名加序号后）
+    file        TEXT    NOT NULL UNIQUE,     -- gallery/ 内相对路径「组文件夹/文件名」（撞名加序号后）
     sha256      TEXT    NOT NULL UNIQUE,     -- 内容去重：同内容全库只收一份
     bytes       INTEGER NOT NULL,
     width       INTEGER NOT NULL DEFAULT 0,  -- svg 解不出尺寸存 0

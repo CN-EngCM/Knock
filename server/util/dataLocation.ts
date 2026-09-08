@@ -10,10 +10,12 @@ import { join, resolve } from "node:path";
 // 而 db 在 import 链上同步开库，反向依赖会把开库时机拖回模块求值期，
 // 启动引导（electron/dataBoot.ts）就再也没机会在开库前弹对话框了。
 
-/** 业务数据文件名：db 主库 / WAL / SHM、图标缓存目录与图库目录，迁移与清理都围绕它们 */
+/** 业务数据文件名：db 主库 / WAL / SHM、图标缓存目录、图库目录与 Chrome 专用 profile，迁移与清理都围绕它们 */
 export const DB_NAME = "mypage.db";
 export const FAVICONS_NAME = "favicons";
 export const GALLERY_NAME = "gallery";
+// 受限站登录态（专用 Chrome 实例的持久 profile，见 server/chromeLogin.ts）
+export const CHROME_PROFILE_NAME = "chrome-profile";
 
 const POINTER_NAME = "data-location.json";
 
@@ -116,11 +118,14 @@ export function migrateDataFiles(from: string, target: string): void {
     const hasFavicons = existsSync(faviconsSrc);
     const gallerySrc = join(from, GALLERY_NAME);
     const hasGallery = existsSync(gallerySrc);
+    const chromeSrc = join(from, CHROME_PROFILE_NAME);
+    const hasChrome = existsSync(chromeSrc);
 
     mkdirSync(target, { recursive: true });
     for (const [src, dst] of dbFiles) cpSync(src, dst);
     if (hasFavicons) cpSync(faviconsSrc, join(target, FAVICONS_NAME), { recursive: true });
     if (hasGallery) cpSync(gallerySrc, join(target, GALLERY_NAME), { recursive: true });
+    if (hasChrome) cpSync(chromeSrc, join(target, CHROME_PROFILE_NAME), { recursive: true });
 
     // 校验：复制的文件齐全，且主库大小与源一致（不一致 = 复制中途出错，库不完整）
     for (const [, dst] of dbFiles) {
@@ -178,4 +183,11 @@ export function removeDbArtifacts(dir: string): void {
     }
     rmSync(join(dir, FAVICONS_NAME), { recursive: true, force: true });
     rmSync(join(dir, GALLERY_NAME), { recursive: true, force: true });
+    // Chrome profile 可能正被专用实例锁着（迁移前用户没关）：残留不挡迁移，
+    // 下次 chromeClear 或手动清理；其余具名数据此刻没有进程持有
+    try {
+        rmSync(join(dir, CHROME_PROFILE_NAME), { recursive: true, force: true });
+    } catch {
+        /* 见上 */
+    }
 }

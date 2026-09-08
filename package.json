@@ -52,6 +52,7 @@
         "tailwind-merge": "^3.6.0",
         "tailwindcss": "^4.1.0",
         "typescript": "^5.8.0",
+        "undici": "^8.10.1",
         "vite": "^7.0.0",
         "wait-on": "^9.1.0",
         "zod": "^4.4.3"

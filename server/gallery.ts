@@ -1,10 +1,23 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import {
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    renameSync,
+    rmdirSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
-import { BrowserWindow, clipboard, dialog, nativeImage, shell } from "electron";
+import { BrowserWindow, clipboard, dialog, nativeImage, session, shell } from "electron";
 import type { NativeImage } from "electron";
+import { fetch as undiciFetch, ProxyAgent } from "undici";
 import db from "./db";
+import { IMPORT_PARTITION } from "./chromeLogin";
 import { dataDir } from "./util/dataDir";
 import { GALLERY_NAME } from "./util/dataLocation";
 import { getSetting, setSetting } from "./util/settings";
@@ -22,10 +35,12 @@ import {
 // type-only import 编译期擦除，不构成运行时循环依赖（同 experts.ts）
 import type { ApiResult } from "./api";
 
-// ── 图库（工具 gallery 的后端）：图片字节级复制进数据目录 gallery/，行里只存元数据 ──
-// 去重以 sha256 为准（同内容全库只收一份）；缩略图按需生成落盘 .thumbs/，
-// 经 mpimg:// 协议按 id 直读（注册见 electron/main.ts）。文件名/basename 只作
-// 显示与磁盘名，不参与寻址——协议按整数 id 找行，天然无路径穿越。
+// ── 图库（工具 gallery 的后端）：图片字节级复制进数据目录 gallery/<组文件夹>/，行里只存元数据 ──
+// 去重以 sha256 为准（同内容全库只收一份，一图一行一组，故按分组落子目录无共享冲突）；
+// file 列存「组文件夹/文件名」相对路径（分隔符固定 /，join 拼接自动适配平台），组文件夹名由
+// 组名清洗而来。缩略图按需生成落盘 .thumbs/（按 id 寻址，不分目录），经 mpimg:// 协议按
+// id 直读（注册见 electron/main.ts）。文件名只作显示与磁盘名，不参与寻址——协议按整数
+// id 找行，文件夹名写入前已清洗非法字符，行内相对路径不会逃出 gallery/。
 
 // 缩略图长边上限：网格里看足够清晰，原图再大也不浪费磁盘
 const THUMB_EDGE = 320;
@@ -69,6 +84,8 @@ function ensureInbox(): void {
 // 导入/删除等热路径循环里反复用的语句提为模块级复用（better-sqlite3 不缓存
 // prepared statement，函数内每次调用都重新编译）；就近声明，读函数不用跳转
 const stmtGroupById = db.prepare("SELECT id, inbox FROM gallery_groups WHERE id = ?");
+const stmtGroupName = db.prepare("SELECT name FROM gallery_groups WHERE id = ?");
+const stmtGroupFilePrefix = db.prepare("SELECT file FROM gallery_images WHERE group_id = ? LIMIT 1");
 const stmtShaExists = db.prepare("SELECT 1 FROM gallery_images WHERE sha256 = ?");
 const stmtImageExists = db.prepare("SELECT 1 FROM gallery_images WHERE id = ?");
 const stmtFileTaken = db.prepare("SELECT 1 FROM gallery_images WHERE file = ?");
@@ -76,6 +93,100 @@ const stmtFileTaken = db.prepare("SELECT 1 FROM gallery_images WHERE file = ?");
 function getGroup(id: number): { id: number; inbox: number } | undefined {
     return stmtGroupById.get(id) as { id: number; inbox: number } | undefined;
 }
+
+// ── 组文件夹：图片按分组名落 gallery/<组文件夹>/，不再平级堆在 gallery/ 根 ──
+
+/** 组名 → 磁盘文件夹名：剔除 Windows 非法字符与控制字符（字符集对齐 nameFromUrl 的
+ *  清洗先例）、压缩空白、去尾部点；开头的点换成 _（防隐藏目录、防与 .thumbs 撞名）。
+ *  清洗后为空、或撞 Windows 保留名（CON/NUL/COM1…）时兜底 group-<id> */
+function sanitizeFolderName(groupId: number, name: string): string {
+    const f = name
+        .replace(/[\\/:*?"<>|\x00-\x1f]/g, "")
+        .replace(/^\.+/, "_")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/\.+$/, "")
+        .slice(0, 50);
+    return !f || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(f) ? `group-${groupId}` : f;
+}
+
+/** 文件夹名是否已被占用：目录存在且非空（空目录无害，可复用）。读失败（权限等，
+ *  非「不存在」）保守视为占用 */
+function folderTaken(dir: string): boolean {
+    try {
+        return readdirSync(dir).length > 0;
+    } catch (e) {
+        return (e as NodeJS.ErrnoException).code !== "ENOENT";
+    }
+}
+
+/** 现算组文件夹名（并确保目录存在），不信任行内前缀：组名清洗而来，与其他组的
+ *  现存目录撞名则兜底 group-<id>（DB 允许重名组，磁盘不允许混居）。同一组无图期间
+ *  现算结果可能因他组先占了目录而变，但无图 = 无文件，只影响未来写入，一致性无损 */
+function computeGroupFolder(groupId: number): string {
+    const name = stmtGroupName.get(groupId) as { name: string } | undefined;
+    let f = name ? sanitizeFolderName(groupId, name.name) : `group-${groupId}`;
+    if (folderTaken(join(galleryDir(), f))) f = `group-${groupId}`;
+    mkdirSync(join(galleryDir(), f), { recursive: true });
+    return f;
+}
+
+/** 组的磁盘文件夹名：组已有图片则以行内 file 前缀为准——磁盘现状优先，改名/移动后的
+ *  寻址恒定。前缀只对含 / 的行可信（含 / = 已是「组文件夹/文件名」形态）；不含 / 的
+ *  平级残留行 split 会把整个文件名当前缀（首版迁移的真实事故），必须走现算 */
+function groupFolder(groupId: number): string {
+    const row = stmtGroupFilePrefix.get(groupId) as { file: string } | undefined;
+    if (row && row.file.includes("/")) return row.file.split("/")[0];
+    return computeGroupFolder(groupId);
+}
+
+/** 一次性归位迁移（模块加载即执行，幂等可重跑）：
+ *  - 平级旧行（file 不含 /）：rename 进组文件夹并回写相对路径；
+ *  - 坏行（含 / 但前缀在磁盘上不是目录）：首版迁移 bug 的善后——当时把组内第一张图的
+ *    文件名当成了组文件夹写进 file，rename 全部 ENOENT、磁盘未动，文件其实还在
+ *    gallery/ 根；还原成 basename 后按平级行归位；
+ *  - 好行（含 / 且前缀是磁盘目录）：已就位，跳过（顺带为本组后续行锚定文件夹名）。
+ *  rename 失败时：源文件确实没了（ENOENT）照常回写行（与「磁盘文件被外部删→404」
+ *  既有语义一致）；被占用等暂时性失败跳过该行不回写，下次启动仍会重试 */
+(function migrateFlatToGroupFolders(): void {
+    const rows = db.prepare("SELECT id, file, group_id FROM gallery_images ORDER BY group_id, id").all() as {
+        id: number;
+        file: string;
+        group_id: number;
+    }[];
+    const upd = db.prepare("UPDATE gallery_images SET file = ? WHERE id = ?");
+    // 组 → 已确认的文件夹名：好行的前缀 / 本组首张归位后的名字，同组后续行直接沿用
+    const folders = new Map<number, string>();
+    let moved = 0;
+    for (const r of rows) {
+        let base = r.file;
+        if (r.file.includes("/")) {
+            const prefix = r.file.slice(0, r.file.indexOf("/"));
+            let prefixIsDir = false;
+            try {
+                prefixIsDir = statSync(join(galleryDir(), prefix)).isDirectory();
+            } catch {
+                /* 不存在/不可 stat = 坏行 */
+            }
+            if (prefixIsDir) {
+                folders.set(r.group_id, prefix); // 好行：已就位，顺带锚定本组文件夹名
+                continue;
+            }
+            base = r.file.slice(r.file.indexOf("/") + 1); // 坏行：文件实为 gallery/ 根下的 basename
+        }
+        const folder = folders.get(r.group_id) ?? computeGroupFolder(r.group_id);
+        folders.set(r.group_id, folder);
+        const rel = `${folder}/${base}`;
+        try {
+            renameSync(join(galleryDir(), base), join(galleryDir(), rel));
+        } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "ENOENT") continue;
+        }
+        upd.run(rel, r.id);
+        moved++;
+    }
+    if (moved > 0) console.log(`[gallery] 归位迁移 ${moved} 张图片进组文件夹`);
+})();
 
 /** 删原图与缩略图（缩略图按源格式定名：jpg 存 .jpg，其余 .png，svg 不生成）。
  *  rm 失败只当垃圾残留不报错——行已删/将删，磁盘孤儿不是错误源（同 changeDataDir 清理哲学） */
@@ -166,12 +277,39 @@ export function createGroup(name: string): ApiResult<{ id: number }> {
     return { ok: true, data: { id: Number(info.lastInsertRowid) } };
 }
 
-/** 收件箱是内置组：改名/删除一律拒绝（渲染端按 inbox 字段隐藏入口，这里兜底） */
+/** 收件箱是内置组：改名/删除一律拒绝（渲染端按 inbox 字段隐藏入口，这里兜底）。
+ *  改名连带把组文件夹一起 rename 并回写行内 file 前缀——先挪磁盘再改行（挪失败即报错，
+ *  行不动，下次重试）；行 UPDATE 与文件夹 rename 之间的崩溃窗口是已知取舍（个人工具，
+ *  404 兜底），先物理后 DB 让「行永远指向真实位置」的概率最大化 */
 export function renameGroup(id: number, name: string): ApiResult<null> {
     const row = getGroup(id);
     if (!row) return notFound;
     if (row.inbox !== 0) return badRequest;
-    db.prepare("UPDATE gallery_groups SET name = ? WHERE id = ?").run(name, id);
+    const prefixRow = stmtGroupFilePrefix.get(id) as { file: string } | undefined;
+    if (prefixRow) {
+        const old = prefixRow.file.split("/")[0];
+        let folder = sanitizeFolderName(id, name);
+        if (folder !== old && folderTaken(join(galleryDir(), folder))) folder = `group-${id}`;
+        if (folder !== old) {
+            try {
+                renameSync(join(galleryDir(), old), join(galleryDir(), folder));
+            } catch (e) {
+                return { ok: false, error: { kind: "failed", path: String(e) } };
+            }
+        }
+        db.transaction(() => {
+            db.prepare("UPDATE gallery_groups SET name = ? WHERE id = ?").run(name, id);
+            // 前缀整体替换：substr 跳过「旧前缀/」，新前缀作参拼进
+            db.prepare("UPDATE gallery_images SET file = ? || substr(file, ?) WHERE group_id = ?").run(
+                `${folder}/`,
+                old.length + 2,
+                id,
+            );
+        })();
+    } else {
+        // 组内无图：没有文件夹可挪（目录只在有图时才会建）
+        db.prepare("UPDATE gallery_groups SET name = ? WHERE id = ?").run(name, id);
+    }
     return { ok: true, data: null };
 }
 
@@ -188,6 +326,14 @@ export function deleteGroup(id: number): ApiResult<null> {
     }[];
     db.prepare("DELETE FROM gallery_groups WHERE id = ?").run(id);
     for (const img of images) removeImageFiles(img.id, img.file, img.format);
+    // 组目录收尾：文件都删净了顺手移走空目录；非空（个别文件删失败/异常残留）留着当垃圾
+    if (images.length > 0) {
+        try {
+            rmdirSync(join(galleryDir(), images[0].file.split("/")[0]));
+        } catch {
+            /* 非空/被占用：残留不挡流程 */
+        }
+    }
     return { ok: true, data: null };
 }
 
@@ -358,16 +504,17 @@ function normalizeExt(path: string): string {
     return e === "jpeg" ? "jpg" : e;
 }
 
-/** gallery/ 内最终文件名：磁盘撞名则在扩展名前插 " (2)"、" (3)"…。
- *  DB 的 file 列同查一把——防「行还在、磁盘文件已被外部删掉」时重用同名撞 UNIQUE 约束 */
-function uniqueName(original: string): string {
+/** gallery/<组文件夹>/ 内最终相对路径（组文件夹/文件名）：磁盘或 DB 撞名则在扩展名前插
+ *  " (2)"、" (3)"…。DB 的 file 列同查一把——防「行还在、磁盘文件已被外部删掉」时重用
+ *  同名撞 UNIQUE 约束 */
+function uniqueName(folder: string, original: string): string {
     const ext = extname(original);
     const stem = original.slice(0, original.length - ext.length);
-    let candidate = original;
-    for (let n = 2; existsSync(join(galleryDir(), candidate)) || stmtFileTaken.get(candidate); n++) {
-        candidate = `${stem} (${n})${ext}`;
+    let rel = `${folder}/${original}`;
+    for (let n = 2; existsSync(join(galleryDir(), rel)) || stmtFileTaken.get(rel); n++) {
+        rel = `${folder}/${stem} (${n})${ext}`;
     }
-    return candidate;
+    return rel;
 }
 
 function shaExists(sha: string): boolean {
@@ -414,6 +561,7 @@ function saveImage(
 export function importFiles(files: string[], groupId: number): ApiResult<GalleryImportStats> {
     ensureInbox();
     if (!getGroup(groupId)) return notFound;
+    const folder = groupFolder(groupId);
     let imported = 0;
     let skipped = 0;
     for (const f of files) {
@@ -434,7 +582,7 @@ export function importFiles(files: string[], groupId: number): ApiResult<Gallery
             skipped++; // 内容去重：同内容全库只收一份
             continue;
         }
-        const name = uniqueName(basename(f));
+        const name = uniqueName(folder, basename(f));
         writeFileSync(join(galleryDir(), name), buf);
         saveImage(groupId, basename(f), name, sha, buf, f);
         imported++;
@@ -456,9 +604,9 @@ export function pasteFromClipboard(groupId: number): ApiResult<GalleryImportStat
     const buf = img.toPNG();
     const sha = createHash("sha256").update(buf).digest("hex");
     if (shaExists(sha)) return { ok: true, data: { imported: 0, skipped: 1 } };
-    const name = uniqueName(pasteName());
+    const name = uniqueName(groupFolder(groupId), pasteName());
     writeFileSync(join(galleryDir(), name), buf);
-    saveImage(groupId, name, name, sha, buf, "");
+    saveImage(groupId, pasteName(), name, sha, buf, "");
     return { ok: true, data: { imported: 1, skipped: 0 } };
 }
 
@@ -476,6 +624,43 @@ const BROWSER_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const PAGE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 const IMAGE_ACCEPT = "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
+
+// ── 系统代理（注册表，仅 win；mac 无对应注册表恒直连，个人工具够用）──
+// 要处理的核心场景：代理客户端在跑但「系统代理」开关没开（ProxyEnable=0）——浏览器
+// 走插件代理能上网，而 Node fetch 与隐藏渲染窗口（Chromium 读系统设置=直连）都撞墙
+// （典型：pixiv 直连超时）。策略：ProxyEnable=1 直接代理优先；否则先直连，网络层
+// 失败再回退注册表里的 ProxyServer，回退成功后本进程固定走代理（避免每请求先超时一次）
+let proxyState: { server: string | null; agent: ProxyAgent | null } | undefined;
+let preferProxy = false;
+
+function ensureProxyState(): void {
+    if (proxyState) return;
+    let server: string | null = null;
+    let enabled = false;
+    if (process.platform === "win32") {
+        try {
+            const out = execSync('reg query "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"', {
+                encoding: "utf8",
+            });
+            server = /ProxyServer\s+REG_SZ\s+(\S+)/.exec(out)?.[1] ?? null;
+            enabled = /ProxyEnable\s+REG_DWORD\s+0x1/.test(out);
+        } catch {
+            /* 没配代理 */
+        }
+    }
+    // ProxyAgent 要 URI：注册值是 "host:port" 或 "http=…;https=…" 列表，取 https 段优先（抓取全是 https）
+    let agent: ProxyAgent | null = null;
+    if (server) {
+        let hp = server;
+        if (server.includes("=")) {
+            const seg = server.split(";").find((s) => s.trim().startsWith("https=")) ?? server.split(";")[0];
+            hp = seg.trim().replace(/^\w+=/, "");
+        }
+        if (/^[\w.-]+:\d+$/.test(hp)) agent = new ProxyAgent(`http://${hp}`);
+    }
+    proxyState = { server, agent };
+    preferProxy = enabled && agent != null;
+}
 
 /** 暂存记录：编号 → 来源与探得的元数据（入库与缩略图寻址都靠它） */
 const staged = new Map<number, { url: string; format: string; width: number; height: number }>();
@@ -511,19 +696,47 @@ export function collectDiscard(): ApiResult<null> {
     return { ok: true, data: null };
 }
 
+// 受限站登录态所在的抓取会话分区（cookie 由 server/chromeLogin.ts 从专用 Chrome 同步进来）。
+// fromPartition 幂等：与隐藏渲染窗口、chromeLogin 里的写入方共享同一个 session 实例
+const importSession = session.fromPartition(IMPORT_PARTITION);
+
 /** 带超时与防盗链头的 GET（超时模式抄 favicon.ts：AbortController + finally 清定时器）。
- *  Accept 区分页面/图片：CDN 按 Accept 做内容协商，图片请求带浏览器式的值才拿得到一致变体 */
+ *  Accept 区分页面/图片：CDN 按 Accept 做内容协商，图片请求带浏览器式的值才拿得到一致变体。
+ *  Cookie 从抓取分区取（cookies.get({url}) 的 domain/path/secure 匹配即浏览器语义），
+ *  没同步过登录态就是空——行为与匿名抓取完全一致。
+ *  代理回退见上方代理块：undici fetch（Node 全局 fetch 的本体，dispatcher 是它
+ *  的扩展选项，DOM RequestInit 类型没有，走 Object.assign 绕开字面量多余属性检查） */
 async function fetchWithTimeout(url: string, timeoutMs: number, referer: string, accept: string): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    ensureProxyState();
+    let cookie = "";
     try {
-        return await fetch(url, {
-            signal: controller.signal,
-            redirect: "follow",
-            headers: { "user-agent": BROWSER_UA, accept, ...(referer ? { referer } : {}) },
-        });
-    } finally {
-        clearTimeout(timer);
+        cookie = (await importSession.cookies.get({ url })).map((c) => `${c.name}=${c.value}`).join("; ");
+    } catch {
+        /* 拿不到就匿名请求 */
+    }
+    const headers = {
+        "user-agent": BROWSER_UA,
+        accept,
+        ...(referer ? { referer } : {}),
+        ...(cookie ? { cookie } : {}),
+    };
+    const attempt = (agent?: ProxyAgent): Promise<Response> => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const init = { signal: controller.signal, redirect: "follow" as const, headers };
+        if (agent) Object.assign(init, { dispatcher: agent });
+        return undiciFetch(url, init).finally(() => clearTimeout(timer)) as unknown as Promise<Response>;
+    };
+    const agent = proxyState?.agent ?? null;
+    if (!agent) return attempt();
+    if (preferProxy) return attempt(agent);
+    try {
+        return await attempt();
+    } catch (e) {
+        // 直连网络层失败：换注册表代理重试一次，成了以后本进程直接走代理
+        const res = await attempt(agent);
+        preferProxy = true;
+        return res;
     }
 }
 
@@ -630,8 +843,12 @@ function findNextUrl(html: string, base: string): string | null {
  *  网址导入单独成组的组名首选 */
 function pageTitle(html: string): string | null {
     const m = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-    if (!m) return null;
-    const s = m[1]
+    return m ? cleanTitle(m[1]) : null;
+}
+
+/** 渲染侧 document.title 与静态 <title> 共用的清洗（同上规则） */
+function cleanTitle(raw: string): string | null {
+    const s = raw
         .replace(/<[^>]*>/g, "")
         .replace(/\s+/g, " ")
         .replace(/&amp;/g, "&")
@@ -707,12 +924,14 @@ async function withRenderSlot<T>(job: () => Promise<T>): Promise<T> {
     }
 }
 
-export function pageDisplaySizes(url: string): Promise<ApiResult<null>> {
-    return withRenderSlot(() => renderPageSizes(url));
+export function renderPage(url: string): Promise<ApiResult<GalleryPageResult>> {
+    return withRenderSlot(() => renderPageInfo(url));
 }
 
-/** 隐藏窗口渲染页面，读每个图片 URL 在页面上的**实际显示尺寸**（CSS 布局结果，
- *  静态解析拿不到），结果并进会话 displaySizes。约定：
+/** 渲染收集页面：隐藏窗口真实加载后，从 DOM 一次性收「图片 URL 全集 + 各 URL 的实际
+ *  显示尺寸 + <title> + 下一页链接」，结果并进会话 displaySizes。SPA 站（pixiv 等）的
+ *  作品图是 JS 插入的，静态 HTML 里只有页脚图标——渲染后的 DOM 才是全量，这是把旧
+ *  「只量显示尺寸」的渲染升级为收集主路径的原因。约定：
  *  - 图片允许真实加载（实测教训：images:false 下进入懒加载视口的图会「尝试加载→失败」
  *    进入破损态，渲染成 alt 文本行盒——buondua 页面前 7 张量出 467×24 即此）。开加载后：
  *    进视口的图按真实内在尺寸布局（= 真实浏览器），远处懒图不下载、按 width/height 属性
@@ -723,23 +942,32 @@ export function pageDisplaySizes(url: string): Promise<ApiResult<null>> {
  *    不补齐则其余档永远配不上显示尺寸）；全部绝对化后再当键。
  *  - <a> 包着的 <img>：缩略图的显示尺寸归给链接目标（大图直链的「显示尺寸」就是它缩略图的）。
  *  - 同一 URL 出现多处取最大显示尺寸（既是缩略图又是正文大图 = 算显示过大的）。
- *  - 页面脚本真实执行：nodeIntegration 关、弹窗全拦，用完即销毁；失败/超时静默降级
- *    （结果写主进程控制台，pnpm dev 终端可排查）。 */
-async function renderPageSizes(url: string): Promise<ApiResult<null>> {
+ *  - 页面脚本真实执行：nodeIntegration 关、弹窗全拦，用完即销毁；失败/超时返回 fetch
+ *    错误（渲染端降级用静态解析结果），细节写主进程控制台，pnpm dev 终端可排查。 */
+async function renderPageInfo(url: string): Promise<ApiResult<GalleryPageResult>> {
     const win = new BrowserWindow({
         show: false,
         width: 1280,
         height: 900,
-        webPreferences: { nodeIntegration: false, contextIsolation: true },
+        // 挂抓取分区：受限站在隐藏渲染里也带登录态（同步过 cookie 时），与 fetch 链路同源
+        webPreferences: { nodeIntegration: false, contextIsolation: true, partition: IMPORT_PARTITION },
     });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // 页面脚本不得借隐藏窗口弹任何窗
     try {
         // 整段（加载 + 布局稳定 + DOM 采集）统一 15s 上限：页面挂死不泄漏窗口，输了的 Promise 由 race 吞掉
         const raw = await Promise.race([
             (async () => {
-                await win.loadURL(url, { userAgent: BROWSER_UA });
-                await new Promise((r) => setTimeout(r, 1200)); // 等 JS/字体与视口附近的图片布局稳定
-                return (await win.webContents.executeJavaScript(`JSON.stringify((() => {
+                await loadWithProxyFallback(win, url);
+                await new Promise((r) => setTimeout(r, 2000)); // 等 JS/字体与视口附近的图片布局稳定（SPA 插图稍慢）
+                // 脚本 async 化后 stringify 必须在函数体内做（对 Promise 同步 stringify 得 undefined）
+                return (await win.webContents.executeJavaScript(`(async () => {
+                    const IMG_RE = /\\.(?:jpe?g|png|gif|webp|bmp|svg)(?:$|[?#])/i;
+                    const abs = (u) => {
+                        try {
+                            const a = new URL(u, document.baseURI);
+                            return (a.protocol === "http:" || a.protocol === "https:") ? a.href : "";
+                        } catch { return ""; }
+                    };
                     const box = (img) => {
                         const r = img.getBoundingClientRect();
                         let w = Math.round(r.width), h = Math.round(r.height);
@@ -757,48 +985,137 @@ async function renderPageSizes(url: string): Promise<ApiResult<null>> {
                         if (h < 60) return null;
                         return { w, h };
                     };
-                    return [
-                        ...Array.from(document.images).flatMap((img) => {
-                            const b = box(img);
-                            if (!b) return [];
-                            // currentSrc/src 已是绝对地址；srcset 原始值需按 baseURI 绝对化
-                            const srcs = new Set([img.currentSrc || img.src]);
-                            for (const p of (img.getAttribute("srcset") || "").split(",")) {
-                                const u = p.trim().split(/\\s+/)[0];
-                                if (u) srcs.add(u);
-                            }
-                            return Array.from(srcs, (src) => {
-                                try { return { src: new URL(src, document.baseURI).href, w: b.w, h: b.h }; }
-                                catch { return { src: "", w: b.w, h: b.h }; }
-                            });
-                        }),
-                        ...Array.from(document.links).flatMap((a) =>
-                            Array.from(a.querySelectorAll("img"), (img) => {
-                                const b = box(img);
-                                return b ? [{ src: a.href, w: b.w, h: b.h }] : [];
-                            }),
-                        ),
-                    ];
-                })())`)) as string;
+                    // URL 全集（含懒加载属性与 srcset 各档，未必有布局盒）+ 有盒者的尺寸表（同 URL 取最大）
+                    const urls = new Set();
+                    const sizes = new Map();
+                    const record = (rawUrl, b) => {
+                        const u = abs(rawUrl);
+                        if (!u) return;
+                        urls.add(u);
+                        if (b) {
+                            const old = sizes.get(u);
+                            if (!old || b.w * b.h > old.w * old.h) sizes.set(u, b);
+                        }
+                    };
+                    for (const img of document.images) {
+                        const b = box(img);
+                        record(img.currentSrc || img.src, b);
+                        for (const attr of ["data-src", "data-original"]) {
+                            const v = img.getAttribute(attr);
+                            if (v) record(v, null);
+                        }
+                        for (const p of (img.getAttribute("srcset") || "").split(",")) {
+                            const u = p.trim().split(/\\s+/)[0];
+                            if (u) record(u, b);
+                        }
+                    }
+                    // <a> 直链大图（href 指向图片扩展名）：内部缩略图的显示尺寸归给链接目标
+                    for (const a of document.links) {
+                        const href = a.getAttribute("href") || "";
+                        if (!IMG_RE.test(href)) continue;
+                        for (const img of a.querySelectorAll("img")) record(href, box(img));
+                    }
+                    const sameHost = (href) => {
+                        try {
+                            const u = new URL(href, location.href);
+                            return (u.protocol === "http:" || u.protocol === "https:") && u.host === location.host ? u.href : "";
+                        } catch { return ""; }
+                    };
+                    // 翻页：rel=next 优先，其次锚文本整体匹配常见字样（对齐静态侧 findNextUrl；只认同 host）
+                    let nextUrl = "";
+                    for (const el of document.querySelectorAll("a[rel=next], link[rel=next]")) {
+                        const h = sameHost(el.getAttribute("href") || "");
+                        if (h) { nextUrl = h; break; }
+                    }
+                    if (!nextUrl) {
+                        const NEXT_RE = /^(?:(?:下一页|下页|后一页|next page|next)\\s*[›»→]?|[›»→])$/i;
+                        for (const a of document.links) {
+                            const t = (a.textContent || "").replace(/<[^>]*>/g, "").replace(/\\s+/g, " ").trim().toLowerCase();
+                            if (!NEXT_RE.test(t)) continue;
+                            const h = sameHost(a.getAttribute("href") || "");
+                            if (h) { nextUrl = h; break; }
+                        }
+                    }
+                    // ── pixiv 特化（用户决策的例外，仅此一个站点分支）：作品页的 <img> 只有
+                    // master1200 缩版，原图（img-original）只在 /ajax/illust 里，多页作品的
+                    // 其余页更是完全不在 DOM。同源 fetch 带分区 cookie（匿名访问 urls 全 null），
+                    // 代理/UA/登录态全部继承渲染窗口，零额外机制
+                    if (location.host === "www.pixiv.net") {
+                        const m = /^\\/artworks\\/(\\d+)/.exec(location.pathname);
+                        if (m) {
+                            try {
+                                const aj = await fetch("/ajax/illust/" + m[1], { headers: { accept: "application/json" }, credentials: "include" });
+                                const b = (await aj.json()).body;
+                                if (b && b.urls && b.urls.original) {
+                                    record(b.urls.original, null);
+                                    if ((b.pageCount || 1) > 1) {
+                                        const rp = await fetch("/ajax/illust/" + m[1] + "/pages", { headers: { accept: "application/json" }, credentials: "include" });
+                                        const jp = await rp.json();
+                                        for (const p of jp.body || []) {
+                                            if (p.urls && p.urls.original) record(p.urls.original, null);
+                                        }
+                                    }
+                                    // 原图在手：清掉同作品的缩版（master/custom-thumb/square），免得重复入库；
+                                    // 推荐区其他作品的缩略不受影响（id 不同），靠尺寸过滤自行取舍
+                                    for (const u of Array.from(urls)) {
+                                        if (u.includes("/" + m[1] + "_") && !u.includes("/img-original/")) urls.delete(u);
+                                    }
+                                }
+                            } catch (e) { /* ajax 失败照常走 DOM 收集的结果 */ }
+                        }
+                    }
+                    return JSON.stringify({
+                        urls: Array.from(urls),
+                        sizes: Array.from(sizes, ([src, b]) => ({ src: src, w: b.w, h: b.h })),
+                        nextUrl: nextUrl,
+                        title: document.title,
+                    });
+                })()`)) as string;
             })(),
-            new Promise<string>((r) => setTimeout(() => r("[]"), PAGE_TIMEOUT_MS)),
+            new Promise<string | null>((r) => setTimeout(() => r(null), PAGE_TIMEOUT_MS)),
         ]);
-        let added = 0;
-        for (const it of JSON.parse(raw) as { src: string; w: number; h: number }[]) {
+        if (!raw) return { ok: false, error: { kind: "gallery", code: "fetch" } };
+        const data = JSON.parse(raw) as {
+            urls: string[];
+            sizes: { src: string; w: number; h: number }[];
+            nextUrl: string;
+            title: string;
+        };
+        for (const it of data.sizes) {
             if (!it.src || it.w <= 0 || it.h <= 0) continue;
             const old = displaySizes.get(it.src);
-            if (!old || it.w * it.h > old.w * old.h) {
-                displaySizes.set(it.src, { w: it.w, h: it.h });
-                added++;
-            }
+            if (!old || it.w * it.h > old.w * old.h) displaySizes.set(it.src, { w: it.w, h: it.h });
         }
-        console.log(`[gallery] 显示尺寸 ${added} 条 ← ${url}`);
+        console.log(`[gallery] 渲染收集 ${data.urls.length} 张（含显示尺寸 ${data.sizes.length}）← ${url}`);
+        return {
+            ok: true,
+            data: {
+                imageUrls: data.urls,
+                nextUrl: data.nextUrl || null,
+                isImage: false,
+                title: cleanTitle(data.title || ""),
+            },
+        };
     } catch (e) {
-        console.warn(`[gallery] 显示尺寸渲染失败（降级为未知） ${url}:`, e);
+        console.warn(`[gallery] 渲染收集失败（渲染端降级走静态解析） ${url}:`, e);
+        return { ok: false, error: { kind: "gallery", code: "fetch" } };
     } finally {
         win.destroy();
     }
-    return { ok: true, data: null };
+}
+
+/** loadURL 直连失败（代理客户端在跑但系统代理开关没开等）：给抓取分区按注册表代理
+ *  显式 setProxy 后再试一次（ProxyServer 串与 Chromium proxyRules 语法同源，原样传）。
+ *  显式规则生效到进程退出为止——个人工具可接受的取舍 */
+async function loadWithProxyFallback(win: BrowserWindow, url: string): Promise<void> {
+    try {
+        await win.loadURL(url, { userAgent: BROWSER_UA });
+    } catch (e) {
+        ensureProxyState();
+        if (!proxyState?.server) throw e;
+        await importSession.setProxy({ proxyRules: proxyState.server });
+        await win.loadURL(url, { userAgent: BROWSER_UA });
+    }
 }
 
 /** 魔数嗅探真实格式：CDN 在 .jpg URL 下按 Chrome UA 内容协商回 webp 是常态，
@@ -966,6 +1283,7 @@ function nameFromUrl(url: string, format: string): string {
 
 export function importCandidates(input: GalleryImportCandidatesInput): ApiResult<GalleryImportStats> {
     if (!getGroup(input.groupId)) return notFound;
+    const folder = groupFolder(input.groupId);
     let imported = 0;
     let skipped = 0;
     for (const n of input.indices) {
@@ -987,7 +1305,7 @@ export function importCandidates(input: GalleryImportCandidatesInput): ApiResult
             continue;
         }
         const original = nameFromUrl(rec.url, rec.format);
-        const name = uniqueName(original);
+        const name = uniqueName(folder, original);
         writeFileSync(join(galleryDir(), name), buf);
         saveImage(input.groupId, original, name, sha, buf, rec.url, {
             width: rec.width,
@@ -1033,12 +1351,26 @@ export function deleteTag(tag: string): ApiResult<null> {
     return { ok: true, data: null };
 }
 
+/** 移动分组：行改 group_id 之外，文件也要从原组文件夹 rename 进目标组文件夹（含缩略图
+ *  无需动——按 id 寻址）。目标相对路径经 uniqueName 避让目标组已有文件；逐行处理不包
+ *  大事务——先物理 rename 再改行（同 renameGroup 的顺序约定），rename 被占用等暂时性
+ *  失败则跳过该行（图留在原组，可重试），源文件确实没了（ENOENT）照常改行（404 兜底） */
 export function moveImages(ids: number[], groupId: number): ApiResult<null> {
     if (!getGroup(groupId)) return notFound;
-    const upd = db.prepare("UPDATE gallery_images SET group_id = ? WHERE id = ?");
-    db.transaction(() => {
-        for (const id of ids) upd.run(groupId, id);
-    })();
+    const folder = groupFolder(groupId);
+    const selFile = db.prepare("SELECT file FROM gallery_images WHERE id = ?");
+    const upd = db.prepare("UPDATE gallery_images SET group_id = ?, file = ? WHERE id = ?");
+    for (const id of ids) {
+        const row = selFile.get(id) as { file: string } | undefined;
+        if (!row) continue;
+        const rel = uniqueName(folder, row.file.slice(row.file.indexOf("/") + 1));
+        try {
+            renameSync(join(galleryDir(), row.file), join(galleryDir(), rel));
+        } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "ENOENT") continue;
+        }
+        upd.run(groupId, rel, id);
+    }
     return { ok: true, data: null };
 }
 

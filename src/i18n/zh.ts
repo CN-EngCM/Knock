@@ -435,6 +435,17 @@ export const zh = {
     "gallery.url.toast.none": "未发现或未能下载任何图片",
     "gallery.url.toast.fetchFailed": "网页抓取失败",
 
+    "gallery.url.loginHint": "需要登录的网站：用 Chrome 登录后同步",
+    "gallery.url.chromeLogin": "用 Chrome 登录",
+    "gallery.url.chromeSync": "同步登录态",
+    "gallery.url.chromeClear": "清除登录数据",
+    "gallery.url.chromeClearConfirm": "确认清除？",
+    "gallery.url.toast.synced": "已同步 {n} 条登录信息",
+    "gallery.url.toast.noChrome": "未找到 Chrome 浏览器",
+    "gallery.url.toast.chromeFailed": "Chrome 启动或连接失败",
+    "gallery.url.toast.clearFailed": "清除失败，请先关闭 Chrome 后重试",
+    "gallery.url.toast.cleared": "已清除登录数据",
+
     "term.new": "新建会话",
     "btn.terminal": "显示/隐藏终端",
     "btn.sidebar": "显示/隐藏侧栏",

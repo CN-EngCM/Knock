@@ -444,6 +444,17 @@ export const en: Record<MessageKey, string> = {
     "gallery.url.toast.none": "No images found or downloaded",
     "gallery.url.toast.fetchFailed": "Failed to fetch page",
 
+    "gallery.url.loginHint": "Login-required site: log in via Chrome, then sync",
+    "gallery.url.chromeLogin": "Log in with Chrome",
+    "gallery.url.chromeSync": "Sync login",
+    "gallery.url.chromeClear": "Clear login data",
+    "gallery.url.chromeClearConfirm": "Confirm?",
+    "gallery.url.toast.synced": "Synced {n} login cookies",
+    "gallery.url.toast.noChrome": "Chrome not found",
+    "gallery.url.toast.chromeFailed": "Failed to launch or connect to Chrome",
+    "gallery.url.toast.clearFailed": "Clear failed — close Chrome and retry",
+    "gallery.url.toast.cleared": "Login data cleared",
+
     "term.new": "new session",
     "btn.terminal": "show/hide terminal",
     "btn.sidebar": "show/hide sidebar",

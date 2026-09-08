@@ -129,6 +129,11 @@ export function UrlImport({ password, onClose, onImported }: Props) {
     const [candidates, setCandidates] = useState<GalleryCandidate[]>([]);
     const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
     const [importing, setImporting] = useState<{ done: number; total: number } | null>(null);
+    // 受限站登录态：登录/同步各自 busy；清除走行内二次确认（同设置里清密码的模式）
+    const [loginBusy, setLoginBusy] = useState(false);
+    const [syncBusy, setSyncBusy] = useState(false);
+    const [clearBusy, setClearBusy] = useState(false);
+    const [clearArmed, setClearArmed] = useState(false);
     const cancelRef = useRef(false);
     const importBusy = useRef(false);
     // 首页 <title>（服务端已清洗截断）：导入单独成组时的组名首选；仅导入用，不参与渲染
@@ -193,11 +198,12 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         cancelRef.current = false;
         titleRef.current = null;
         setPhase("collecting");
-        // 翻页收集：同 host 与循环防护（已抓页判定到底）主进程已保证，这里只管页数/数量上限与 URL 去重
+        // 翻页收集：渲染收集为主路径（隐藏窗口真实加载后的 DOM 是全量，SPA 站如 pixiv
+        // 的作品图靠 JS 插入，静态 HTML 只有页脚图标）；渲染失败降级用静态解析结果。
+        // 同 host 与循环防护（已抓页判定到底）主进程已保证，这里只管页数/数量上限与 URL 去重
         const seen = new Set<string>();
         const visited = new Set<string>();
         const found: string[] = [];
-        const renders: Promise<unknown>[] = []; // 各页显示尺寸渲染（主进程并入会话，失败静默降级）
         let next: string | null = u;
         let pagesDone = 0;
         let isImage = false;
@@ -210,28 +216,27 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                 return;
             }
             visited.add(next);
-            if (!titleRef.current && r.data.title) titleRef.current = r.data.title; // 组名用首页标题
             if (r.data.isImage) {
                 isImage = true; // 直链：单张候选，无翻页语义
                 found.push(...r.data.imageUrls);
                 break;
             }
-            // 显示尺寸靠隐藏窗口渲染（比抓页慢得多），与后续翻页并行跑，下载前统一收口
-            renders.push(api.galleryPageDisplaySizes(next).catch(() => undefined));
-            for (const img of r.data.imageUrls) {
+            const rr = await api.galleryRenderPage(next);
+            const page = rr.ok ? rr.data : r.data; // 渲染失败（挂死/超时）→ 静态兜底
+            if (!titleRef.current && page.title) titleRef.current = page.title; // 组名用首页标题
+            for (const img of page.imageUrls) {
                 if (seen.has(img)) continue;
                 seen.add(img);
                 found.push(img);
             }
             pagesDone++;
             setProgress({ stage: "page", page: pagesDone, found: found.length });
-            let target = r.data.nextUrl;
+            let target = page.nextUrl;
             if (target && visited.has(target)) target = null; // 「下一页」指回已抓页 = 到底
             next = target;
         }
-        // 统一下载（截断在收集阶段已生效）：防盗链来源 = 会话首页，直链场景不带；
-        // 先等显示尺寸渲染收口——候选的 displayW/H 在下载时从会话表带出
-        await Promise.all(renders);
+        // 统一下载（截断在收集阶段已生效）：防盗链来源 = 会话首页，直链场景不带。
+        // 显示尺寸已在渲染收集时并入会话表，下载时随候选带出
         const urls = found.slice(0, maxCandidates);
         const items: GalleryCandidate[] = [];
         for (let i = 0; i < urls.length; i += DOWNLOAD_BATCH) {
@@ -278,6 +283,57 @@ export function UrlImport({ password, onClose, onImported }: Props) {
             else next.add(c.index);
             return next;
         });
+    }
+
+    // ── 受限站登录态（专用 Chrome 实例 + CDP 同步，见 server/chromeLogin.ts）──
+    // 流程：登录 → 在弹出的 Chrome 里完成站点登录 → 回这里点同步 → 抓取链路即带登录态
+
+    /** 登录/同步/清除失败按错误码挑文案（no-chrome / rm 之外的都归为启动连接失败） */
+    function toastChromeError(code: string | undefined) {
+        toast.error(
+            t(
+                code === "no-chrome"
+                    ? "gallery.url.toast.noChrome"
+                    : code === "rm"
+                      ? "gallery.url.toast.clearFailed"
+                      : "gallery.url.toast.chromeFailed",
+            ),
+        );
+    }
+
+    async function openChrome() {
+        setLoginBusy(true);
+        const r = await api.galleryChromeLogin(url.trim());
+        setLoginBusy(false);
+        if (!r.ok) toastChromeError(r.error.kind === "gallery" ? r.error.code : undefined);
+    }
+
+    async function syncLogin() {
+        setSyncBusy(true);
+        const r = await api.galleryChromeSync(url.trim());
+        setSyncBusy(false);
+        if (!r.ok) {
+            toastChromeError(r.error.kind === "gallery" ? r.error.code : undefined);
+            return;
+        }
+        toast.success(fmt(t("gallery.url.toast.synced"), { n: r.data.count }));
+    }
+
+    async function clearLogin() {
+        if (!clearArmed) {
+            setClearArmed(true);
+            window.setTimeout(() => setClearArmed(false), 3000); // 3 秒不点第二下自动解除
+            return;
+        }
+        setClearArmed(false);
+        setClearBusy(true);
+        const r = await api.galleryChromeClear();
+        setClearBusy(false);
+        if (!r.ok) {
+            toastChromeError(r.error.kind === "gallery" ? r.error.code : undefined);
+            return;
+        }
+        toast(t("gallery.url.toast.cleared"));
     }
 
     /** 确认导入时解析落点分组：单独成组——组名首选网页 <title>，后备站点域名（去 www.），
@@ -373,6 +429,37 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                     />
                                 </label>
                             ))}
+                        </div>
+                        <div className="flex items-center gap-2 text-[11.5px] text-muted">
+                            <span>{t("gallery.url.loginHint")}</span>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="xs"
+                                disabled={!canStart || loginBusy}
+                                onClick={() => void openChrome()}
+                            >
+                                {t("gallery.url.chromeLogin")}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="xs"
+                                disabled={!canStart || syncBusy}
+                                onClick={() => void syncLogin()}
+                            >
+                                {t("gallery.url.chromeSync")}
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="xs"
+                                className="ml-auto"
+                                disabled={clearBusy}
+                                onClick={() => void clearLogin()}
+                            >
+                                {clearArmed ? t("gallery.url.chromeClearConfirm") : t("gallery.url.chromeClear")}
+                            </Button>
                         </div>
                     </div>
                 )}

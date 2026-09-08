@@ -40,7 +40,7 @@ import {
     importFiles as galleryImport,
     listGroups as galleryListGroups,
     moveImages as galleryMove,
-    pageDisplaySizes as galleryPageDisplaySizes,
+    renderPage as galleryRenderPage,
     passwordState as galleryPasswordState,
     pasteFromClipboard as galleryPaste,
     pickFiles as galleryPickFiles,
@@ -58,6 +58,11 @@ import {
     wallCount as galleryWallCount,
     wallRemove as galleryWallRemove,
 } from "./gallery";
+import {
+    chromeClear as galleryChromeClear,
+    chromeLogin as galleryChromeLogin,
+    chromeSync as galleryChromeSync,
+} from "./chromeLogin";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { app, dialog } from "electron";
 import { spawn } from "node:child_process";
@@ -153,7 +158,7 @@ export type ApiError =
     | { kind: "youdao"; code: string } // 有道接口错误：code 为官方 errorCode，或 network（连不上/超时/响应异常）
     | { kind: "ai"; status?: number } // LLM 上游错误：status=HTTP 状态码，缺省=网络层失败或首字节超时
     | { kind: "not-configured" } // 翻译密钥未配置（settings 表缺 youdaoAppKey/youdaoAppSecret）
-    | { kind: "gallery"; code: "no-image" | "fetch" | "locked" | "wrong-password" } // 图库：剪贴板无图；抓页失败；查询私密分组未携有效密码；解锁密码不匹配
+    | { kind: "gallery"; code: "no-image" | "fetch" | "locked" | "wrong-password" | "no-chrome" | "chrome" | "rm" } // 图库：剪贴板无图；抓页失败；查询私密分组未携有效密码；解锁密码不匹配；未装 Chrome；专用 Chrome 拉起/CDP 失败；登录态 profile 删不掉（Chrome 未关净）
     | { kind: "data-dir"; reason: "same" | "occupied" | "failed" }; // 数据目录迁移：same=与当前相同；occupied=目标非空；failed=备份/校验失败（旧数据未动，可重试）
 
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
@@ -282,10 +287,20 @@ export interface MpApi {
     //    主进程只维护一个暂存会话（候选字节在 os.tmpdir，入库才进 gallery/）──
     galleryCollectStart(): Promise<ApiResult<null>>;
     galleryCollectDiscard(): Promise<ApiResult<null>>;
+    /** 静态抓页：直链判定（isImage）与渲染失败时的兜底解析 */
     galleryFetchPage(url: string): Promise<ApiResult<GalleryPageResult>>;
-    galleryPageDisplaySizes(url: string): Promise<ApiResult<null>>;
+    /** 渲染收集（主路径）：隐藏窗口真实加载后从 DOM 收图片 URL 全集/显示尺寸/标题/下页；
+     *  SPA 站（pixiv 等）作品图靠 JS 插入，静态 HTML 里没有 */
+    galleryRenderPage(url: string): Promise<ApiResult<GalleryPageResult>>;
     galleryDownloadCandidates(input: GalleryDownloadInput): Promise<ApiResult<{ items: GalleryCandidate[] }>>;
     galleryImportCandidates(input: GalleryImportCandidatesInput): Promise<ApiResult<GalleryImportStats>>;
+    // ── 受限站登录态：专用 Chrome 实例（独立持久 profile）+ CDP 同步 cookie，见 server/chromeLogin.ts ──
+    /** 拉起（或复用在跑的）专用 Chrome 打开该页，用户在其中登录 */
+    galleryChromeLogin(url: string): Promise<ApiResult<null>>;
+    /** 把专用 Chrome 里「访问该 URL 会带的 cookie」同步进抓取分区，返回写入条数 */
+    galleryChromeSync(url: string): Promise<ApiResult<{ count: number }>>;
+    /** 清除登录态：关专用 Chrome、删其 profile、清抓取分区 cookie */
+    galleryChromeClear(): Promise<ApiResult<null>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -945,10 +960,10 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         return galleryFetchPage(v.url);
     },
-    galleryPageDisplaySizes: async (url) => {
+    galleryRenderPage: async (url) => {
         const v = guard(galleryPageSchema, { url });
         if (!v) return badRequest;
-        return galleryPageDisplaySizes(v.url);
+        return galleryRenderPage(v.url);
     },
     galleryDownloadCandidates: async (input) => {
         const v = guard(galleryDownloadSchema, input);
@@ -960,6 +975,18 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         return galleryImportCandidates(v);
     },
+    // 三个登录态入口共用抓页的 httpUrl 校验（拒绝非 http(s) 的奇怪输入）
+    galleryChromeLogin: async (url) => {
+        const v = guard(galleryPageSchema, { url });
+        if (!v) return badRequest;
+        return galleryChromeLogin(v.url);
+    },
+    galleryChromeSync: async (url) => {
+        const v = guard(galleryPageSchema, { url });
+        if (!v) return badRequest;
+        return galleryChromeSync(v.url);
+    },
+    galleryChromeClear: async () => galleryChromeClear(),
 };
 
 // 别名读回：只返回有值的键（未设置/被清空的工具不出现）

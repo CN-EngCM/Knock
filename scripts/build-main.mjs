@@ -24,9 +24,11 @@ await build({
     outfile: "out/main.mjs",
     format: "esm",
     banner: {
-        // ESM 没有 __dirname，注入一个（业务代码沿用 CommonJS 习惯写法）。
+        // ESM 没有 __dirname / require，各注入一个（业务代码沿用 CommonJS 习惯写法；
+        // require 供 esbuild 内联的 CJS 依赖（undici 等）调用——其 __require shim 只在
+        // typeof require !== "undefined" 时才工作，ESM 主进程里不注入就抛 Dynamic require）。
         // 用动态 import 拿模块对象，避免静态 import 与打包产物的具名导入撞标识符。
-        js: "const __dirname = (await import('node:path')).dirname((await import('node:url')).fileURLToPath(import.meta.url));",
+        js: "const __dirname = (await import('node:path')).dirname((await import('node:url')).fileURLToPath(import.meta.url));\nconst require = (await import('node:module')).createRequire(import.meta.url);",
     },
 });
 
