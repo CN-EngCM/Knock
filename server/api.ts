@@ -13,6 +13,7 @@ import { killSession, readTermConfig, resizeSession, spawnSession, writeSession 
 import { scanShortcuts, type Shortcut } from "./shortcuts";
 import { getSetting, setSetting } from "./util/settings";
 import { dataDir } from "./util/dataDir";
+import { withNativeDialog } from "./util/nativeDialog";
 import {
     DB_NAME,
     FAVICONS_NAME,
@@ -64,7 +65,7 @@ import {
     chromeSync as galleryChromeSync,
 } from "./chromeLogin";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
-import { app, dialog } from "electron";
+import { app, clipboard, dialog } from "electron";
 import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -196,6 +197,10 @@ export interface MpApi {
     ptyWrite(id: number, data: string): Promise<ApiResult<null>>;
     ptyResize(id: number, cols: number, rows: number): Promise<ApiResult<null>>;
     ptyKill(id: number): Promise<ApiResult<null>>;
+    // ── 剪贴板（终端复制/粘贴用）：主进程 electron.clipboard 读写。打包后页面是
+    //    file:// 非安全上下文，渲染进程没有 navigator.clipboard，只能经 IPC 走这里 ──
+    clipboardRead(): Promise<string>;
+    clipboardWrite(text: string): Promise<ApiResult<null>>;
     // ── 终端设置（v2.3）：shell 只对新建会话生效，字号作用于全部已有会话 ──
     getTermConfig(): Promise<ApiResult<TermConfig>>;
     setTermConfig(patch: TermPatch): Promise<ApiResult<TermConfig>>;
@@ -552,6 +557,13 @@ export const apiHandlers: ApiHandlers = {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
         return killSession(id) ? { ok: true, data: null } : notFound;
     },
+    // 剪贴板读写不会失败，read 直接给裸串
+    clipboardRead: async () => clipboard.readText(),
+    clipboardWrite: async (text) => {
+        if (typeof text !== "string") return badRequest;
+        clipboard.writeText(text);
+        return { ok: true, data: null };
+    },
 
     // ── 终端设置：键值落在 settings 表，读回形状见 pty.readTermConfig ──
     getTermConfig: async () => ({ ok: true, data: readTermConfig() }),
@@ -657,9 +669,10 @@ export const apiHandlers: ApiHandlers = {
         }
     },
 
-    // 原生目录选择框（条目编辑「浏览…」）：取消 = data null，前端保持原值不动
+    // 原生目录选择框（条目编辑「浏览…」）：取消 = data null，前端保持原值不动。
+    // withNativeDialog 抑制主窗口失焦自动隐藏（见 util/nativeDialog.ts）
     pickDirectory: async () => {
-        const r = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+        const r = await withNativeDialog(() => dialog.showOpenDialog({ properties: ["openDirectory"] }));
         return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
     },
 
@@ -670,13 +683,15 @@ export const apiHandlers: ApiHandlers = {
     pickFile: async (purpose) => {
         const v = guard(pickFileSchema, { purpose });
         if (!v) return badRequest;
-        const r = await dialog.showOpenDialog({
-            properties: v.purpose === "app" ? ["openFile"] : ["openFile", "openDirectory"],
-            filters:
-                v.purpose === "app" && process.platform === "win32"
-                    ? [{ name: "EXE / LNK / BAT / CMD", extensions: ["exe", "lnk", "bat", "cmd"] }]
-                    : undefined,
-        });
+        const r = await withNativeDialog(() =>
+            dialog.showOpenDialog({
+                properties: v.purpose === "app" ? ["openFile"] : ["openFile", "openDirectory"],
+                filters:
+                    v.purpose === "app" && process.platform === "win32"
+                        ? [{ name: "EXE / LNK / BAT / CMD", extensions: ["exe", "lnk", "bat", "cmd"] }]
+                        : undefined,
+            }),
+        );
         return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
     },
 

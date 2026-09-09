@@ -109,7 +109,41 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
             });
             const fit = new FitAddon();
             term.loadAddon(fit);
+            // 复制粘贴：xterm 不碰剪贴板（Ctrl+C/V 默认作为 SIGINT/0x16 直发 shell）。
+            // 复制统一走右键——Windows 终端惯例：有选区复制、无选区粘贴；Ctrl+C 永远
+            // 留给中断程序（有残留选区时按 Ctrl+C 被吞成复制是实打实的坑）。
+            // Ctrl+V（macOS 为 Cmd+V）只管粘贴，走 term.paste 自动适配 bracketed
+            // paste（多行粘贴不会立刻逐行执行）。剪贴板读写走主进程 API：打包后页面
+            // 是 file:// 非安全上下文，渲染进程没有 navigator.clipboard。
+            const isMac = navigator.userAgent.includes("Mac");
+            const pasteFromClipboard = () =>
+                api
+                    .clipboardRead()
+                    .then((text) => {
+                        if (text) term.paste(text);
+                    })
+                    .catch(() => toast.error(t("toast.error")));
+            term.attachCustomKeyEventHandler((ev) => {
+                if (ev.type !== "keydown" || ev.altKey) return true;
+                const mod = isMac ? ev.metaKey : ev.ctrlKey;
+                if (mod && ev.key.toLowerCase() === "v") {
+                    void pasteFromClipboard();
+                    return false;
+                }
+                return true;
+            });
             term.open(el);
+            // 右键处理挂在外层容器上；本段只在建实例的路径执行（attach 会随 ref
+            // 身份变化重调），不会重复挂导致一次右键触发两遍
+            el.addEventListener("contextmenu", (ev) => {
+                ev.preventDefault();
+                if (term.hasSelection()) {
+                    void api.clipboardWrite(term.getSelection());
+                    term.clearSelection();
+                } else {
+                    void pasteFromClipboard();
+                }
+            });
             term.onData((d) => void api.ptyWrite(id, d));
             terms.current.set(id, term);
             fits.current.set(id, fit);
@@ -119,7 +153,7 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
                 term.focus();
             });
         },
-        [fitAndSync],
+        [fitAndSync, t],
     );
 
     const spawn = useCallback(

@@ -449,6 +449,8 @@ export const zh = {
     "term.new": "新建会话",
     "btn.terminal": "显示/隐藏终端",
     "btn.sidebar": "显示/隐藏侧栏",
+    "btn.pin": "钉住（失焦不隐藏）",
+    "btn.unpin": "取消钉住",
 
     "offline.title": "主进程未连接",
     "offline.hint": "正在自动重试（每 5 秒）……若持续失败，请重启应用。",

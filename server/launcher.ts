@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import open from "open";
 
 // ── 启动器：把一个条目在本机打开 ──
@@ -39,6 +39,18 @@ export function parseArgs(s: string): string[] {
 
 export type LaunchError = { error: "missing" | "failed"; path?: string };
 
+// Windows「应用执行别名」（商店应用的 wt.exe 等）是 0 字节重解析点，stat 跟随链接会被系统
+// 拒绝（EACCES）导致 existsSync 误报不存在；lstat 不跟随链接，能探明其真实存在
+function targetExists(path: string): boolean {
+    if (existsSync(path)) return true;
+    try {
+        lstatSync(path);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 /** 打开条目。成功返回 null；失败返回结构化错误（含路径，供前端提示） */
 export async function launchItem(item: {
     kind: "bookmark" | "app" | "file";
@@ -46,7 +58,7 @@ export async function launchItem(item: {
     args: string | null;
 }): Promise<LaunchError | null> {
     // 启动前先验路径：失效路径要给出明确报错而不是静默失败
-    if (!existsSync(item.target)) {
+    if (!targetExists(item.target)) {
         return { error: "missing", path: item.target };
     }
 

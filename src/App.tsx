@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, Dispatch, useEffect, useMemo, useRef, SetStateAction, useState } from "react";
 import { Toaster, toast } from "sonner";
-import { Check, Pencil, PanelLeft, Settings, Terminal } from "lucide-react";
+import { Check, Pencil, PanelLeft, Pin, PinOff, Settings, Terminal } from "lucide-react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
@@ -170,6 +170,18 @@ export default function App() {
     // 托盘菜单「设置」→ 唤起窗口的同时打开设置对话框（preload 转发的主进程事件）
     useEffect(() => {
         window.knock.onOpenSettings(() => setDialog({ kind: "settings" }));
+    }, []);
+
+    // ── 钉住：豁免「失焦自动隐藏」（挂终端/对照工作的场景）──
+    // 渲染端只管展示与切换，隐藏判定在主进程（electron/main.ts 的 blur 处理）；
+    // 呼出事件即「新一轮会话」：与主进程的隐藏清钉对齐，双方各自重置为未钉
+    const [pinned, setPinned] = useState(false);
+    useEffect(() => window.knock.onFocusSearch(() => setPinned(false)), []);
+    const togglePin = useCallback(() => {
+        setPinned((p) => {
+            window.knock.setPinned(!p);
+            return !p;
+        });
     }, []);
 
     // 启动顺序：先取运行环境（platform），再拉数据。
@@ -490,8 +502,18 @@ export default function App() {
                 }}
             />
 
-            {/* 提示符行：$ 即搜索框（输入即出下拉候选，含工具）；右侧「工具 ▾」是内置工具另一入口 */}
+            {/* 提示符行：$ 即搜索框（输入即出下拉候选，含工具）；右侧「工具 ▾」是内置工具另一入口。
+                最左是钉子：钉住时窗口失焦不自动隐藏（挂终端对照等场景） */}
             <header className="flex w-full flex-none flex-wrap items-center gap-2.5 px-6 pt-2.5 pb-2 text-[15px]">
+                <button
+                    type="button"
+                    className="tbtn"
+                    aria-pressed={pinned}
+                    onClick={togglePin}
+                    title={t(pinned ? "btn.unpin" : "btn.pin")}
+                >
+                    {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                </button>
                 <span className="text-text">{t("prompt.user")}</span>
                 <span className="text-dim">:~$</span>
                 <SearchBox

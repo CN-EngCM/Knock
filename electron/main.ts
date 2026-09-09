@@ -1,5 +1,7 @@
 import { app, BrowserWindow, ipcMain, protocol, session, shell } from "electron";
 import { join } from "node:path";
+// 纯工具模块（不开库、不触 settings），可在引导前静态 import
+import { nativeDialogOpen } from "../server/util/nativeDialog";
 // esbuild 以 ESM 打包本文件，__dirname 由构建脚本注入的 banner 提供
 import { createTray } from "./tray"; // 纯 electron，不触达 db，可静态加载
 import { resolveDataDirOnBoot } from "./dataBoot";
@@ -29,6 +31,7 @@ let startClipWatch: ClipModule["startClipWatch"];
 let freshClipboardText: ClipModule["freshClipboardText"];
 let initHotkey: HotkeyModule["initHotkey"];
 let shutdownHotkey: HotkeyModule["shutdownHotkey"];
+let unlockForeground: HotkeyModule["unlockForeground"];
 let loadWindowState: WindowStateModule["loadWindowState"];
 let trackWindowState: WindowStateModule["trackWindowState"];
 
@@ -67,7 +70,7 @@ if (!app.requestSingleInstanceLock()) {
         ({ setAiSink } = await import("../server/ai"));
         ({ serveImage, serveCandidate } = await import("../server/gallery"));
         ({ startClipWatch, freshClipboardText } = await import("./clipWatch"));
-        ({ initHotkey, shutdownHotkey } = await import("./hotkey"));
+        ({ initHotkey, shutdownHotkey, unlockForeground } = await import("./hotkey"));
         ({ loadWindowState, trackWindowState } = await import("./windowState"));
 
         // ── mpimg 协议：mpimg://<orig|thumb>/<id>（库内图）与 mpimg://cand/<n>（网址导入候选），
@@ -93,8 +96,16 @@ if (!app.requestSingleInstanceLock()) {
         }
 
         // 启动成功后渲染进程请求隐藏窗口：窗口生命周期是主进程职责，走 mp:* 事件
-        // 命名空间而非 MpApi 业务契约（fire-and-forget，无需返回值）
-        ipcMain.on("mp:hide-window", () => win?.hide());
+        // 命名空间而非 MpApi 业务契约（fire-and-forget，无需返回值）。
+        // 这是「打开条目成功」的自动退场，钉住时尊重钉子不藏（用户决策：钉=工作模式）
+        ipcMain.on("mp:hide-window", () => {
+            if (!pinned) hideMainWindow();
+        });
+
+        // 渲染端钉子按钮的状态同步（fire-and-forget；呼出/隐藏时双方各自重置，见下）
+        ipcMain.on("mp:set-pinned", (_e, v: unknown) => {
+            pinned = v === true;
+        });
 
         // 二次启动唤起已有实例的窗口：引导期间窗口模块未加载，引导完成后才挂监听
         app.on("second-instance", () => showWindow());
@@ -117,12 +128,13 @@ if (!app.requestSingleInstanceLock()) {
         // AI 对话增量流：与 pty 同款出口注入，工具关闭/组件卸载期间事件自然被忽略
         setAiSink((ev) => win?.webContents.send("mp:ai-event", ev));
         createTray(
-            () => win,
             () => {
                 // 托盘「设置」：唤起窗口并让前端打开设置对话框
                 showWindow();
                 win?.webContents.send("mp:open-settings");
             },
+            toggleWindow,
+            showWindow,
         );
         initHotkey(toggleWindow);
     });
@@ -162,8 +174,20 @@ function createWindow(): BrowserWindow {
     w.on("close", (e) => {
         if (!quitting) {
             e.preventDefault();
-            w.hide();
+            hideMainWindow();
         }
+    });
+
+    // 失焦自动隐藏（spotlight 式）：窗口要么藏、要么可见且聚焦，「可见但失焦」
+    // 的中间态是旧版「提到前面」激活被拒 bug 的温床，从形态上消灭它。
+    // 延迟一拍再判：点自家任务栏图标等瞬态失焦会立刻回焦；期间重聚焦 /
+    // 钉住 / 原生对话框在场（弹窗本身必然抢走焦点）都不藏
+    w.on("blur", () => {
+        setTimeout(() => {
+            if (w.isDestroyed() || !w.isVisible() || w.isFocused()) return;
+            if (pinned || nativeDialogOpen()) return;
+            hideMainWindow();
+        }, 200);
     });
     w.on("closed", () => {
         win = null;
@@ -202,21 +226,45 @@ function showWindow(): void {
     //      合并忽略，窗口卡在置顶（表现为点别的软件也盖不住它），
     //      这正是本函数早先版本的 bug。
     w.setAlwaysOnTop(true);
-    if (!w.isVisible()) w.show();
+    // show 无条件执行：show 参与激活链，跳过它只剩裸 focus() 时后台进程
+    // 硬抢前台必被 Windows 前台锁拒（任务栏按钮闪橙、焦点拿不到）
+    w.show();
+    // 先武装再取焦点（PowerToys Run 等启动器的标准配方）：被拒的 focus() 会让
+    // Electron 自认已聚焦（与 OS 脱同步），之后 focus() 沦为 no-op——与其事后
+    // blur() 复位（健康路径也会闪一下），不如让第一次激活就合法、被拒不发生
+    unlockForeground();
     w.focus();
     setTimeout(() => {
-        if (w.isDestroyed() || !w.isVisible()) return;
+        if (w.isDestroyed()) return;
+        // 窗口已被快速再按热键藏掉也照样清置顶——topmost 残留会带到下次呼出
         w.setAlwaysOnTop(false);
-        // 激活若在 show 瞬间没落定（前台锁的瞬态），这里再试一次
-        if (!w.isFocused()) w.focus();
+        // 罕见的持续被拒（全屏游戏/高权限进程占前台）再武装重试一次；
+        // 仍拿不到焦点时窗口浮着等用户点一下或双击 Ctrl 收掉（二态切换不判焦点）
+        if (w.isVisible() && !w.isFocused()) {
+            unlockForeground();
+            w.focus();
+        }
     }, 120);
     // 呼出即聚焦搜索框（spotlight 式：双击完 Ctrl 直接打字即搜）。
     // payload = 时限内的剪贴板素材（null = 超时/关闭/非文本），渲染端以 chip 呈现
     w.webContents.send("mp:focus-search", freshClipboardText());
 }
 
-// 三分支：前台可见才藏；可见但已失焦（被别的窗口盖住）时双击 Ctrl 是「提到前面」而非「藏掉」
+// ── 钉住：失焦自动隐藏的豁免开关 ──
+// 钉住 = 失焦不自动藏（挂终端/对照工作的场景）；任何隐藏都清钉（隐藏即取消，
+// 不跨呼出记忆）。状态归主进程管（blur 自动藏在此判定），渲染端按钮经
+// mp:set-pinned 同步；双方在「呼出 / 隐藏」时各自重置，不另做反向推送。
+let pinned = false;
+
+/** 隐藏主窗口的统一入口：唯一会清钉的地方（隐藏即取消） */
+function hideMainWindow(): void {
+    pinned = false;
+    win?.hide();
+}
+
+// 二态切换：可见即藏（同时清钉）；藏/最小化则呼出。不判 isFocused——
+// 激活被拒的僵死窗口（焦点拿不到的罕见态）也能被双击收掉
 function toggleWindow(): void {
-    if (win && win.isVisible() && !win.isMinimized() && win.isFocused()) win.hide();
+    if (win && win.isVisible() && !win.isMinimized()) hideMainWindow();
     else showWindow();
 }

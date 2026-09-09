@@ -54,6 +54,7 @@ declare global {
         knock: {
             invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
             hideWindow: () => void;
+            setPinned: (v: boolean) => void;
             /** 拖拽导入取本机路径：Electron 32+ 渲染进程 File 不再带 .path，经 webUtils 在 preload 换 */
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
@@ -96,6 +97,8 @@ export const api: MpApi = {
     ptyWrite: (id, data) => invoke("ptyWrite", id, data),
     ptyResize: (id, cols, rows) => invoke("ptyResize", id, cols, rows),
     ptyKill: (id) => invoke("ptyKill", id),
+    clipboardRead: () => invoke("clipboardRead"),
+    clipboardWrite: (text) => invoke("clipboardWrite", text),
     getTermConfig: () => invoke("getTermConfig"),
     setTermConfig: (patch) => invoke("setTermConfig", patch),
     getFontConfig: () => invoke("getFontConfig"),

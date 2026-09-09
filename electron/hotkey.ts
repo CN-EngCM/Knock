@@ -158,3 +158,12 @@ export function currentHotkey(): HotkeyId {
 export function shutdownHotkey(): void {
     deactivate();
 }
+
+/** Windows 前台锁兜底：合成一次 F13 击键。后台进程的 SetForegroundWindow 会被
+ *  系统静默拒绝（任务栏按钮闪橙、焦点拿不到），但「收到最后一次输入事件的进程」
+ *  除外——注入击键后紧随的 focus() 即被放行。F13 在常见键盘上不存在、应用几乎
+ *  不响应，是最安全的合成键；注入也会经过自家钩子（记为「夹了别的键」），对
+ *  双击判定无害。 */
+export function unlockForeground(): void {
+    if (process.platform === "win32") uIOhook.keyTap(UiohookKey.F13);
+}

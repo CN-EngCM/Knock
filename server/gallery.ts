@@ -20,6 +20,7 @@ import db from "./db";
 import { IMPORT_PARTITION } from "./chromeLogin";
 import { dataDir } from "./util/dataDir";
 import { GALLERY_NAME } from "./util/dataLocation";
+import { withNativeDialog } from "./util/nativeDialog";
 import { getSetting, setSetting } from "./util/settings";
 import {
     GALLERY_FORMATS,
@@ -1412,12 +1413,15 @@ export function revealImage(id: number): ApiResult<null> {
     return { ok: true, data: null };
 }
 
-/** 原生多选文件框（图库导入入口）；取消返回 []。过滤名只用扩展名串，主进程不引入界面文案（见 pickFile 先例） */
+/** 原生多选文件框（图库导入入口）；取消返回 []。过滤名只用扩展名串，主进程不引入界面文案（见 pickFile 先例）。
+ *  withNativeDialog 抑制主窗口失焦自动隐藏（见 util/nativeDialog.ts） */
 export async function pickFiles(): Promise<ApiResult<string[]>> {
-    const r = await dialog.showOpenDialog({
-        properties: ["openFile", "multiSelections"],
-        filters: [{ name: GALLERY_FORMATS.join(";"), extensions: [...GALLERY_FORMATS] }],
-    });
+    const r = await withNativeDialog(() =>
+        dialog.showOpenDialog({
+            properties: ["openFile", "multiSelections"],
+            filters: [{ name: GALLERY_FORMATS.join(";"), extensions: [...GALLERY_FORMATS] }],
+        }),
+    );
     return { ok: true, data: r.canceled ? [] : r.filePaths };
 }
 

@@ -8,6 +8,7 @@ import type { AiEvent } from "../server/ai";
 //                     参数由处理器入口的 zod 校验兜底）
 //   hideWindow     —— 渲染进程启动成功后请求隐藏窗口（首个渲染→主进程方向的 send，
 //                     fire-and-forget，无需返回值）
+//   setPinned      —— 钉子按钮同步失焦自动隐藏的豁免状态（mp:set-pinned，同上）
 //   onOpenSettings —— 订阅托盘菜单「设置」事件
 //   onFocusSearch  —— 订阅窗口呼出事件（双击 Ctrl 等，渲染端聚焦搜索框）
 //   onPtyEvent     —— 订阅终端输出流（v2.2：pty data/exit 下行事件），返回退订函数：
@@ -23,6 +24,9 @@ contextBridge.exposeInMainWorld("knock", {
     invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
     hideWindow: (): void => {
         ipcRenderer.send("mp:hide-window");
+    },
+    setPinned: (v: boolean): void => {
+        ipcRenderer.send("mp:set-pinned", v);
     },
     filePathFor: (file: File): string => webUtils.getPathForFile(file),
     onOpenSettings: (cb: () => void): void => {

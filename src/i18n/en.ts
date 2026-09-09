@@ -458,6 +458,8 @@ export const en: Record<MessageKey, string> = {
     "term.new": "new session",
     "btn.terminal": "show/hide terminal",
     "btn.sidebar": "show/hide sidebar",
+    "btn.pin": "pin (no hide on blur)",
+    "btn.unpin": "unpin",
 
     "offline.title": "Main process unreachable",
     "offline.hint": "Retrying automatically every 5s… If it persists, restart the app.",
