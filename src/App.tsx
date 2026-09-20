@@ -494,8 +494,8 @@ export default function App() {
 
     return (
         /* 窗口本体即玻璃浮窗(设计稿里玻璃外的极光矩形是画布背景,不做进应用)。
-           拖拽区:玻璃底默认 app-drag(顶栏空处/面板间隙/空态区可拖),面板与
-           交互区一律 app-no-drag 豁免 */
+           拖拽区仅左上角品牌区(用户决策):整窗其余位置全部可点,
+           避免大范围 app-drag 在窗口层吞事件(hover/点击/滚轮) */
         <div className="flex h-screen flex-col overflow-hidden font-sans text-text">
             <Toaster
                 position="bottom-center"
@@ -510,7 +510,7 @@ export default function App() {
                 }}
             />
 
-            <div className="knock-glass app-drag relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="knock-glass relative flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="knock-glow" aria-hidden />
 
                 {/* 顶栏一行六件:品牌 + 过滤输入(占满剩余宽) + 工具菜单 + 新建终端 + 钉住 + 设置
@@ -519,7 +519,10 @@ export default function App() {
                     16px,不再垂直居中出 5px 贴顶缝。z-20 必须高于工作区的 z-10:搜索
                     下拉悬出顶栏范围,同 z 会整树输给后出现的兄弟节点) */}
                 <header className="relative z-20 flex flex-none items-center gap-3 pt-4 pr-4 pl-5">
-                    <span className="select-none text-[14.5px] font-semibold tracking-wide text-white">敲敲 Knock</span>
+                    {/* 唯一的窗口拖拽区:品牌文字块拉满顶栏行高当把手(self-stretch 撑出 46px 高) */}
+                    <span className="app-drag flex select-none self-stretch items-center pr-3 text-[14.5px] font-semibold tracking-wide text-white">
+                        敲敲 Knock
+                    </span>
                     <div className="app-no-drag flex min-w-0 flex-1 items-center">
                         <SearchBox
                             groups={groups}
@@ -592,8 +595,7 @@ export default function App() {
                 ) : (
                     /* 两栏工作区：左=启动面板(全部分组平铺,可整栏收起),右=tab 区
                        （工具与终端会话共用一条 tab 行，各是一等 tab）。
-                       本容器继承玻璃底的 app-drag:面板间空隙与右列空态可拖窗口,
-                       两个面板自身各自 app-no-drag 豁免 */
+                       拖拽区仅品牌区,本容器与面板全部可点(面板保留 app-no-drag 语义) */
                     <div className="relative z-10 flex min-h-0 flex-1 gap-1.5 p-4 pt-2.5">
                         {layout.sidebarVisible && (
                             <aside

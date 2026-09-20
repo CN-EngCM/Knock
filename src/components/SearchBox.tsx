@@ -195,14 +195,6 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
 
     const open = q.length > 0 && focused;
 
-    // 拖拽区(顶栏空处/面板间隙/右列空态)的点击在窗口层就被吃掉,不产生任何 DOM
-    // 事件,输入框无从 blur,下拉「点外面不收」:打开期间给根元素挂标记,整窗临时
-    // 免拖拽(见 index.css 的 html.dropdown-open 规则),任意点击落回页面即 blur 收起
-    useEffect(() => {
-        document.documentElement.classList.toggle("dropdown-open", open);
-        return () => document.documentElement.classList.remove("dropdown-open");
-    }, [open]);
-
     function select(c: Candidate) {
         if (c.kind === "item") {
             onOpenItem(c.item);

@@ -49,7 +49,7 @@ export function ToolsZone({
     const { t } = useI18n();
 
     return (
-        // app-no-drag:面板内容全交互/滚动,拖窗靠面板外的玻璃空区与顶栏
+        // app-no-drag:面板全交互;窗口拖拽把手仅顶栏品牌区
         <div className="glass-panel app-no-drag flex min-h-0 flex-1 flex-col overflow-hidden">
             {/* tab 行(设计定稿 40px):活动 tab 浮白底,行底一条 12% 白线 */}
             <div className="flex h-10 flex-none items-stretch gap-1 border-b border-white/[0.12] pl-2.5 pr-2">

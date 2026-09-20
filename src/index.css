@@ -292,16 +292,11 @@ body {
     }
 }
 
-/* 无边框窗口拖拽区:壁纸留白与顶栏可拖,交互元素一律豁免 */
+/* 无边框窗口拖拽区:唯一把手 = 顶栏左上角品牌区,其余全部可点 */
 .app-drag {
     -webkit-app-region: drag;
 }
 .app-no-drag {
-    -webkit-app-region: no-drag;
-}
-/* 搜索下拉打开期间全窗临时免拖拽:拖拽区的点击在窗口层被吃掉、不产生任何 DOM
-   事件,输入框永不失焦,下拉就「点外面不收」;置 no-drag 让点击落回页面,blur 即收 */
-html.dropdown-open .app-drag {
     -webkit-app-region: no-drag;
 }
 
@@ -325,16 +320,19 @@ html.dropdown-open .app-drag {
 [data-slot="dialog-content"][data-state="closed"] {
     animation: dialog-out 130ms ease-out;
 }
+/* 关键帧只管缩放+淡入淡出,不含位移:Content 的居中是 Tailwind v4 的独立
+   translate 属性,关键帧里再写 translate(-50%,-50%) 会与之叠加成 -100%,
+   弹窗就会从「中心偏左上一个身位」处弹入/退出(此前的真实毛病) */
 @keyframes dialog-in {
     from {
         opacity: 0;
-        transform: translate(-50%, -50%) scale(0.96);
+        transform: scale(0.96);
     }
 }
 @keyframes dialog-out {
     to {
         opacity: 0;
-        transform: translate(-50%, -50%) scale(0.97);
+        transform: scale(0.97);
     }
 }
 @keyframes overlay-in {

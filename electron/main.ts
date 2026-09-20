@@ -241,6 +241,14 @@ function createWindow(): BrowserWindow {
         if (/^https?:/i.test(url)) void shell.openExternal(url);
         return { action: "deny" };
     });
+    // 渲染进程卡死探测器:input 持续无响应触发 unresponsive,恢复时 responsive。
+    // 输出进主进程控制台(pnpm dev 可见),用于定位「设置界面有时点不动」的偶发卡死
+    w.webContents.on("unresponsive", () => {
+        console.warn("[diag] renderer unresponsive", new Date().toISOString());
+    });
+    w.webContents.on("responsive", () => {
+        console.warn("[diag] renderer responsive", new Date().toISOString());
+    });
     // 页面内导航只允许开发服务器自身（生产态 file:// 无外链）
     w.webContents.on("will-navigate", (e, url) => {
         if (!url.startsWith(DEV_URL)) {

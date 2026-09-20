@@ -33,7 +33,7 @@ export function ToolsMenu({ open, onOpen }: Props) {
     }, [show]);
 
     return (
-        /* app-no-drag:顶栏是玻璃拖拽底,触发钮与弹层都要豁免 */
+        /* app-no-drag:显式豁免拖拽把手,防交互被窗口层吞(拖拽区现为品牌区,此为保险) */
         <div ref={wrap} className="app-no-drag relative flex-none">
             <button
                 type="button"

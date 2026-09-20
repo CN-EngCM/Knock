@@ -66,7 +66,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 敲敲（Knock）：个人启动器（网页收藏 / 本机应用 / 文件快捷方式 / 终端命令）。Electron 托盘常驻，**双击 Ctrl** 呼出主窗口，无 TCP 端口、无 HTTP 服务、单机单用户。同时是 TypeScript 学习项目——可读性优先，禁止过度设计与炫技，这是硬约束。
 
-界面为「晨雾 Aurora Glass」单一深色玻璃体系（设计稿 `docs/Design.pen`）：**窗口本体即玻璃浮窗**（设计稿里玻璃窗外的极光 mesh 矩形只是画布背景，勿做进应用），薄荷绿 `#7FE3C9` 单强调色，字体 Outfit（可变）+ IBM Plex Mono（woff2 内嵌于 `src/assets/fonts/`，令牌与动效全在 `src/index.css`）。窗口**无边框**（`frame:false`，`backgroundColor` 与主题同色防闪白；Windows 上经 `tintSystemBorder` 把 DWM 自画的 1px 系统边线染成应用深蓝——该属性跨 hide/show 持久但会随最大化切换重置，故创建/ready-to-show/maximize 各补染一次；窗口边缘圆角与描边全归 OS，不自画），拖拽区 = 玻璃底默认 `app-drag`（顶栏空处/面板间隙/右列空态），面板与交互区一律 `app-no-drag` 豁免；无状态栏（编辑开关在启动面板脚、侧栏开关/工具入口/新会话在 tab 栏右簇、钉住与设置在顶栏）。
+界面为「晨雾 Aurora Glass」单一深色玻璃体系（设计稿 `docs/Design.pen`）：**窗口本体即玻璃浮窗**（设计稿里玻璃窗外的极光 mesh 矩形只是画布背景，勿做进应用），薄荷绿 `#7FE3C9` 单强调色，字体 Outfit（可变）+ IBM Plex Mono（woff2 内嵌于 `src/assets/fonts/`，令牌与动效全在 `src/index.css`）。窗口**无边框**（`frame:false`，`backgroundColor` 与主题同色防闪白；Windows 上经 `tintSystemBorder` 把 DWM 自画的 1px 系统边线染成应用深蓝——该属性跨 hide/show 持久但会随最大化切换重置，故创建/ready-to-show/maximize 各补染一次；窗口边缘圆角与描边全归 OS，不自画），拖拽区 = 仅顶栏左上角品牌区（`app-drag` 把手；用户决策：大范围拖拽区会在窗口层吞掉 hover/点击/滚轮，其余全窗一律可点，交互元素保留 `app-no-drag` 语义保险）；无状态栏（编辑开关在启动面板脚、侧栏开关在 tab 栏右簇、工具菜单/新建终端/钉住/设置在顶栏）。
 
 ## 常用命令
 
