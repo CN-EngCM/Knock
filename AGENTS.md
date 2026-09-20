@@ -66,6 +66,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 敲敲（Knock）：个人启动器（网页收藏 / 本机应用 / 文件快捷方式 / 终端命令）。Electron 托盘常驻，**双击 Ctrl** 呼出主窗口，无 TCP 端口、无 HTTP 服务、单机单用户。同时是 TypeScript 学习项目——可读性优先，禁止过度设计与炫技，这是硬约束。
 
+界面为「晨雾 Aurora Glass」单一深色玻璃体系（设计稿 `docs/Design.pen`）：**窗口本体即玻璃浮窗**（设计稿里玻璃窗外的极光 mesh 矩形只是画布背景，勿做进应用），薄荷绿 `#7FE3C9` 单强调色，字体 Outfit（可变）+ IBM Plex Mono（woff2 内嵌于 `src/assets/fonts/`，令牌与动效全在 `src/index.css`）。窗口**无边框**（`frame:false`，`backgroundColor` 与主题同色防闪白；Windows 上经 `tintSystemBorder` 把 DWM 自画的 1px 系统边线染成应用深蓝——该属性跨 hide/show 持久但会随最大化切换重置，故创建/ready-to-show/maximize 各补染一次；窗口边缘圆角与描边全归 OS，不自画），拖拽区 = 玻璃底默认 `app-drag`（顶栏空处/面板间隙/右列空态），面板与交互区一律 `app-no-drag` 豁免；无状态栏（编辑开关在启动面板脚、侧栏开关/工具入口/新会话在 tab 栏右簇、钉住与设置在顶栏）。
+
 ## 常用命令
 
 ```bash
@@ -114,7 +116,7 @@ src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用�
 ## 数据与平台
 
 - SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。图库（工具 gallery）三张 `gallery_*` 表存分组/图片元数据与图片 tag，图片**字节级复制**进数据目录 `gallery/<组文件夹>/` 子目录（组名清洗而来，`file` 列存「组文件夹/文件名」相对路径；sha256 全库去重、缩略图按需生成于 `.thumbs/`，按 id 寻址不分目录），渲染端经 `mpimg://orig|thumb/<id>` 协议直读；`gallery/` 与 favicons 同在 dataLocation 的具名迁移/清理清单里，改数据目录会整体跟随。
-- 主题、界面语言、布局偏好（侧栏宽/终端高/终端开关）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。
+- 界面语言、布局偏好（侧栏宽/侧栏开关）、背景色（`bgColor`，底色锚点 `--bg-base`，全族颜色 color-mix 派生，见 lib/theme.ts）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。终端会话在右列 tab 区里与工具并列为一等 tab（非 ToolId）：会话清单与激活页签在 App（`activeTab: ToolId | number | null`，数字即会话 id），× 关会话即结束 pty；TerminalZone 只是 xterm 宿主，随会话清单挂载/卸载。
 - 开发平台 Windows 与 macOS；平台相关代码集中在：server/shortcuts.ts（win 扫开始菜单/桌面 .lnk，mac 扫 /Applications 等处 .app）、server/everything.ts 与 server/spotlight.ts（文件搜索双后端：win 走 Everything/es.exe，mac 走 mdfind）、server/launcher.ts（mac 的 .app 带参走 open -a）、server/autostart.ts 与 server/pty.ts（默认 shell 探测）、server/api.ts 的 revealPath（explorer /select vs open -R）、electron/tray.ts（mac 托盘模板图），其余保持跨平台写法。
 - 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；**macOS 需「辅助功能」授权**（启动时检测，未授权弹原生引导并报 `unauthorized`，授权后重启生效），mac 默认预设为双击 Command（libuiohook 键名 Meta）。预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
 

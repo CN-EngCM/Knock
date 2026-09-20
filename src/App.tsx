@@ -1,10 +1,11 @@
 import { Suspense, lazy, useCallback, Dispatch, useEffect, useMemo, useRef, SetStateAction, useState } from "react";
 import { Toaster, toast } from "sonner";
-import { Check, Pencil, PanelLeft, Pin, PinOff, Settings, Terminal } from "lucide-react";
+import { Check, Pencil, Pin, PinOff, Plus, Settings } from "lucide-react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
     api,
+    onPtyEvent,
     type ApiError,
     type ApiResult,
     type AiModelConfig,
@@ -16,7 +17,6 @@ import {
     type TranslateConfigPatch,
 } from "./api/client";
 import { AsciiSplash } from "./components/AsciiSplash";
-import { Clock } from "./components/Clock";
 import { GroupPanel } from "./components/GroupPanel";
 import { SearchBox } from "./components/SearchBox";
 import { Splitter } from "./components/Splitter";
@@ -25,7 +25,7 @@ import { ToolsZone } from "./components/ToolsZone";
 import type { ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
-import type { TermSpawnReq } from "./components/TerminalZone";
+import type { TermSession } from "./components/TerminalZone";
 import { GroupDialog } from "./components/dialogs/GroupDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { ImportDialog } from "./components/dialogs/ImportDialog";
@@ -33,9 +33,8 @@ import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDia
 import { useDragSensors } from "./lib/dnd";
 import { applyFonts } from "./lib/fonts";
 import { useI18n } from "./i18n/useI18n";
-import { applyTheme, initialTheme, saveTheme, type ThemeMode } from "./theme";
 
-// 终端区懒加载：xterm 体积不小，首屏用不到就不进主 chunk（拆分由 Vite 自动完成）
+// 终端会话宿主懒加载：xterm 体积不小，首屏用不到就不进主 chunk（拆分由 Vite 自动完成）
 const TerminalZone = lazy(() => import("./components/TerminalZone").then((m) => ({ default: m.TerminalZone })));
 
 // 工具内「打开设置」引导要直达的分节：工具有缺配置态就登记一行；
@@ -60,26 +59,22 @@ type DialogState =
     // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
     | { kind: "settings"; section?: SectionId };
 
-// ── 三区布局状态（v2.2）：侧栏宽度 / 终端高度 / 终端显隐 ──
-// 与主题、语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
+// ── 布局状态：侧栏宽度 / 侧栏显隐 ──
+// 与界面语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
 type Layout = {
     sidebarW: number;
     sidebarVisible: boolean;
-    termH: number;
-    termVisible: boolean;
 };
 
 function loadLayout(): Layout {
-    const fallback: Layout = { sidebarW: 300, sidebarVisible: true, termH: 230, termVisible: true };
+    const fallback: Layout = { sidebarW: 290, sidebarVisible: true };
     try {
         const raw = localStorage.getItem("mypage-layout");
         if (!raw) return fallback;
         const s = JSON.parse(raw) as Partial<Layout>;
         return {
-            sidebarW: typeof s.sidebarW === "number" ? Math.min(480, Math.max(190, s.sidebarW)) : fallback.sidebarW,
+            sidebarW: typeof s.sidebarW === "number" ? Math.min(480, Math.max(230, s.sidebarW)) : fallback.sidebarW,
             sidebarVisible: s.sidebarVisible !== false,
-            termH: typeof s.termH === "number" ? Math.min(600, Math.max(110, s.termH)) : fallback.termH,
-            termVisible: s.termVisible !== false,
         };
     } catch {
         return fallback;
@@ -104,7 +99,6 @@ function useRpcValue<T>(load: () => Promise<ApiResult<T>>): [T | null, Dispatch<
 
 export default function App() {
     const { t, lang, setLang } = useI18n();
-    const [theme, setTheme] = useState<ThemeMode>(initialTheme);
     const [editing, setEditing] = useState(false);
     const [serverOk, setServerOk] = useState<boolean | null>(null);
     const [groups, setGroups] = useState<Group[]>([]);
@@ -124,26 +118,17 @@ export default function App() {
     const [layout, setLayout] = useState<Layout>(loadLayout);
     // 已打开工具是纯运行时状态：每次启动强制从空开始，不落盘不还原（用户决策）
     const [openTools, setOpenTools] = useState<ToolId[]>([]);
-    const [activeTool, setActiveTool] = useState<ToolId | null>(null);
+    // 激活页签：工具 id（字符串）或终端会话 id（数字），null = 无激活。
+    // 单一状态源避免「工具与会话各自记激活」的不可能态
+    const [activeTab, setActiveTab] = useState<ToolId | number | null>(null);
+    // 终端会话清单（tab 行里的一等 tab）：spawn 成功进、关 tab / shell 自退出；
+    // TerminalZone 随清单挂载/卸载，xterm 实例归它管
+    const [termSessions, setTermSessions] = useState<TermSession[]>([]);
     // 终端设置（shell/字号）：字号喂 TerminalZone，设置页改这里再落库
     const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
     // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈再以 props 流给终端
     const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
-    // 启动不自动开会话（TerminalZone 已无 auto-spawn），从 false 起步避免空态闪错
-    const [hasSessions, setHasSessions] = useState(false);
-    // 开新会话信号：seq 递增 = 新请求；cwd/label/command 是终端命令条目的执行载荷
-    const [termSpawnReq, setTermSpawnReq] = useState<TermSpawnReq>({ seq: 0 });
-    // 粘性挂载标记：终端一旦用过就终身挂载。会话与 xterm 回滚缓冲都活在组件里，
-    // 「隐藏终端但会话存活」的场景不能卸载组件——所以挂载条件是 termEverUsed
-    // 而不是 showTerm，显隐只由 showTerm 决定走 CSS display:none。
-    const [termEverUsed, setTermEverUsed] = useState(false);
-    const rightRef = useRef<HTMLDivElement>(null);
     const dragSensors = useDragSensors();
-
-    useEffect(() => {
-        applyTheme(theme);
-        saveTheme(theme);
-    }, [theme]);
 
     // 布局持久化（拖完分栏松手时才写，写盘频率无压力）
     useEffect(() => {
@@ -210,9 +195,6 @@ export default function App() {
     // AI 模型配置（整表）：设置页编辑态 + 工具内「有无可配模型」判断均来自这里；
     // 对话请求由主进程现读库，不经这里
     const [aiModels, setAiModels] = useRpcValue(api.getAiModels);
-
-    // 会话数上报回调必须稳定（TerminalZone 的 effect 依赖它），直接 setState 同值不触发重渲染
-    const handleSessionCount = useCallback((n: number) => setHasSessions(n > 0), []);
 
     // 设置页各分项提交的公共路径：失败统一 toast 并返回 false（弹窗内自行回滚），成功交给 apply 回填。
     // 现状没有 memo 需求，普通闭包定义即可（要吃到 i18n 文案，故放在组件内）
@@ -383,19 +365,10 @@ export default function App() {
         }
     }
 
-    // ── 执行终端命令条目：面板置可见（顺带首次挂载）+ 发信号；会话创建与命令写入
-    //    的所有权在 TerminalZone——它调 ptySpawn（cwd 不存在由服务端按 missing 拒绝，
-    //    TerminalZone 里 toast），建标签后再把整行命令送入。终端从未用过时组件随本
-    //    信号懒挂载，其 effect 读到当前 seq 恰好执行一次（StrictMode 双跑由 seq 去重）
+    // ── 执行终端命令条目：新开会话（cwd/label 来自条目），建好后整行命令送入执行。
+    //    cwd 不存在由服务端按 missing 拒绝（spawnSession 里 toast 同启动失败口径）
     function runCommand(item: Item) {
-        setLayout((l) => ({ ...l, termVisible: true }));
-        setTermEverUsed(true);
-        setTermSpawnReq((r) => ({
-            seq: r.seq + 1,
-            cwd: item.args ?? undefined,
-            label: item.title,
-            command: item.target,
-        }));
+        void spawnSession({ cwd: item.args ?? undefined, label: item.title, command: item.target });
     }
 
     // ── 搜索框路径直达动作（打开文件 / 前往文件夹）：同样走 openPath，报错口径与 openItem 一致 ──
@@ -440,7 +413,7 @@ export default function App() {
     // 「只有专家、没有素材」同样要过注入通道，让组件收到新注入的边沿信号
     function openTool(id: ToolId, input?: string | null, expertId?: number) {
         setOpenTools((cur) => (cur.includes(id) ? cur : [...cur, id]));
-        setActiveTool(id);
+        setActiveTab(id);
         if (input != null || expertId != null) dispatchToolInput({ tool: id, text: input ?? "", expertId });
         else clearToolInput(id);
     }
@@ -448,25 +421,57 @@ export default function App() {
     function closeTool(id: ToolId) {
         const next = openTools.filter((x) => x !== id);
         setOpenTools(next);
-        setActiveTool((cur) => (cur === id ? (next.at(-1) ?? null) : cur));
+        // 关掉活动工具 tab：回落最后剩余工具，其次最后一枚会话 tab
+        setActiveTab((cur) => (cur === id ? (next.at(-1) ?? termSessions.at(-1)?.id ?? null) : cur));
     }
 
-    // 终端区实际显示 = 用户开关开着 且 还有会话（会话被关光时自动藏起）
-    const showTerm = layout.termVisible && hasSessions;
+    // ── 终端会话生命周期：会话是 tab 行的一等 tab，清单与激活都在这里 ──
 
-    // 状态栏终端按钮：可见 → 隐藏；不可见 → 恢复，会话已被关光时顺带开一个新会话
-    function toggleTerminal() {
-        if (layout.termVisible && hasSessions) {
-            setLayout((l) => ({ ...l, termVisible: false }));
+    // 开新会话（tab 行 ＋ / 终端命令条目共用）：成功即入清单并激活；
+    // 命令条目带 cwd/label/整行命令，会话建好后整行写入回车执行
+    async function spawnSession(req?: { cwd?: string; label?: string; command?: string }) {
+        const r = await api.ptySpawn(req ? { cwd: req.cwd, label: req.label } : undefined);
+        if (!r.ok) {
+            // 命令条目的工作目录不存在：与 App 启动失败同口径（launch.missing + 路径）
+            if (r.error.kind === "missing") toast.error(`${t("launch.missing")}: ${r.error.path}`);
+            else toast.error(t("toast.error"));
             return;
         }
-        setLayout((l) => ({ ...l, termVisible: true }));
-        if (!hasSessions) {
-            // 首次使用终端：置粘性挂载 + 请求开新会话；此后组件不再卸载
-            setTermEverUsed(true);
-            setTermSpawnReq((r) => ({ seq: r.seq + 1 }));
-        }
+        setTermSessions((prev) => [...prev, { id: r.data.id, label: r.data.label }]);
+        setActiveTab(r.data.id);
+        if (req?.command) void api.ptyWrite(r.data.id, `${req.command}\r`);
     }
+
+    // 关会话 tab：移出清单（TerminalZone 随之 dispose 该 xterm）+ 结束 pty；
+    // 若它正持有活动权，由下方兜底 effect 回落
+    function closeSession(id: number) {
+        setTermSessions((prev) => prev.filter((s) => s.id !== id));
+        void api.ptyKill(id);
+    }
+
+    // shell 自己退出（exit / 进程崩溃）：从清单移除；xterm 实例由 TerminalZone
+    // 的清单收缩 effect dispose（preload 的 onPtyEvent 支持多订阅者）
+    useEffect(() => {
+        const off = onPtyEvent((e) => {
+            if (e.type === "exit") setTermSessions((prev) => prev.filter((s) => s.id !== e.id));
+        });
+        return off;
+    }, []);
+
+    // 活动页签指向已不存在的会话（关 tab / shell 自退）时回落：
+    // 最后一枚会话 → 最后一个工具 → 无激活（右列空态）
+    useEffect(() => {
+        if (typeof activeTab === "number" && !termSessions.some((s) => s.id === activeTab)) {
+            setActiveTab(termSessions.at(-1)?.id ?? openTools.at(-1) ?? null);
+        }
+    }, [activeTab, termSessions, openTools]);
+
+    // 终端 chunk 预取：spawn 现在先于 TerminalZone 挂载（App 直接调 ptySpawn），
+    // 首个会话的 shell 横幅若落在 lazy chunk 的加载窗口会被丢掉，闲时预载规避
+    useEffect(() => {
+        const id = requestIdleCallback(() => void import("./components/TerminalZone"));
+        return () => cancelIdleCallback(id);
+    }, []);
 
     const sidebarGroups = (editing: boolean) =>
         grouped.map(({ group, items: groupItems }) => (
@@ -488,238 +493,227 @@ export default function App() {
         ));
 
     return (
-        <div className="flex h-screen flex-col overflow-hidden bg-bg font-sans text-text">
+        /* 窗口本体即玻璃浮窗(设计稿里玻璃外的极光矩形是画布背景,不做进应用)。
+           拖拽区:玻璃底默认 app-drag(顶栏空处/面板间隙/空态区可拖),面板与
+           交互区一律 app-no-drag 豁免 */
+        <div className="flex h-screen flex-col overflow-hidden font-sans text-text">
             <Toaster
                 position="bottom-center"
                 toastOptions={{
                     style: {
-                        background: "var(--panel)",
+                        background: "var(--surface-raised)",
                         color: "var(--text)",
-                        border: "1px solid var(--line)",
-                        borderRadius: "6px",
+                        border: "1px solid rgba(255, 255, 255, 0.16)",
+                        borderRadius: "12px",
                         fontFamily: "inherit",
                     },
                 }}
             />
 
-            {/* 提示符行：$ 即搜索框（输入即出下拉候选，含工具）；右侧「工具 ▾」是内置工具另一入口。
-                最左是钉子：钉住时窗口失焦不自动隐藏（挂终端对照等场景） */}
-            <header className="flex w-full flex-none flex-wrap items-center gap-2.5 px-6 pt-2.5 pb-2 text-[15px]">
-                <button
-                    type="button"
-                    className="tbtn"
-                    aria-pressed={pinned}
-                    onClick={togglePin}
-                    title={t(pinned ? "btn.unpin" : "btn.pin")}
-                >
-                    {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-                </button>
-                <span className="text-text">{t("prompt.user")}</span>
-                <span className="text-dim">:~$</span>
-                <SearchBox
-                    groups={groups}
-                    items={items}
-                    // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
-                    toolAliases={toolAliases ?? {}}
-                    onOpenItem={openItem}
-                    onOpenTool={openTool}
-                    onOpenPath={openLocalPath}
-                />
-                <ToolsMenu open={openTools} onOpen={openTool} />
-            </header>
+            <div className="knock-glass app-drag relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="knock-glow" aria-hidden />
 
-            {serverOk === false || groups.length === 0 ? (
-                /* 断线态 / 冷启动空态：占满工作区居中提示 */
-                <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 text-dim">
-                    {groups.length === 0 && serverOk !== false ? (
-                        <>
-                            <span className="text-[13px]">{t("group.none")}</span>
-                            <button
-                                type="button"
-                                className="tbtn border border-line px-4 py-2 hover:bg-faint"
-                                onClick={() => setDialog({ kind: "group-create" })}
-                            >
-                                [ {t("group.noneBtn")} ]
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            <span className="text-[13px] tracking-wide">──[ {t("offline.title")} ]──</span>
-                            <span className="max-w-[460px] text-center text-[12.5px] text-muted">
-                                {t("offline.hint")}
-                            </span>
-                            <button
-                                type="button"
-                                className="tbtn border border-line px-4 py-2 hover:bg-faint"
-                                onClick={() => refresh()}
-                            >
-                                [ {t("offline.retry")} ]
-                            </button>
-                        </>
-                    )}
-                </main>
-            ) : (
-                /* 三区工作区：左=分组侧栏（可整栏收起，偏好持久化），右列上=工具区（有 tab 才出现），右列下=终端 */
-                <div className="flex min-h-0 flex-1">
-                    {layout.sidebarVisible && (
-                        <aside className="flex flex-none flex-col overflow-y-auto" style={{ width: layout.sidebarW }}>
-                            {editing ? (
-                                /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
-                                <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
-                                    <SortableContext
-                                        items={groups.map((g) => g.id)}
-                                        strategy={verticalListSortingStrategy}
-                                    >
-                                        {sidebarGroups(true)}
-                                        <button
-                                            className="mx-2.5 mt-2 flex items-center justify-center border border-dashed border-line px-3 py-2.5 text-[12.5px] text-muted hover:text-text"
-                                            onClick={() => setDialog({ kind: "group-create" })}
-                                        >
-                                            ＋ {t("group.new")}
-                                        </button>
-                                    </SortableContext>
-                                </DndContext>
-                            ) : (
-                                sidebarGroups(false)
-                            )}
-
-                            {/* 编辑模式多选操作条：勾了条目才出现，吸在侧栏滚动区底部 */}
-                            {editing && selectedIds.size > 0 && (
-                                <div className="sticky bottom-0 z-10 flex flex-none items-center justify-between gap-2 border-t border-line bg-panel px-3 py-1.5 text-[12.5px]">
-                                    <span className="text-dim">
-                                        {t("edit.selected")}: {selectedIds.size}
-                                    </span>
-                                    <span className="flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            className="tbtn"
-                                            onClick={() => setSelectedIds(new Set())}
-                                        >
-                                            [ {t("edit.clear")} ]
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="tbtn"
-                                            onClick={() =>
-                                                setDialog({ kind: "items-bulk-delete", ids: [...selectedIds] })
-                                            }
-                                        >
-                                            [ {t("edit.deleteSelected")} ]
-                                        </button>
-                                    </span>
-                                </div>
-                            )}
-                        </aside>
-                    )}
-
-                    {layout.sidebarVisible && (
-                        <Splitter
-                            orientation="vertical"
-                            onDrag={(e) => setLayout((l) => ({ ...l, sidebarW: clamp(e.clientX, 190, 480) }))}
+                {/* 顶栏一行六件:品牌 + 过滤输入(占满剩余宽) + 工具菜单 + 新建终端 + 钉住 + 设置
+                    (工具菜单/新建终端用户定移顶栏,原 tab 栏右簇;顶栏高度由搜索胶囊撑出
+                    ——SearchBar 与 TitleBar 同高 46,pt-4 让胶囊顶边距 = 工作区四周的
+                    16px,不再垂直居中出 5px 贴顶缝。z-20 必须高于工作区的 z-10:搜索
+                    下拉悬出顶栏范围,同 z 会整树输给后出现的兄弟节点) */}
+                <header className="relative z-20 flex flex-none items-center gap-3 pt-4 pr-4 pl-5">
+                    <span className="select-none text-[14.5px] font-semibold tracking-wide text-white">敲敲 Knock</span>
+                    <div className="app-no-drag flex min-w-0 flex-1 items-center">
+                        <SearchBox
+                            groups={groups}
+                            items={items}
+                            // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
+                            toolAliases={toolAliases ?? {}}
+                            onOpenItem={openItem}
+                            onOpenTool={openTool}
+                            onOpenPath={openLocalPath}
                         />
-                    )}
-
-                    <div ref={rightRef} className="flex min-w-0 flex-1 flex-col">
-                        {openTools.length > 0 && (
-                            <ToolsZone
-                                open={openTools}
-                                active={activeTool}
-                                onActivate={setActiveTool}
-                                onClose={closeTool}
-                                onOpenSettings={() =>
-                                    setDialog({
-                                        kind: "settings",
-                                        // 引导分节跟随当前激活工具（translate/ai 有缺配置态）
-                                        section: (activeTool && TOOL_SETTINGS_SECTION[activeTool]) || "translate",
-                                    })
-                                }
-                            />
-                        )}
-                        {openTools.length > 0 && showTerm && (
-                            <Splitter
-                                orientation="horizontal"
-                                onDrag={(e) => {
-                                    const bottom = rightRef.current?.getBoundingClientRect().bottom;
-                                    if (!bottom) return;
-                                    setLayout((l) => ({ ...l, termH: clamp(bottom - e.clientY, 110, bottom - 200) }));
-                                }}
-                            />
-                        )}
-                        {/* 终端区粘性挂载：一旦开过就终身渲染（会话与回滚缓冲保活，
-                            不能随显隐卸载），无会话或被关闭时仅 display:none */}
-                        {termEverUsed && (
-                            <Suspense fallback={null}>
-                                <section
-                                    className={openTools.length > 0 ? "flex-none" : "min-h-0 flex-1"}
-                                    style={{
-                                        height: openTools.length > 0 ? layout.termH : undefined,
-                                        display: showTerm ? undefined : "none",
-                                    }}
-                                >
-                                    <TerminalZone
-                                        theme={theme}
-                                        visible={showTerm}
-                                        monoFont={fontCfg?.monoFont ?? ""}
-                                        fontSize={termCfg?.fontSize ?? 13}
-                                        spawnReq={termSpawnReq}
-                                        onSessionCount={handleSessionCount}
-                                        onHide={() => setLayout((l) => ({ ...l, termVisible: false }))}
-                                    />
-                                </section>
-                            </Suspense>
-                        )}
-                        {/* 右列全空（无工具无终端）→ ASCII 标志占位 */}
-                        {openTools.length === 0 && !showTerm && <AsciiSplash />}
                     </div>
-                </div>
-            )}
-
-            {/* tmux 式状态栏：编辑开关、终端开关与设置入口收在右侧图标按钮 */}
-            <footer className="sticky bottom-0 flex flex-none flex-wrap items-center justify-between gap-3 border-t border-line bg-panel px-4 py-1.5 text-xs text-dim">
-                <span>
-                    {t("status.version")} | {lang.toUpperCase()}
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <span>
-                        {serverOk === null ? "…" : serverOk ? t("status.serverUp") : t("status.serverDown")} | <Clock />
-                    </span>
+                    <ToolsMenu open={openTools} onOpen={openTool} />
                     <button
                         type="button"
-                        className="tbtn"
-                        aria-pressed={layout.sidebarVisible}
-                        onClick={() => setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))}
-                        title={t("btn.sidebar")}
+                        className="icon-btn app-no-drag"
+                        onClick={() => void spawnSession()}
+                        title={t("term.new")}
                     >
-                        <PanelLeft size={14} />
+                        <Plus size={14} />
                     </button>
                     <button
                         type="button"
-                        className="tbtn"
-                        aria-pressed={layout.termVisible}
-                        onClick={toggleTerminal}
-                        title={t("btn.terminal")}
+                        className="icon-btn app-no-drag"
+                        aria-pressed={pinned}
+                        onClick={togglePin}
+                        title={t(pinned ? "btn.unpin" : "btn.pin")}
                     >
-                        <Terminal size={14} />
+                        {pinned ? <PinOff size={14} /> : <Pin size={14} />}
                     </button>
                     <button
                         type="button"
-                        className="tbtn"
-                        aria-pressed={editing}
-                        onClick={() => setEditing((v) => !v)}
-                        title={editing ? t("btn.editing") : t("btn.edit")}
-                    >
-                        {editing ? <Check size={14} /> : <Pencil size={14} />}
-                    </button>
-                    <button
-                        type="button"
-                        className="tbtn"
+                        className="icon-btn app-no-drag"
                         onClick={() => setDialog({ kind: "settings" })}
                         title={t("btn.settings")}
                     >
                         <Settings size={14} />
                     </button>
-                </span>
-            </footer>
+                </header>
+
+                {serverOk === false || groups.length === 0 ? (
+                    /* 断线态 / 冷启动空态：玻璃面板占满工作区居中提示 */
+                    <main className="glass-panel app-no-drag relative z-10 m-4 mt-2.5 flex min-h-0 flex-1 flex-col items-center justify-center gap-4 text-dim">
+                        {groups.length === 0 && serverOk !== false ? (
+                            <>
+                                <span className="text-[13px]">{t("group.none")}</span>
+                                <button
+                                    type="button"
+                                    className="tbtn border border-line px-4 py-2 hover:bg-faint"
+                                    onClick={() => setDialog({ kind: "group-create" })}
+                                >
+                                    [ {t("group.noneBtn")} ]
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <span className="text-[13px] tracking-wide">──[ {t("offline.title")} ]──</span>
+                                <span className="max-w-[460px] text-center text-[12.5px] text-muted">
+                                    {t("offline.hint")}
+                                </span>
+                                <button
+                                    type="button"
+                                    className="tbtn border border-line px-4 py-2 hover:bg-faint"
+                                    onClick={() => refresh()}
+                                >
+                                    [ {t("offline.retry")} ]
+                                </button>
+                            </>
+                        )}
+                    </main>
+                ) : (
+                    /* 两栏工作区：左=启动面板(全部分组平铺,可整栏收起),右=tab 区
+                       （工具与终端会话共用一条 tab 行，各是一等 tab）。
+                       本容器继承玻璃底的 app-drag:面板间空隙与右列空态可拖窗口,
+                       两个面板自身各自 app-no-drag 豁免 */
+                    <div className="relative z-10 flex min-h-0 flex-1 gap-1.5 p-4 pt-2.5">
+                        {layout.sidebarVisible && (
+                            <aside
+                                className="glass-panel app-no-drag flex flex-none flex-col overflow-hidden"
+                                style={{ width: layout.sidebarW }}
+                            >
+                                <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5">
+                                    {editing ? (
+                                        /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
+                                        <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
+                                            <SortableContext
+                                                items={groups.map((g) => g.id)}
+                                                strategy={verticalListSortingStrategy}
+                                            >
+                                                {sidebarGroups(true)}
+                                                <button
+                                                    className="mt-1 flex items-center justify-center rounded-[10px] border border-dashed border-line px-3 py-2.5 text-[12.5px] text-muted transition-colors hover:text-text"
+                                                    onClick={() => setDialog({ kind: "group-create" })}
+                                                >
+                                                    ＋ {t("group.new")}
+                                                </button>
+                                            </SortableContext>
+                                        </DndContext>
+                                    ) : (
+                                        sidebarGroups(false)
+                                    )}
+                                </div>
+
+                                {/* 面板脚：编辑开关常驻；编辑中勾了条目时多选操作条挪到这里 */}
+                                <div className="flex flex-none items-center gap-2 border-t border-white/10 px-2.5 py-1.5">
+                                    <button
+                                        type="button"
+                                        className="ghost-btn"
+                                        aria-pressed={editing}
+                                        onClick={() => setEditing((v) => !v)}
+                                        title={editing ? t("btn.editing") : t("btn.edit")}
+                                    >
+                                        {editing ? <Check size={14} /> : <Pencil size={14} />}
+                                    </button>
+                                    {editing && selectedIds.size > 0 && (
+                                        <>
+                                            <span className="text-[12px] text-dim">
+                                                {t("edit.selected")}: {selectedIds.size}
+                                            </span>
+                                            <span className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    className="tbtn"
+                                                    onClick={() => setSelectedIds(new Set())}
+                                                >
+                                                    [ {t("edit.clear")} ]
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="tbtn"
+                                                    onClick={() =>
+                                                        setDialog({ kind: "items-bulk-delete", ids: [...selectedIds] })
+                                                    }
+                                                >
+                                                    [ {t("edit.deleteSelected")} ]
+                                                </button>
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            </aside>
+                        )}
+
+                        {layout.sidebarVisible && (
+                            <Splitter
+                                orientation="vertical"
+                                onDrag={(e) => setLayout((l) => ({ ...l, sidebarW: clamp(e.clientX, 230, 480) }))}
+                            />
+                        )}
+
+                        <div className="flex min-w-0 flex-1 flex-col">
+                            {openTools.length === 0 && termSessions.length === 0 ? (
+                                /* 右列全空（无工具无会话）→ ASCII 标志占位 */
+                                <AsciiSplash />
+                            ) : (
+                                <ToolsZone
+                                    open={openTools}
+                                    active={activeTab}
+                                    onActivate={setActiveTab}
+                                    onClose={closeTool}
+                                    sidebarVisible={layout.sidebarVisible}
+                                    onToggleSidebar={() =>
+                                        setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))
+                                    }
+                                    onOpenSettings={() =>
+                                        setDialog({
+                                            kind: "settings",
+                                            // 引导分节跟随当前激活工具（translate/ai 有缺配置态）
+                                            section:
+                                                (typeof activeTab === "string" && TOOL_SETTINGS_SECTION[activeTab]) ||
+                                                "translate",
+                                        })
+                                    }
+                                    sessions={termSessions}
+                                    onActivateSession={setActiveTab}
+                                    onCloseSession={closeSession}
+                                >
+                                    {/* 会话 xterm 宿主：随首个会话挂载、末个会话结束卸载；
+                        激活的是工具时仅 display:none（切回不丢屏幕与回滚缓冲） */}
+                                    {termSessions.length > 0 && (
+                                        <Suspense fallback={null}>
+                                            <TerminalZone
+                                                sessions={termSessions}
+                                                activeId={typeof activeTab === "number" ? activeTab : null}
+                                                monoFont={fontCfg?.monoFont ?? ""}
+                                                fontSize={termCfg?.fontSize ?? 13}
+                                            />
+                                        </Suspense>
+                                    )}
+                                </ToolsZone>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* ── 弹窗区 ── */}
             <GroupDialog
@@ -758,8 +752,6 @@ export default function App() {
                 open={dialog.kind === "settings"}
                 initialSection={dialog.kind === "settings" ? dialog.section : undefined}
                 onClose={() => setDialog({ kind: "none" })}
-                theme={theme}
-                onTheme={setTheme}
                 lang={lang}
                 onChangeLang={setLang}
                 platform={platform}

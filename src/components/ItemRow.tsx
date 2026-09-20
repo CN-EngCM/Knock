@@ -78,20 +78,23 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
         transition: sortable.transition,
     };
 
-    // 文字统一 12.5px：与组内「new」按钮/空态文案同基准，行高压到 ~19px
+    // 行样式(设计定稿):10px 圆角 + 悬停浮白;文字 12.5px,行高 ~26px
     const rowClass =
-        "rowbtn group flex w-full items-center gap-2 border border-transparent px-2 py-1 text-[12.5px] text-left " +
-        "hover:border-line hover:bg-faint";
+        "rowbtn group flex w-full items-center gap-2 rounded-[10px] border border-transparent px-2 py-1 text-[12.5px] text-left " +
+        "transition-colors hover:border-white/10 hover:bg-white/[0.07]";
 
     const host = faviconHost(item);
 
     const content = (
         <>
-            <span className="w-9 flex-none text-[11.5px] text-muted">{KIND_TAG[item.kind]}</span>
+            <span className="kind-badge flex-none">{KIND_TAG[item.kind]}</span>
             {host && <FaviconImg domain={host} />}
-            <span className="min-w-0 flex-1 truncate text-text">{item.title}</span>
+            <span className="min-w-0 flex-1 truncate text-white/[0.94]">{item.title}</span>
             {editing && <GripVertical className="size-3.5 flex-none text-muted" aria-hidden />}
-            <span className="flex-none text-dim opacity-0 transition-opacity group-hover:opacity-100" aria-hidden>
+            <span
+                className="flex-none text-accent opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                aria-hidden
+            >
                 ❯
             </span>
         </>

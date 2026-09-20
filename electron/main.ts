@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, protocol, session, shell } from "electron";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 // 纯工具模块（不开库、不触 settings），可在引导前静态 import
 import { nativeDialogOpen } from "../server/util/nativeDialog";
@@ -149,6 +150,38 @@ if (!app.requestSingleInstanceLock()) {
     app.on("window-all-closed", () => {});
 }
 
+// ── Win11 DWM 系统描边染色 ──
+// frame:false + 默认 thickFrame 保留了边缘缩放与系统阴影，但 Win11 会沿窗口边缘
+// 自画一条 1px 边线，颜色跟随系统强调色（紫色/蓝色都会与薄荷绿主题打架）。
+// DWMWA_BORDER_COLOR 可把它染成任意色：这里染成本应用深蓝，与玻璃窗口融为一体
+// （实测 DWMWA_COLOR_NONE 只是换成中性灰，染色才是真隐身）。
+// Electron 未暴露该属性，经 PowerShell P/Invoke 一次性设置；该属性跨 hide/show
+// 持久（spotlight 式高频呼出不受影响），窗口生命周期内只需调用一次。
+// 失败静默：旧系统无此属性只会返回错误 HRESULT，不影响任何功能。
+function tintSystemBorder(w: BrowserWindow): void {
+    if (process.platform !== "win32") return;
+    try {
+        const hwnd = w.getNativeWindowHandle().readBigUInt64LE(0);
+        // 脚本经 -EncodedCommand 投递（base64 UTF-16LE），免去引号转义地狱
+        const script =
+            `$h=[IntPtr]([long]${hwnd.toString()});` +
+            `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;` +
+            `public class K{[DllImport("dwmapi.dll")]public static extern int DwmSetWindowAttribute(IntPtr h,int a,ref uint v,int s);}';` +
+            `$v=[uint32]2493964;` + // COLORREF 0x0026120C ← rgb(12,18,38)，与 --bg 同族
+            `[K]::DwmSetWindowAttribute($h,34,[ref]$v,4)|Out-Null`; // 34 = DWMWA_BORDER_COLOR
+        const child = spawn(
+            "powershell.exe",
+            ["-NoProfile", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
+            { stdio: "ignore", windowsHide: true },
+        );
+        child.on("error", () => {
+            /* 无 PowerShell 或被策略禁用：留着默认边线，无碍 */
+        });
+    } catch {
+        /* 拿不到句柄等意外：静默 */
+    }
+}
+
 function createWindow(): BrowserWindow {
     const st = loadWindowState();
     const w = new BrowserWindow({
@@ -160,6 +193,9 @@ function createWindow(): BrowserWindow {
         minHeight: 520,
         show: !startHidden, // 隐藏启动：首帧就不可见，等热键呼出
         autoHideMenuBar: true,
+        frame: false, // 无边框（Aurora Glass 设计）：窗口自绘玻璃浮窗，拖拽区在渲染端 app-drag 类上
+        // 预绘帧用应用底色：窗口创建到首帧渲染之间的空窗不闪白，与主题一体
+        backgroundColor: "#0d1428",
         webPreferences: {
             preload: join(__dirname, "preload.cjs"),
             contextIsolation: true, // 隔离：页面拿不到 require/ipcRenderer
@@ -167,6 +203,13 @@ function createWindow(): BrowserWindow {
             sandbox: true,
         },
     });
+    // 染色时机的三处兜底:创建即染 + ready-to-show 再染一次(创建期 DWM 尚未
+    // 完成初始化时可能被覆盖,实测偶发)+ 最大化切换后补染(DWM 会借最大化
+    // 重算边框色,实测必现)。hide/show 不重置,无需每次呼出补染
+    tintSystemBorder(w);
+    w.once("ready-to-show", () => tintSystemBorder(w));
+    w.on("maximize", () => tintSystemBorder(w));
+    w.on("unmaximize", () => tintSystemBorder(w));
     if (st.maximized) w.maximize();
     trackWindowState(w);
 

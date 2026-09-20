@@ -1,0 +1,1956 @@
+{
+  "version": "2.18",
+  "children": [
+    {
+      "type": "frame",
+      "id": "ZWCcS",
+      "x": 1280,
+      "y": 820,
+      "name": "04 晨雾 Aurora Glass",
+      "clip": true,
+      "width": 1180,
+      "height": 720,
+      "layout": "none",
+      "children": [
+        {
+          "type": "rectangle",
+          "id": "olyt2",
+          "x": 0,
+          "y": 0,
+          "name": "Wallpaper",
+          "fill": {
+            "type": "mesh_gradient",
+            "enabled": true,
+            "columns": 3,
+            "rows": 3,
+            "colors": [
+              "#0A0F26",
+              "#123B52",
+              "#0E7A86",
+              "#27336E",
+              "#4A3A8C",
+              "#1B6E7A",
+              "#5B3E9E",
+              "#C25B7A",
+              "#2A2F5E"
+            ],
+            "points": [
+              [
+                0,
+                0
+              ],
+              [
+                0.5,
+                0
+              ],
+              [
+                1,
+                0
+              ],
+              [
+                0,
+                0.5
+              ],
+              [
+                0.42,
+                0.45
+              ],
+              [
+                1,
+                0.5
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0.5,
+                1
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "width": 1180,
+          "height": 720
+        },
+        {
+          "type": "frame",
+          "id": "kFvSW",
+          "x": 60,
+          "y": 50,
+          "name": "GlassWindow",
+          "opacity": 0.9999,
+          "clip": true,
+          "width": 1060,
+          "height": 620,
+          "fill": "#0C1226A6",
+          "cornerRadius": 24,
+          "stroke": "#FFFFFF3D",
+          "strokeWidth": 1,
+          "strokeAlignment": "inner",
+          "effect": [
+            {
+              "type": "background_blur",
+              "radius": 44
+            },
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#FFFFFF66",
+              "offset": {
+                "x": 0,
+                "y": 1
+              },
+              "blur": 2
+            },
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#00000040",
+              "offset": {
+                "x": 0,
+                "y": -1
+              },
+              "blur": 3
+            },
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#05081459",
+              "offset": {
+                "x": 0,
+                "y": 4
+              },
+              "blur": 16
+            },
+            {
+              "type": "shadow",
+              "shadowType": "outer",
+              "color": "#05081466",
+              "offset": {
+                "x": 0,
+                "y": 24
+              },
+              "blur": 64
+            }
+          ],
+          "layout": "vertical",
+          "gap": 12,
+          "padding": 18,
+          "children": [
+            {
+              "type": "ellipse",
+              "id": "QgdDT",
+              "layoutPosition": "absolute",
+              "x": -160,
+              "y": -220,
+              "name": "LightGlow",
+              "fill": {
+                "type": "gradient",
+                "gradientType": "radial",
+                "enabled": true,
+                "rotation": 0,
+                "size": {
+                  "width": 1,
+                  "height": 1
+                },
+                "colors": [
+                  {
+                    "color": "#FFFFFF1F",
+                    "position": 0
+                  },
+                  {
+                    "color": "#FFFFFF00",
+                    "position": 1
+                  }
+                ]
+              },
+              "width": 900,
+              "height": 520
+            },
+            {
+              "type": "frame",
+              "id": "BCMIy",
+              "name": "TitleBar",
+              "width": "fill_container",
+              "height": 46,
+              "gap": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "CZCM8",
+                  "name": "Brand",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "osOZx",
+                      "name": "AppName",
+                      "fill": "#FFFFFF",
+                      "content": "敲敲 Knock",
+                      "fontFamily": "Outfit",
+                      "fontSize": 14.5,
+                      "fontWeight": "600"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "g96qK",
+                  "name": "SearchBar",
+                  "width": "fill_container",
+                  "height": 46,
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "enabled": true,
+                    "rotation": 180,
+                    "size": {
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#FFFFFF3D",
+                        "position": 0
+                      },
+                      {
+                        "color": "#FFFFFF12",
+                        "position": 0.45
+                      },
+                      {
+                        "color": "#FFFFFF2E",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "cornerRadius": 999,
+                  "stroke": "#FFFFFF52",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "effect": [
+                    {
+                      "type": "background_blur",
+                      "radius": 28
+                    },
+                    {
+                      "type": "shadow",
+                      "shadowType": "outer",
+                      "color": "#FFFFFF59",
+                      "offset": {
+                        "x": 0,
+                        "y": 1
+                      },
+                      "blur": 1
+                    },
+                    {
+                      "type": "shadow",
+                      "shadowType": "outer",
+                      "color": "#05081452",
+                      "offset": {
+                        "x": 0,
+                        "y": 8
+                      },
+                      "blur": 20
+                    }
+                  ],
+                  "gap": 12,
+                  "padding": [
+                    0,
+                    18
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "pvLV8",
+                      "name": "SearchIcon",
+                      "width": 17,
+                      "height": 17,
+                      "icon": "magnifying-glass",
+                      "library": "phosphor",
+                      "fill": "#FFFFFFB3"
+                    },
+                    {
+                      "type": "text",
+                      "id": "vhbzs",
+                      "name": "Query",
+                      "fill": "#FFFFFF73",
+                      "content": "输入以过滤条目...",
+                      "fontFamily": "Outfit",
+                      "fontSize": 13.5,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "mB1aX",
+                      "name": "Ssp",
+                      "width": "fill_container",
+                      "height": 1
+                    },
+                    {
+                      "type": "frame",
+                      "id": "mCbDv",
+                      "name": "Caret",
+                      "width": 2,
+                      "height": 17,
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 1
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "ZY681",
+                  "name": "Actions",
+                  "gap": 10,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "ityVI",
+                      "name": "PinBtn",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "#FFFFFF1F",
+                      "cornerRadius": 999,
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#FFFFFF59",
+                        "offset": {
+                          "x": 0,
+                          "y": 1
+                        },
+                        "blur": 1
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "G7G1T",
+                          "name": "I-PinBtn",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "push-pin",
+                          "library": "phosphor",
+                          "fill": "#FFFFFFD9"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "BHVWI",
+                      "name": "SettingsBtn",
+                      "width": 30,
+                      "height": 30,
+                      "fill": "#FFFFFF1F",
+                      "cornerRadius": 999,
+                      "effect": {
+                        "type": "shadow",
+                        "shadowType": "outer",
+                        "color": "#FFFFFF59",
+                        "offset": {
+                          "x": 0,
+                          "y": 1
+                        },
+                        "blur": 1
+                      },
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "wTrDl",
+                          "name": "I-SettingsBtn",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "gear",
+                          "library": "phosphor",
+                          "fill": "#FFFFFFD9"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "qXf31",
+              "name": "Body",
+              "width": "fill_container",
+              "height": "fill_container",
+              "gap": 12,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "kByFF",
+                  "name": "LaunchPanel",
+                  "clip": true,
+                  "width": 290,
+                  "height": "fill_container",
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "enabled": true,
+                    "rotation": 180,
+                    "size": {
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#FFFFFF26",
+                        "position": 0
+                      },
+                      {
+                        "color": "#FFFFFF0A",
+                        "position": 0.45
+                      },
+                      {
+                        "color": "#FFFFFF1A",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "cornerRadius": 18,
+                  "stroke": "#FFFFFF30",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "effect": [
+                    {
+                      "type": "background_blur",
+                      "radius": 32
+                    },
+                    {
+                      "type": "shadow",
+                      "shadowType": "outer",
+                      "color": "#FFFFFF59",
+                      "offset": {
+                        "x": 0,
+                        "y": 1
+                      },
+                      "blur": 2
+                    }
+                  ],
+                  "layout": "vertical",
+                  "gap": 3,
+                  "padding": 12,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "tAcvq",
+                      "name": "Group-SiCAT",
+                      "width": "fill_container",
+                      "height": 22,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "d5M7Bq",
+                          "name": "Gh-SiCAT",
+                          "fill": "#FFFFFFE0",
+                          "content": "SiCAT",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "PbTxq",
+                          "name": "Gline-SiCAT",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#FFFFFF26"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ArfK5",
+                          "name": "Gc-SiCAT",
+                          "fill": "#FFFFFF66",
+                          "content": "2",
+                          "fontFamily": "IBM Plex Mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "eZPkk",
+                      "name": "Item-SiCAT Debug文件夹",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "bYd24",
+                          "name": "Type-SiCAT Debug文件夹",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "NuX76",
+                              "name": "Ty-SiCAT Debug文件夹",
+                              "fill": "#FFFFFFA6",
+                              "content": "file",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "enTWX",
+                          "name": "In-SiCAT Debug文件夹",
+                          "fill": "#FFFFFFF0",
+                          "content": "SiCAT Debug文件夹",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "W7jKX",
+                      "name": "Item-发布文件夹",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "p8rjfk",
+                          "name": "Type-发布文件夹",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "uKvxa",
+                              "name": "Ty-发布文件夹",
+                              "fill": "#FFFFFFA6",
+                              "content": "file",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "yiW5s",
+                          "name": "In-发布文件夹",
+                          "fill": "#FFFFFFF0",
+                          "content": "发布文件夹",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "jzyZm",
+                      "name": "Group-GaN.SCADA项目",
+                      "width": "fill_container",
+                      "height": 22,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "ZUReJ",
+                          "name": "Gh-GaN.SCADA项目",
+                          "fill": "#FFFFFFE0",
+                          "content": "GaN.SCADA项目",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "JP5lC",
+                          "name": "Gline-GaN.SCADA项目",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#FFFFFF26"
+                        },
+                        {
+                          "type": "text",
+                          "id": "uE3mU",
+                          "name": "Gc-GaN.SCADA项目",
+                          "fill": "#FFFFFF66",
+                          "content": "4",
+                          "fontFamily": "IBM Plex Mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "IeXRb",
+                      "name": "Item-SCADA项目文件夹",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "EEQIs",
+                          "name": "Type-SCADA项目文件夹",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "O9vIdr",
+                              "name": "Ty-SCADA项目文件夹",
+                              "fill": "#FFFFFFA6",
+                              "content": "file",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "IUnhk",
+                          "name": "In-SCADA项目文件夹",
+                          "fill": "#FFFFFFF0",
+                          "content": "SCADA项目文件夹",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "bVD2L",
+                      "name": "Item-启动开发环境_后端",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "M740I",
+                          "name": "Type-启动开发环境_后端",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "HFLx1",
+                              "name": "Ty-启动开发环境_后端",
+                              "fill": "#FFFFFFA6",
+                              "content": "cmd",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "y8pgy6",
+                          "name": "In-启动开发环境_后端",
+                          "fill": "#FFFFFFF0",
+                          "content": "启动开发环境_后端",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "LSDjm",
+                      "name": "Item-启动开发环境_前端",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "spcO1",
+                          "name": "Type-启动开发环境_前端",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "lBX6F",
+                              "name": "Ty-启动开发环境_前端",
+                              "fill": "#FFFFFFA6",
+                              "content": "cmd",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "V7CRs",
+                          "name": "In-启动开发环境_前端",
+                          "fill": "#FFFFFFF0",
+                          "content": "启动开发环境_前端",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "m10v3K",
+                      "name": "Item-启动数据发生器",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "pIaFq",
+                          "name": "Type-启动数据发生器",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "M6IFI",
+                              "name": "Ty-启动数据发生器",
+                              "fill": "#FFFFFFA6",
+                              "content": "cmd",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "GwZzh",
+                          "name": "In-启动数据发生器",
+                          "fill": "#FFFFFFF0",
+                          "content": "启动数据发生器",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "U7khqU",
+                      "name": "Group-常用软件",
+                      "width": "fill_container",
+                      "height": 22,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "J9Txlv",
+                          "name": "Gh-常用软件",
+                          "fill": "#FFFFFFE0",
+                          "content": "常用软件",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "o9psv",
+                          "name": "Gline-常用软件",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#FFFFFF26"
+                        },
+                        {
+                          "type": "text",
+                          "id": "GAPin",
+                          "name": "Gc-常用软件",
+                          "fill": "#FFFFFF66",
+                          "content": "4",
+                          "fontFamily": "IBM Plex Mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "aPTfb",
+                      "name": "Item-SerialPortUtility",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "nEaMZ",
+                          "name": "Type-SerialPortUtility",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "eyDub",
+                              "name": "Ty-SerialPortUtility",
+                              "fill": "#FFFFFFA6",
+                              "content": "app",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "BCG0e",
+                          "name": "In-SerialPortUtility",
+                          "fill": "#FFFFFFF0",
+                          "content": "SerialPortUtility",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "FKAvP",
+                      "name": "Item-HslCommunicationDemo",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "x7Ugvs",
+                          "name": "Type-HslCommunicationDemo",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "LsB2x",
+                              "name": "Ty-HslCommunicationDemo",
+                              "fill": "#FFFFFFA6",
+                              "content": "app",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "JIfZs",
+                          "name": "In-HslCommunicationDemo",
+                          "fill": "#FFFFFFF0",
+                          "content": "HslCommunicationDemo",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "WqUdN",
+                      "name": "Item-终端zd",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "r1cgq",
+                          "name": "Type-终端zd",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "B9QNa",
+                              "name": "Ty-终端zd",
+                              "fill": "#FFFFFFA6",
+                              "content": "app",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "DNEjA",
+                          "name": "In-终端zd",
+                          "fill": "#FFFFFFF0",
+                          "content": "终端zd",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "WXG5b",
+                      "name": "Item-dsh",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "VLeoU",
+                          "name": "Type-dsh",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "IKhVO",
+                              "name": "Ty-dsh",
+                              "fill": "#FFFFFFA6",
+                              "content": "cmd",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "u3RdP1",
+                          "name": "In-dsh",
+                          "fill": "#FFFFFFF0",
+                          "content": "dsh",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "pSaj1",
+                      "name": "Group-常用目录",
+                      "width": "fill_container",
+                      "height": 22,
+                      "gap": 8,
+                      "padding": [
+                        0,
+                        8
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "U7F7dO",
+                          "name": "Gh-常用目录",
+                          "fill": "#FFFFFFE0",
+                          "content": "常用目录",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12,
+                          "fontWeight": "600"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "U6VKrD",
+                          "name": "Gline-常用目录",
+                          "width": "fill_container",
+                          "height": 1,
+                          "fill": "#FFFFFF26"
+                        },
+                        {
+                          "type": "text",
+                          "id": "ldbLe",
+                          "name": "Gc-常用目录",
+                          "fill": "#FFFFFF66",
+                          "content": "1",
+                          "fontFamily": "IBM Plex Mono",
+                          "fontSize": 10,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "iuhHW",
+                      "name": "Item-工作文档",
+                      "width": "fill_container",
+                      "cornerRadius": 10,
+                      "gap": 8,
+                      "padding": [
+                        4,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Tdtt7",
+                          "name": "Type-工作文档",
+                          "fill": "#FFFFFF17",
+                          "cornerRadius": 6,
+                          "padding": [
+                            1,
+                            6
+                          ],
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "iB8sE",
+                              "name": "Ty-工作文档",
+                              "fill": "#FFFFFFA6",
+                              "content": "file",
+                              "fontFamily": "IBM Plex Mono",
+                              "fontSize": 9.5,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "ex2gu",
+                          "name": "In-工作文档",
+                          "fill": "#FFFFFFF0",
+                          "content": "工作文档",
+                          "fontFamily": "Outfit",
+                          "fontSize": 12.5,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "k20Yn",
+                  "name": "ToolsZone",
+                  "clip": true,
+                  "width": "fill_container",
+                  "height": "fill_container",
+                  "fill": {
+                    "type": "gradient",
+                    "gradientType": "linear",
+                    "enabled": true,
+                    "rotation": 180,
+                    "size": {
+                      "height": 1
+                    },
+                    "colors": [
+                      {
+                        "color": "#FFFFFF26",
+                        "position": 0
+                      },
+                      {
+                        "color": "#FFFFFF0A",
+                        "position": 0.45
+                      },
+                      {
+                        "color": "#FFFFFF1A",
+                        "position": 1
+                      }
+                    ]
+                  },
+                  "cornerRadius": 18,
+                  "stroke": "#FFFFFF30",
+                  "strokeWidth": 1,
+                  "strokeAlignment": "inner",
+                  "effect": [
+                    {
+                      "type": "background_blur",
+                      "radius": 32
+                    },
+                    {
+                      "type": "shadow",
+                      "shadowType": "outer",
+                      "color": "#FFFFFF59",
+                      "offset": {
+                        "x": 0,
+                        "y": 1
+                      },
+                      "blur": 2
+                    }
+                  ],
+                  "layout": "vertical",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "shRD4",
+                      "name": "TabBar",
+                      "width": "fill_container",
+                      "height": 40,
+                      "stroke": "#FFFFFF1F",
+                      "strokeWidth": {
+                        "bottom": 1
+                      },
+                      "strokeAlignment": "inner",
+                      "gap": 4,
+                      "padding": [
+                        0,
+                        10
+                      ],
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "zR2WP",
+                          "name": "Tab-gallery",
+                          "height": "fill_container",
+                          "gap": 8,
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "jA6VY",
+                              "name": "TabT-gallery",
+                              "fill": "#FFFFFF8C",
+                              "content": "gallery",
+                              "fontFamily": "Outfit",
+                              "fontSize": 12.5
+                            },
+                            {
+                              "type": "text",
+                              "id": "AJokL",
+                              "name": "TabX-gallery",
+                              "fill": "#FFFFFF4D",
+                              "content": "×",
+                              "fontFamily": "Outfit",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "ccEjL",
+                          "name": "Tab-ai",
+                          "height": "fill_container",
+                          "fill": "#FFFFFF26",
+                          "effect": {
+                            "type": "shadow",
+                            "shadowType": "outer",
+                            "color": "#FFFFFF59",
+                            "offset": {
+                              "x": 0,
+                              "y": 1
+                            },
+                            "blur": 1
+                          },
+                          "gap": 8,
+                          "padding": [
+                            0,
+                            12
+                          ],
+                          "alignItems": "center",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "mvvqT",
+                              "name": "TabT-ai",
+                              "fill": "#FFFFFF",
+                              "content": "ai",
+                              "fontFamily": "Outfit",
+                              "fontSize": 12.5,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "t2hWqb",
+                              "name": "TabX-ai",
+                              "fill": "#FFFFFFA6",
+                              "content": "×",
+                              "fontFamily": "Outfit",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "d6g5Fb",
+                          "name": "Tsp",
+                          "width": "fill_container",
+                          "height": 1
+                        },
+                        {
+                          "type": "icon",
+                          "id": "mJLqS",
+                          "name": "TabAdd",
+                          "width": 14,
+                          "height": 14,
+                          "icon": "plus",
+                          "library": "phosphor",
+                          "fill": "#FFFFFF8C"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "qlxnv",
+                      "name": "ToolBody",
+                      "width": "fill_container",
+                      "height": "fill_container",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "j0C4X",
+                          "name": "Experts",
+                          "width": 188,
+                          "height": "fill_container",
+                          "stroke": "#FFFFFF1F",
+                          "strokeWidth": {
+                            "right": 1
+                          },
+                          "strokeAlignment": "inner",
+                          "layout": "vertical",
+                          "gap": 3,
+                          "padding": 10,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "wgVV7",
+                              "name": "ExLabel",
+                              "fill": "#FFFFFF59",
+                              "content": "专 家",
+                              "fontFamily": "Outfit",
+                              "fontSize": 10,
+                              "fontWeight": "600",
+                              "letterSpacing": 2
+                            },
+                            {
+                              "type": "frame",
+                              "id": "jPls6",
+                              "name": "ExSp",
+                              "width": "fill_container",
+                              "height": 5
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Wf5r5",
+                              "name": "Expert-翻译润色",
+                              "width": "fill_container",
+                              "height": 30,
+                              "fill": "#FFFFFF26",
+                              "cornerRadius": 10,
+                              "effect": {
+                                "type": "shadow",
+                                "shadowType": "outer",
+                                "color": "#FFFFFF59",
+                                "offset": {
+                                  "x": 0,
+                                  "y": 1
+                                },
+                                "blur": 1
+                              },
+                              "gap": 8,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Yagxg",
+                                  "name": "Exn-翻译润色",
+                                  "fill": "#FFFFFF",
+                                  "content": "翻译润色",
+                                  "fontFamily": "Outfit",
+                                  "fontSize": 12.5,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "JeRIW",
+                                  "name": "Exsp-翻译润色",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "w5q1K",
+                                  "name": "Mode-翻译润色",
+                                  "fill": "#7FE3C926",
+                                  "cornerRadius": 6,
+                                  "padding": [
+                                    1,
+                                    6
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "EZ18n",
+                                      "name": "Modet-翻译润色",
+                                      "fill": "#7FE3C9",
+                                      "content": "单轮",
+                                      "fontFamily": "IBM Plex Mono",
+                                      "fontSize": 9.5,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "P5MOZ3",
+                              "name": "Expert-代码解释",
+                              "width": "fill_container",
+                              "height": 30,
+                              "cornerRadius": 10,
+                              "gap": 8,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "hIj2h",
+                                  "name": "Exn-代码解释",
+                                  "fill": "#FFFFFFB8",
+                                  "content": "代码解释",
+                                  "fontFamily": "Outfit",
+                                  "fontSize": 12.5
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "Dv4bZ",
+                                  "name": "Exsp-代码解释",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "M4wUl1",
+                                  "name": "Mode-代码解释",
+                                  "fill": "#FFFFFF14",
+                                  "cornerRadius": 6,
+                                  "padding": [
+                                    1,
+                                    6
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "hn5Hu",
+                                      "name": "Modet-代码解释",
+                                      "fill": "#FFFFFF73",
+                                      "content": "单轮",
+                                      "fontFamily": "IBM Plex Mono",
+                                      "fontSize": 9.5,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "amRzf",
+                              "name": "Expert-脑暴伙伴",
+                              "width": "fill_container",
+                              "height": 30,
+                              "cornerRadius": 10,
+                              "gap": 8,
+                              "padding": [
+                                0,
+                                10
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "tEAWm",
+                                  "name": "Exn-脑暴伙伴",
+                                  "fill": "#FFFFFFB8",
+                                  "content": "脑暴伙伴",
+                                  "fontFamily": "Outfit",
+                                  "fontSize": 12.5
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "bMvUZ",
+                                  "name": "Exsp-脑暴伙伴",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "syoMK",
+                                  "name": "Mode-脑暴伙伴",
+                                  "fill": "#FFFFFF14",
+                                  "cornerRadius": 6,
+                                  "padding": [
+                                    1,
+                                    6
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "cpSX3",
+                                      "name": "Modet-脑暴伙伴",
+                                      "fill": "#FFFFFF73",
+                                      "content": "多轮",
+                                      "fontFamily": "IBM Plex Mono",
+                                      "fontSize": 9.5,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "Sv7SU",
+                              "name": "ExSp2",
+                              "width": "fill_container",
+                              "height": "fill_container"
+                            },
+                            {
+                              "type": "frame",
+                              "id": "OUEKJ",
+                              "name": "NewExpert",
+                              "width": "fill_container",
+                              "height": 32,
+                              "fill": "#FFFFFF14",
+                              "cornerRadius": 10,
+                              "effect": {
+                                "type": "shadow",
+                                "shadowType": "outer",
+                                "color": "#FFFFFF59",
+                                "offset": {
+                                  "x": 0,
+                                  "y": 1
+                                },
+                                "blur": 1
+                              },
+                              "justifyContent": "center",
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "HkbW7",
+                                  "name": "NewExText",
+                                  "fill": "#FFFFFFB8",
+                                  "content": "+ 新建专家",
+                                  "fontFamily": "Outfit",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "hPVC9",
+                          "name": "Chat",
+                          "width": "fill_container",
+                          "height": "fill_container",
+                          "layout": "vertical",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "f9fHp2",
+                              "name": "ChatHeader",
+                              "width": "fill_container",
+                              "height": 44,
+                              "stroke": "#FFFFFF1F",
+                              "strokeWidth": {
+                                "bottom": 1
+                              },
+                              "strokeAlignment": "inner",
+                              "gap": 8,
+                              "padding": [
+                                0,
+                                14
+                              ],
+                              "alignItems": "center",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "g5mynf",
+                                  "name": "ChatTitle",
+                                  "fill": "#FFFFFF",
+                                  "content": "翻译润色",
+                                  "fontFamily": "Outfit",
+                                  "fontSize": 13,
+                                  "fontWeight": "600"
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "dFoXy",
+                                  "name": "ChSp",
+                                  "width": "fill_container",
+                                  "height": 1
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "uJRHf",
+                                  "name": "ModelChip",
+                                  "fill": "#FFFFFF14",
+                                  "cornerRadius": 8,
+                                  "effect": {
+                                    "type": "shadow",
+                                    "shadowType": "outer",
+                                    "color": "#FFFFFF59",
+                                    "offset": {
+                                      "x": 0,
+                                      "y": 1
+                                    },
+                                    "blur": 1
+                                  },
+                                  "gap": 6,
+                                  "padding": [
+                                    5,
+                                    10
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "PzOVG",
+                                      "name": "ModelText",
+                                      "fill": "#FFFFFFD9",
+                                      "content": "DeepSeek · deepseek-flash",
+                                      "fontFamily": "Outfit",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "icon",
+                                      "id": "GRvGm",
+                                      "name": "ModelCaret",
+                                      "width": 11,
+                                      "height": 11,
+                                      "icon": "caret-down",
+                                      "library": "phosphor",
+                                      "fill": "#FFFFFF73"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "OOlfg",
+                                  "name": "ThinkChip",
+                                  "fill": "#FFFFFF14",
+                                  "cornerRadius": 8,
+                                  "effect": {
+                                    "type": "shadow",
+                                    "shadowType": "outer",
+                                    "color": "#FFFFFF59",
+                                    "offset": {
+                                      "x": 0,
+                                      "y": 1
+                                    },
+                                    "blur": 1
+                                  },
+                                  "gap": 6,
+                                  "padding": [
+                                    5,
+                                    10
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "b2vE2",
+                                      "name": "ThinkText",
+                                      "fill": "#FFFFFFD9",
+                                      "content": "默认",
+                                      "fontFamily": "Outfit",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "icon",
+                                      "id": "JEPkM",
+                                      "name": "ThinkCaret",
+                                      "width": 11,
+                                      "height": 11,
+                                      "icon": "caret-down",
+                                      "library": "phosphor",
+                                      "fill": "#FFFFFF73"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "e10hAn",
+                                  "name": "ClearChip",
+                                  "cornerRadius": 8,
+                                  "stroke": "#FFFFFF33",
+                                  "strokeWidth": 1,
+                                  "strokeAlignment": "inner",
+                                  "effect": {
+                                    "type": "shadow",
+                                    "shadowType": "outer",
+                                    "color": "#FFFFFF59",
+                                    "offset": {
+                                      "x": 0,
+                                      "y": 1
+                                    },
+                                    "blur": 1
+                                  },
+                                  "padding": [
+                                    5,
+                                    10
+                                  ],
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "RJBCa",
+                                      "name": "ClearText",
+                                      "fill": "#FFFFFFB8",
+                                      "content": "清空会话",
+                                      "fontFamily": "Outfit",
+                                      "fontSize": 11,
+                                      "fontWeight": "normal"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "eN8nO",
+                              "name": "Messages",
+                              "width": "fill_container",
+                              "height": "fill_container",
+                              "layout": "vertical",
+                              "gap": 10,
+                              "padding": 14,
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "Vdr8p",
+                                  "name": "UserRow",
+                                  "width": "fill_container",
+                                  "justifyContent": "end",
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "G0eyxl",
+                                      "name": "UserBubble",
+                                      "fill": "#FFFFFF2B",
+                                      "cornerRadius": 14,
+                                      "effect": {
+                                        "type": "shadow",
+                                        "shadowType": "outer",
+                                        "color": "#FFFFFF59",
+                                        "offset": {
+                                          "x": 0,
+                                          "y": 1
+                                        },
+                                        "blur": 1
+                                      },
+                                      "padding": [
+                                        8,
+                                        12
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "N2BY4",
+                                          "name": "UserText",
+                                          "fill": "#FFFFFF",
+                                          "content": "帮我把这句翻成英文:今晚早点睡,明天要赶早班车。",
+                                          "fontFamily": "Outfit",
+                                          "fontSize": 12.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "frame",
+                                  "id": "O3uF8",
+                                  "name": "AiRow",
+                                  "width": "fill_container",
+                                  "gap": 8,
+                                  "children": [
+                                    {
+                                      "type": "frame",
+                                      "id": "b0o3c",
+                                      "name": "AiAvatar",
+                                      "width": 22,
+                                      "height": 22,
+                                      "fill": "#7FE3C92E",
+                                      "cornerRadius": 999,
+                                      "justifyContent": "center",
+                                      "alignItems": "center",
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "YREKh",
+                                          "name": "AiAvaText",
+                                          "fill": "#7FE3C9",
+                                          "content": "AI",
+                                          "fontFamily": "Outfit",
+                                          "fontSize": 9,
+                                          "fontWeight": "600"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "OGcSG",
+                                      "name": "AiBubble",
+                                      "fill": "#FFFFFF14",
+                                      "cornerRadius": 14,
+                                      "effect": {
+                                        "type": "shadow",
+                                        "shadowType": "outer",
+                                        "color": "#FFFFFF59",
+                                        "offset": {
+                                          "x": 0,
+                                          "y": 1
+                                        },
+                                        "blur": 1
+                                      },
+                                      "padding": [
+                                        8,
+                                        12
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "T6y4S",
+                                          "name": "AiText",
+                                          "fill": "#FFFFFFEB",
+                                          "content": "Go to bed early tonight — you've got an early train to catch tomorrow.",
+                                          "fontFamily": "Outfit",
+                                          "fontSize": 12.5,
+                                          "fontWeight": "normal"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "frame",
+                              "id": "j9a72L",
+                              "name": "InputWrap",
+                              "width": "fill_container",
+                              "layout": "vertical",
+                              "padding": [
+                                0,
+                                14,
+                                14,
+                                14
+                              ],
+                              "children": [
+                                {
+                                  "type": "frame",
+                                  "id": "NNJfv",
+                                  "name": "InputBar",
+                                  "width": "fill_container",
+                                  "height": 56,
+                                  "fill": "#FFFFFF14",
+                                  "cornerRadius": 14,
+                                  "stroke": "#FFFFFF24",
+                                  "strokeWidth": 1,
+                                  "strokeAlignment": "inner",
+                                  "gap": 10,
+                                  "padding": [
+                                    0,
+                                    14
+                                  ],
+                                  "alignItems": "center",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "id": "o5quN",
+                                      "name": "Placeholder",
+                                      "fill": "#FFFFFF59",
+                                      "textGrowth": "fixed-width",
+                                      "width": "fill_container",
+                                      "content": "问点什么… (Enter 发送,Shift+Enter 换行)",
+                                      "fontFamily": "Outfit",
+                                      "fontSize": 12,
+                                      "fontWeight": "normal"
+                                    },
+                                    {
+                                      "type": "frame",
+                                      "id": "cSmOt",
+                                      "name": "SendBtn",
+                                      "fill": "#7FE3C926",
+                                      "cornerRadius": 999,
+                                      "effect": {
+                                        "type": "shadow",
+                                        "shadowType": "outer",
+                                        "color": "#FFFFFF59",
+                                        "offset": {
+                                          "x": 0,
+                                          "y": 1
+                                        },
+                                        "blur": 1
+                                      },
+                                      "padding": [
+                                        6,
+                                        14
+                                      ],
+                                      "children": [
+                                        {
+                                          "type": "text",
+                                          "id": "CUuVO",
+                                          "name": "SendText",
+                                          "fill": "#7FE3C9",
+                                          "content": "发送",
+                                          "fontFamily": "Outfit",
+                                          "fontSize": 12,
+                                          "fontWeight": "600"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "fileToken": "8879d820-5ce5-4f27-8d5a-8c673627a575"
+}

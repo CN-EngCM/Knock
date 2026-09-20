@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal as XTerm, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -6,64 +6,50 @@ import { toast } from "sonner";
 import { api, onPtyEvent } from "@/api/client";
 import { DEFAULT_MONO_STACK, withFallback } from "@/lib/fonts";
 import { useI18n } from "@/i18n/useI18n";
-import type { ThemeMode } from "@/theme";
 
-// 右下终端区：每个 pty 会话一个 xterm 实例，容器随 tab 切换 display:none 保活
-// （切 tab 不丢回滚缓冲；关 tab = ptyKill + dispose，会话真正结束）。
-// 组件本身常驻（区域隐藏只是 CSS display:none），因此窗口藏进托盘再呼出，
-// 会话与屏幕内容都还在——这正是「页内终端」的核心价值。
+// 右列 tab 区的终端会话宿主：每个会话一个 xterm 实例。会话清单与活动页签的
+// 所有权在 App——会话是 tab 行里与工具并列的一等 tab（spawn/kill/激活都在
+// App），本组件只管 xterm 的生命周期：容器挂载建实例、pty 数据写入、会话从
+// 清单消失时 dispose。非激活会话的容器 display:none 保活（切 tab 不丢回滚
+// 缓冲）。组件随清单挂载/卸载：末个会话结束即卸载（实例已 dispose，无状态可保）。
 
-type Session = { id: number; label: string };
+/** 会话 tab 行（App 与本组件共享；spawn/kill/清单维护在 App） */
+export type TermSession = { id: number; label: string };
 
-// App → 本组件的「开新会话」信号：seq 单调递增作边沿检测；可选载荷供终端命令
-// 条目使用——cwd/label 传给 ptySpawn，command 在会话建好后整行写入（回车执行）
-export type TermSpawnReq = { seq: number; cwd?: string; label?: string; command?: string };
-
-// 主题色从 CSS 变量现读。xterm 实例只在创建时拿到一份快照，之后
-// 「theme prop 切换」与「auto 模式下系统明暗切换」（matchMedia 监听）
-// 都要重新执行下面这段，把新令牌刷进已建实例。
+// 主题色从 CSS 变量现读(单一 Aurora Glass 深色体系,令牌固定;xterm 需要实底
+// 色,不支持 alpha,故用专门的 --term-* 实底令牌而非半透明玻璃令牌)
 function themeFromVars(): ITheme {
     const cs = getComputedStyle(document.documentElement);
     const v = (n: string) => cs.getPropertyValue(n).trim();
     return {
-        background: v("--panel"),
-        foreground: v("--text"),
-        cursor: v("--text"),
-        cursorAccent: v("--bg"),
+        background: v("--term-bg"),
+        foreground: v("--term-fg"),
+        cursor: v("--accent"),
+        cursorAccent: v("--term-bg"),
         selectionBackground: v("--glow"),
     };
 }
 
 type Props = {
-    theme: ThemeMode;
-    /** 区域当前是否可见（隐藏时跳过 fit：0 尺寸会让 addon 抛错） */
-    visible: boolean;
+    /** 会话清单（App 持有；关 tab / shell 自退时 App 从中移除并触发卸载） */
+    sessions: TermSession[];
+    /** 激活会话 id；null = 激活的是工具 tab（全部容器 display:none） */
+    activeId: number | null;
     /** 等宽字体（设置页「等宽字体」，空串 = 默认栈）与字号；xterm 的字不在 CSS 变量体系里，须单独喂 */
     monoFont: string;
     fontSize: number;
-    /** 外部请求新会话的信号：只在 seq 递增时动作；可携带终端命令条目的执行载荷 */
-    spawnReq: TermSpawnReq;
-    /** 会话数上报：App 据此在 0 时隐藏整个终端区 */
-    onSessionCount: (n: number) => void;
-    onHide: () => void;
 };
 
-export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onSessionCount, onHide }: Props) {
+export function TerminalZone({ sessions, activeId, monoFont, fontSize }: Props) {
     const { t } = useI18n();
-    const [sessions, setSessions] = useState<Session[]>([]);
-    const [activeId, setActiveId] = useState<number | null>(null);
     const rootRef = useRef<HTMLDivElement>(null);
     const terms = useRef(new Map<number, XTerm>());
     const fits = useRef(new Map<number, FitAddon>());
     const containers = useRef(new Map<number, HTMLElement>());
-    const sessionsRef = useRef<Session[]>([]);
-    const activeIdRef = useRef<number | null>(null);
-    // attach 是稳定回调（不随字体设置变身份），建实例时从 ref 读当前字体
+    // attach 是稳定回调（不随字体设置变身份），建实例时从 ref 读当前字体；
+    // activeIdRef 供不依赖 activeId 的 effect（字体变更后的重新 fit）读当前值
     const fontRef = useRef({ monoFont, fontSize });
-
-    useEffect(() => {
-        sessionsRef.current = sessions;
-    }, [sessions]);
+    const activeIdRef = useRef(activeId);
 
     useEffect(() => {
         activeIdRef.current = activeId;
@@ -156,51 +142,21 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
         [fitAndSync, t],
     );
 
-    const spawn = useCallback(
-        async (req?: TermSpawnReq) => {
-            const r = await api.ptySpawn(req && { cwd: req.cwd, label: req.label });
-            if (!r.ok) {
-                // 命令条目的工作目录不存在：与 App 启动失败同口径（launch.missing + 路径）
-                if (r.error.kind === "missing") toast.error(`${t("launch.missing")}: ${r.error.path}`);
-                else toast.error(t("toast.error"));
-                return;
-            }
-            setSessions((prev) => [...prev, { id: r.data.id, label: r.data.label }]);
-            setActiveId(r.data.id);
-            // 会话就绪后把整行命令 + 回车送入 shell（服务端无新写入口，复用 ptyWrite）
-            if (req?.command) void api.ptyWrite(r.data.id, `${req.command}\r`);
-        },
-        [t],
-    );
-
-    const kill = useCallback(
-        (id: number) => {
-            void api.ptyKill(id);
-            disposeTerm(id);
-            const next = sessionsRef.current.filter((s) => s.id !== id);
-            setSessions(next);
-            setActiveId((cur) => (cur === id ? (next.at(-1)?.id ?? null) : cur));
-        },
-        [disposeTerm],
-    );
-
-    // pty 输出/退出事件：id 分发到对应 xterm。
-    // 必须在 cleanup 里退订（见 preload 注释）：StrictMode 的双跑 effect
-    // 会叠加监听器，双份 write 就是「终端每行显示两遍」的根因。
+    // pty 输出：id 分发到对应 xterm。必须在 cleanup 里退订（见 preload 注释）：
+    // StrictMode 的双跑 effect 会叠加监听器，双份 write 就是「终端每行显示两遍」的根因。
+    // 会话结束不在这里处理——清单归 App，本组件由下面的清单收缩 effect 统一 dispose
     useEffect(() => {
         const off = onPtyEvent((e) => {
-            if (e.type === "data") {
-                terms.current.get(e.id)?.write(e.data);
-                return;
-            }
-            // shell 自己退出（exit / 进程崩溃）：渲染端被动清理
-            disposeTerm(e.id);
-            const next = sessionsRef.current.filter((s) => s.id !== e.id);
-            setSessions(next);
-            setActiveId((cur) => (cur === e.id ? (next.at(-1)?.id ?? null) : cur));
+            if (e.type === "data") terms.current.get(e.id)?.write(e.data);
         });
         return off;
-    }, [disposeTerm]);
+    }, []);
+
+    // 会话从清单消失（关 tab / shell 自退，两条路都由 App 先改清单）→ dispose 对应 xterm
+    useEffect(() => {
+        const live = new Set(sessions.map((s) => s.id));
+        for (const id of [...terms.current.keys()]) if (!live.has(id)) disposeTerm(id);
+    }, [sessions, disposeTerm]);
 
     // 区域尺寸变化 → 只 fit 当前可见的会话（隐藏容器 fit 无意义）
     useEffect(() => {
@@ -213,34 +169,15 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
         return () => ro.disconnect();
     }, [activeId, fitAndSync]);
 
-    // 切 tab / 区域从隐藏恢复：重新 fit + 聚焦
+    // 切 tab / 终端从隐藏恢复：重新 fit + 聚焦
     useEffect(() => {
-        if (!visible || activeId === null) return;
+        if (activeId === null) return;
         const id = activeId;
         requestAnimationFrame(() => {
             fitAndSync(id);
             terms.current.get(id)?.focus();
         });
-    }, [activeId, visible, fitAndSync]);
-
-    // 把当前 CSS 变量应用到全部已建实例（主题切换与系统明暗切换共用）
-    const applyTheme = useCallback(() => {
-        const th = themeFromVars();
-        for (const term of terms.current.values()) term.options.theme = th;
-    }, []);
-
-    // 主题 prop 切换 → 全部会话重设配色
-    useEffect(() => {
-        applyTheme();
-    }, [theme, applyTheme]);
-
-    // auto 模式下系统明暗切换不会改变 theme prop，单独监听媒体查询刷新已建实例
-    // （显式主题由属性选择器接管，此时令牌不随系统变，多刷一次是无害的空操作）
-    useEffect(() => {
-        const mq = window.matchMedia("(prefers-color-scheme: dark)");
-        mq.addEventListener("change", applyTheme);
-        return () => mq.removeEventListener("change", applyTheme);
-    }, [applyTheme]);
+    }, [activeId, fitAndSync]);
 
     // 字体设置变化 → 已有会话同步重设（xterm 支持运行期改 fontFamily/fontSize），改完重新 fit
     useEffect(() => {
@@ -256,74 +193,16 @@ export function TerminalZone({ theme, visible, monoFont, fontSize, spawnReq, onS
         });
     }, [monoFont, fontSize, fitAndSync]);
 
-    // 会话数上报：归零时 App 隐藏整个终端区（本组件常驻不卸载，隐藏不丢会话状态）
-    useEffect(() => {
-        onSessionCount(sessions.length);
-    }, [sessions.length, onSessionCount]);
-
-    // 外部（状态栏按钮 / 命令条目）请求开新会话：只在 seq 递增时动作。
-    // 终端区是懒挂载（首次呼出时 seq 已 ≥1，挂载即触发）——StrictMode
-    // 会在挂载时把 effect 双跑一遍，记录已消费的 seq 防止开两个会话。
-    // spawn 故意不进依赖——它随语言切换变身份，进依赖会在切语言时凭空开一个会话。
-    const consumedSeq = useRef(0);
-    useEffect(() => {
-        if (spawnReq.seq > 0 && spawnReq.seq !== consumedSeq.current) {
-            consumedSeq.current = spawnReq.seq;
-            void spawn(spawnReq);
-        }
-    }, [spawnReq]);
-
     return (
-        <div ref={rootRef} className="flex h-full min-h-0 flex-col bg-panel">
-            <div className="flex flex-none items-stretch gap-0.5 border-b border-line px-2 text-[12.5px]">
-                {sessions.map((s) => (
-                    <span
-                        key={s.id}
-                        onClick={() => setActiveId(s.id)}
-                        className={`mb-[-1px] flex cursor-default select-none items-center border-b pb-1 pt-1.5 ${
-                            activeId === s.id
-                                ? "border-text text-text"
-                                : "border-transparent text-muted hover:border-line hover:text-dim"
-                        } px-2.5`}
-                    >
-                        {s.label}
-                        <button
-                            type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                kill(s.id);
-                            }}
-                            className="ml-1.5 px-1 text-[11px] hover:bg-faint hover:text-text"
-                            title={t("menu.delete")}
-                        >
-                            ×
-                        </button>
-                    </span>
-                ))}
-                <button
-                    type="button"
-                    onClick={() => void spawn()}
-                    className="flex items-center px-2.5 text-muted hover:text-text"
-                    title={t("term.new")}
-                >
-                    ＋
-                </button>
-                <span className="flex-1" />
-                <button type="button" className="tbtn self-center px-1" onClick={onHide} title={t("btn.terminal")}>
-                    ×
-                </button>
-            </div>
-            <div className="relative min-h-0 flex-1">
-                {sessions.map((s) => (
-                    <div
-                        key={s.id}
-                        ref={(el) => attach(el, s.id)}
-                        className="absolute inset-0 p-1"
-                        style={{ display: activeId === s.id ? undefined : "none" }}
-                    />
-                ))}
-                {/* 无会话时整个区域由 App 隐藏（display:none），这里不再放空态提示 */}
-            </div>
+        <div ref={rootRef} className="relative h-full min-h-0 bg-[var(--term-bg)]">
+            {sessions.map((s) => (
+                <div
+                    key={s.id}
+                    ref={(el) => attach(el, s.id)}
+                    className="absolute inset-0 p-1"
+                    style={{ display: activeId === s.id ? undefined : "none" }}
+                />
+            ))}
         </div>
     );
 }

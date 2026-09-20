@@ -46,7 +46,10 @@ export function AsciiSplash() {
     const { lang } = useI18n();
     const art = lang === "zh" ? ART_ZH : ART_EN;
     return (
-        <div className="flex min-h-0 flex-1 select-none flex-col items-center justify-center gap-5" aria-hidden="true">
+        <div
+            className="glass-panel flex min-h-0 flex-1 select-none flex-col items-center justify-center gap-5"
+            aria-hidden="true"
+        >
             <div className="ascii-float">
                 <pre className="ascii-art font-mono text-[12px] leading-[1.05]">{art.join("\n")}</pre>
             </div>

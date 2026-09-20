@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { LayoutGrid } from "lucide-react";
 import { TOOLS, type ToolId } from "@/tools/registry";
 import { useI18n } from "@/i18n/useI18n";
 
-// 搜索行右侧的「工具 ▾」下拉：内置工具的唯一入口。
+// tab 行右簇的「工具」下拉(原顶栏「工具 ▾」的新家):内置工具的可见入口。
 // ● = 已打开（点它只是切到该 tab），○ = 未打开（点它在工具区开新 tab）。
 type Props = {
     open: ToolId[];
@@ -32,29 +33,35 @@ export function ToolsMenu({ open, onOpen }: Props) {
     }, [show]);
 
     return (
-        <div ref={wrap} className="relative flex-none">
+        /* app-no-drag:顶栏是玻璃拖拽底,触发钮与弹层都要豁免 */
+        <div ref={wrap} className="app-no-drag relative flex-none">
             <button
                 type="button"
                 aria-expanded={show}
-                className="tbtn border border-line px-2.5 py-1 text-[12.5px] hover:bg-faint"
+                className="icon-btn"
+                title={t("tools.menu")}
                 onClick={() => setShow((v) => !v)}
             >
-                [ {t("tools.menu")} ▾ ]
+                <LayoutGrid size={14} />
             </button>
             {show && (
-                <div className="absolute right-0 top-[calc(100%+8px)] z-50 min-w-80 border border-line bg-panel p-1 shadow-xl">
+                <div className="app-no-drag drop-anim absolute right-0 top-[calc(100%+8px)] z-50 min-w-80 rounded-2xl border border-white/16 bg-raised p-1.5 shadow-2xl shadow-black/40 backdrop-blur-2xl">
+                    {/* app-no-drag:悬浮层悬出所在面板,不豁免会被全窗 app-drag 拖拽区吞掉点击/滚轮 */}
                     {TOOLS.map((tool) => (
                         <button
                             key={tool.id}
                             type="button"
-                            className="flex w-full items-baseline justify-between gap-6 whitespace-nowrap px-2.5 py-1.5 text-left text-[12.5px] text-dim hover:bg-faint hover:text-text"
+                            className="flex w-full items-baseline justify-between gap-6 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-dim transition-colors hover:bg-white/10 hover:text-text"
                             onClick={() => {
                                 onOpen(tool.id);
                                 setShow(false);
                             }}
                         >
                             <span>
-                                {open.includes(tool.id) ? "●" : "○"} {t(tool.nameKey)}
+                                <span className={open.includes(tool.id) ? "text-accent" : "text-muted"}>
+                                    {open.includes(tool.id) ? "●" : "○"}
+                                </span>{" "}
+                                {t(tool.nameKey)}
                             </span>
                             <span className="text-[11.5px] text-muted">{t(tool.descKey)}</span>
                         </button>

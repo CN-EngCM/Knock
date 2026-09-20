@@ -73,23 +73,24 @@ export function GroupPanel({
             {...(editing ? sortable.attributes : {})}
             className="flex flex-col pb-1.5"
         >
-            {/* 组头：▾ [ 名称 ] ──── n；点击折叠/展开；右键改名/删除；编辑模式显示把手与加号 */}
+            {/* 组头(设计定稿):名称 12 半粗白 + 发丝线撑满 + 等宽小计数;点击折叠/展开;
+                右键改名/删除;编辑模式显示把手与加号 */}
             <ContextMenu>
                 <ContextMenuTrigger asChild>
                     <h2
                         {...(editing ? sortable.listeners : {})}
                         onClick={() => setCollapsed((v) => !v)}
-                        // bg-panel 让组头成带状（与终端区/状态栏同底色），和下方条目拉开层次；
-                        // h-8 与工具区 tab 条同高，两条 border-b 连成一条线
-                        className="flex h-8 cursor-default touch-none select-none items-center gap-2 border-b border-line bg-panel px-2.5 text-[13px] tracking-wide text-dim"
+                        className="flex h-6 cursor-default touch-none select-none items-center gap-2 px-1 pb-1.5 pt-2 text-[12px] font-semibold tracking-wide text-white/88"
                     >
                         {editing && <GripVertical className="size-3.5 flex-none cursor-grab text-muted" aria-hidden />}
-                        <span className="w-3 flex-none text-[10px] text-muted" aria-hidden>
+                        <span className="w-2.5 flex-none text-[9px] text-muted" aria-hidden>
                             {showItems ? "▾" : "▸"}
                         </span>
-                        <span className="whitespace-nowrap">[ {group.name} ]</span>
-                        <span className="h-px min-w-4 flex-1 bg-line" aria-hidden />
-                        <span className="flex-none text-[11.5px] text-muted">{items.length}</span>
+                        <span className="whitespace-nowrap">{group.name}</span>
+                        <span className="h-px min-w-4 flex-1 bg-white/15" aria-hidden />
+                        <span className="flex-none font-mono text-[10px] font-normal text-white/40">
+                            {items.length}
+                        </span>
                         {editing && (
                             <button
                                 type="button"
@@ -127,7 +128,7 @@ export function GroupPanel({
             </ContextMenu>
 
             {showItems && (
-                <div className="flex flex-col gap-0.5 px-1.5 pt-1">
+                <div className="flex flex-col gap-0.5 px-0.5 pb-2">
                     {editing ? (
                         <DndContext sensors={dragSensors} onDragEnd={handleItemDragEnd}>
                             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -159,15 +160,15 @@ export function GroupPanel({
                     )}
 
                     {items.length === 0 && !editing && (
-                        <span className="px-2 py-1 text-[12.5px] text-muted">{t("group.empty")}</span>
+                        <span className="px-2 py-1 text-[12px] text-muted">{t("group.empty")}</span>
                     )}
                     {editing && (
                         <button
                             type="button"
                             onClick={() => onAddItem(group)}
-                            className="flex items-center gap-2 border border-dashed border-line px-2 py-1 text-[12.5px] text-muted hover:text-text"
+                            className="flex items-center gap-2 rounded-[10px] border border-dashed border-line px-2 py-1 text-[12px] text-muted transition-colors hover:text-text"
                         >
-                            <span className="w-9 flex-none">new</span>
+                            <span className="kind-badge">new</span>
                             {t("item.new")}…
                         </button>
                     )}

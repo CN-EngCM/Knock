@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { TOOLS, type ToolId } from "@/tools/registry";
 import { api, type Expert, type Group, type Item, type ToolAliases } from "@/api/client";
 import { KIND_TAG } from "@/lib/kindTag";
@@ -194,6 +195,14 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
 
     const open = q.length > 0 && focused;
 
+    // 拖拽区(顶栏空处/面板间隙/右列空态)的点击在窗口层就被吃掉,不产生任何 DOM
+    // 事件,输入框无从 blur,下拉「点外面不收」:打开期间给根元素挂标记,整窗临时
+    // 免拖拽(见 index.css 的 html.dropdown-open 规则),任意点击落回页面即 blur 收起
+    useEffect(() => {
+        document.documentElement.classList.toggle("dropdown-open", open);
+        return () => document.documentElement.classList.remove("dropdown-open");
+    }, [open]);
+
     function select(c: Candidate) {
         if (c.kind === "item") {
             onOpenItem(c.item);
@@ -228,15 +237,19 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
     }
 
     return (
-        <div className="relative flex min-w-40 flex-1 items-center rounded-sm border border-line bg-panel px-2 py-1 transition-colors focus-within:border-dim">
+        /* 顶栏搜索 pill(设计定稿):玻璃渐变底 + 32% 白描边,聚焦薄荷绿光晕(见 .knock-search)。
+           高 46 = 顶栏整行(设计稿 SearchBar 与 TitleBar 同高),非小号内嵌胶囊 */
+        <div className="knock-search relative flex h-[46px] min-w-0 flex-1 items-center gap-2 px-3.5">
+            {" "}
+            <Search size={15} className="flex-none text-white/55" aria-hidden />
             {/* 素材 chip：只读，键入即弃（见 onChange），× 手动移除 */}
             {clip !== null && (
-                <span className="mr-1.5 flex max-w-[70%] min-w-0 flex-none items-center gap-1.5 truncate rounded-xs border border-dashed border-line bg-faint px-1.5 py-0.5 text-[13px] text-dim">
+                <span className="flex max-w-[70%] min-w-0 flex-none items-center gap-1.5 truncate rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[12px] text-dim">
                     <span aria-hidden>❐</span>
                     <span className="truncate">{chipLabel(clip)}</span>
                     <button
                         type="button"
-                        className="flex-none px-0.5 text-muted hover:text-text"
+                        className="flex-none px-0.5 text-muted transition-colors hover:text-text"
                         aria-label={t("common.delete")}
                         onClick={() => setClip(null)}
                     >
@@ -261,10 +274,10 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                 aria-label={t("search.placeholder")}
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-text outline-none placeholder:text-muted"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13.5px] text-text outline-none placeholder:text-white/45"
             />
             {open && (
-                <div className="absolute left-0 right-0 top-full z-50 max-h-80 overflow-y-auto rounded-sm border border-line bg-panel py-1 shadow-xl">
+                <div className="app-no-drag absolute left-0 right-0 top-[calc(100%+10px)] z-50 max-h-80 overflow-y-auto rounded-2xl border border-white/16 bg-raised p-1.5 shadow-2xl shadow-black/40 backdrop-blur-2xl drop-anim">
                     {/* 只剩推荐工具或路径动作行时不算「无匹配」——指的是没有条目/工具命中 */}
                     {hits.length === 0 && pathRows.length === 0 && (
                         <span className="block px-2.5 py-1.5 text-[12.5px] text-muted">{t("search.noHit")}</span>
@@ -326,19 +339,15 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                     onMouseDown={(e) => e.preventDefault()}
                                     onMouseEnter={() => setHi(i)}
                                     onClick={() => select(c)}
-                                    // 高亮行用反色（文字色做底）——与全站 ::selection 同一语言，最醒目
-                                    className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] ${
-                                        sel ? "bg-text text-bg" : "text-dim"
+                                    // 高亮行浮白玻璃底 + 白字——玻璃体系的选中语言（不做反色）
+                                    className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+                                        sel ? "bg-white/10 text-text" : "text-dim"
                                     }`}
                                 >
-                                    <span
-                                        className={`w-9 flex-none text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
-                                    >
-                                        {tag}
-                                    </span>
+                                    <span className="kind-badge flex-none">{tag}</span>
                                     <span className="min-w-0 flex-1 truncate">{title}</span>
                                     <span
-                                        className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-bg/60" : "text-muted"}`}
+                                        className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-dim" : "text-muted"}`}
                                     >
                                         {tail}
                                     </span>

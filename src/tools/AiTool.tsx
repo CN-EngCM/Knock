@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Copy } from "lucide-react";
+import { ChevronDown, Copy } from "lucide-react";
 import Markdown from "react-markdown";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -206,7 +206,10 @@ export default function AiTool({
         }
     }, [seq, experts, aiModels]);
 
-    const inputCls = "border border-line bg-bg text-[12.5px] outline-none placeholder:text-muted focus:border-dim";
+    // 会话头部 chip 外壳(设计定稿):白 8% 底圆角 8 的原生 select 套壳,右侧自画箭头
+    const chipShell =
+        "relative flex h-[26px] flex-none items-center rounded-lg bg-white/[0.08] pl-2.5 pr-6 text-[11px] text-white/85 transition-colors hover:bg-white/[0.13]";
+    const chipSelect = "appearance-none bg-transparent text-[11px] text-inherit outline-none";
     const activeExpert = experts.find((e) => e.id === activeId) ?? null;
     const noModelsConfigured = aiModels !== null && aiModels.length === 0;
     // 「停止」态看的是当前活跃会话末条 assistant 是否仍在流式（后台专家的流不影响按钮语义）
@@ -229,70 +232,83 @@ export default function AiTool({
         }
     }
 
-    // 消息行渲染：多轮是连续对话流（回答块以分隔线相隔），单轮把一对问答包进卡片，
-    // 卡内问题行保持 > 前缀、回答紧随其下（separated=false 时不再画内部分隔线）
+    // 消息行渲染(设计定稿):用户=右侧白 17% 气泡;AI=薄荷绿 AI 头像 + 白 8% 气泡。
+    // 单轮把一对问答包进一张卡片(问题行右对齐、回答紧随其下)
     function renderUserMsg(m: Msg) {
         return (
-            <div className="whitespace-pre-wrap break-words text-[13px] text-dim">
-                <span className="mr-1.5 text-muted">&gt;</span>
-                {m.content}
+            <div className="flex justify-end">
+                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-white/[0.17] px-3.5 py-2 text-[12.5px] whitespace-pre-wrap break-words text-white">
+                    {m.content}
+                </div>
             </div>
         );
     }
 
-    function renderAssistantMsg(m: Msg, separated: boolean) {
+    function renderAssistantMsg(m: Msg, _separated: boolean) {
         return (
-            <div
-                className={`group flex flex-col gap-1 ${separated ? "border-t border-line pt-2 first:border-0 first:pt-0" : ""}`}
-            >
-                {!!m.reasoning && (
-                    <details className="rounded-xs border border-dashed border-line bg-faint px-2 py-1">
-                        <summary className="cursor-pointer select-none text-[11.5px] text-muted">
-                            {t("ai.thinking")}
-                        </summary>
-                        <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted">
-                            {m.reasoning}
-                        </div>
-                    </details>
-                )}
-                <div className="break-words text-[13.5px] leading-relaxed text-text [&_a]:underline [&_li]:ml-4 [&_ul]:list-disc">
-                    {/* react-markdown v10 无顶层 className，样式挂在包裹层 */}
-                    <Markdown
-                        components={{
-                            pre: ({ node: _node, ...rest }) => (
-                                <pre
-                                    {...rest}
-                                    className="overflow-auto rounded-xs border border-line bg-faint p-2 font-mono text-[12.5px]"
-                                />
-                            ),
-                            code: ({ node: _node, ...rest }) => <code {...rest} className="font-mono text-[12.5px]" />,
-                        }}
-                    >
-                        {m.content}
-                    </Markdown>
-                </div>
-                <div className="flex items-center gap-2">
-                    {m.status === "stopped" && <span className="text-[11px] text-muted">〔{t("ai.stopped")}〕</span>}
-                    {m.status === "error" &&
-                        (() => {
-                            const k = aiErrKey(m.errStatus);
-                            return (
-                                <span className="text-[12px] text-destructive">
-                                    {k ? t(k) : `${t("ai.err.other")}: ${m.errStatus}`}
-                                </span>
-                            );
-                        })()}
-                    {/* 完成或已停止的回答都可复制（流式中不显示） */}
-                    {(!m.status || m.status === "stopped") && m.content && (
-                        <button
-                            type="button"
-                            className="-my-0.5 ml-auto text-muted opacity-60 hover:text-text group-hover:opacity-100"
-                            title={t("ai.copy")}
-                            onClick={() => void copyMsg(m.content)}
-                        >
-                            <Copy size={13} />
-                        </button>
+            <div className="group flex gap-2.5">
+                {/* 流式中头像轻呼吸,回答落定即静止 */}
+                <span
+                    className={`mt-0.5 flex size-[22px] flex-none select-none items-center justify-center rounded-full bg-accent/[0.18] text-[9px] font-semibold text-accent ${
+                        !m.status ? "animate-pulse" : ""
+                    }`}
+                >
+                    AI
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    {!!m.reasoning && (
+                        <details className="rounded-lg border border-dashed border-line bg-white/[0.04] px-2 py-1">
+                            <summary className="cursor-pointer select-none text-[11.5px] text-muted">
+                                {t("ai.thinking")}
+                            </summary>
+                            <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted">
+                                {m.reasoning}
+                            </div>
+                        </details>
                     )}
+                    <div className="rounded-2xl rounded-tl-md bg-white/[0.08] px-3.5 py-2 text-[13px] leading-relaxed break-words text-text [&_a]:underline [&_li]:ml-4 [&_ul]:list-disc">
+                        {/* react-markdown v10 无顶层 className，样式挂在包裹层 */}
+                        <Markdown
+                            components={{
+                                pre: ({ node: _node, ...rest }) => (
+                                    <pre
+                                        {...rest}
+                                        className="overflow-auto rounded-lg bg-white/[0.07] p-2 font-mono text-[12.5px]"
+                                    />
+                                ),
+                                code: ({ node: _node, ...rest }) => (
+                                    <code {...rest} className="font-mono text-[12.5px]" />
+                                ),
+                            }}
+                        >
+                            {m.content}
+                        </Markdown>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {m.status === "stopped" && (
+                            <span className="text-[11px] text-muted">〔{t("ai.stopped")}〕</span>
+                        )}
+                        {m.status === "error" &&
+                            (() => {
+                                const k = aiErrKey(m.errStatus);
+                                return (
+                                    <span className="text-[12px] text-destructive">
+                                        {k ? t(k) : `${t("ai.err.other")}: ${m.errStatus}`}
+                                    </span>
+                                );
+                            })()}
+                        {/* 完成或已停止的回答都可复制（流式中不显示） */}
+                        {(!m.status || m.status === "stopped") && m.content && (
+                            <button
+                                type="button"
+                                className="-my-0.5 text-muted opacity-60 transition-opacity hover:text-text group-hover:opacity-100"
+                                title={t("ai.copy")}
+                                onClick={() => void copyMsg(m.content)}
+                            >
+                                <Copy size={13} />
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -300,9 +316,12 @@ export default function AiTool({
 
     return (
         <div className="flex h-full">
-            {/* ── 左栏：专家纯列表 ── */}
-            <aside className="flex w-52 flex-none flex-col border-r border-line">
-                <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* ── 左栏:专家列表(设计定稿:顶部小标签 + 选中浮白行 + 模式 chip) ── */}
+            <aside className="flex w-[188px] flex-none flex-col border-r border-white/[0.12]">
+                <span className="px-2.5 pb-1 pt-2.5 text-[10px] font-semibold tracking-wider text-white/35">
+                    {t("search.expert")}
+                </span>
+                <div className="min-h-0 flex-1 overflow-y-auto px-1.5">
                     {experts.length === 0 ? (
                         <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
                             <span className="text-[12px] text-muted">{t("ai.noExperts")}</span>
@@ -310,8 +329,7 @@ export default function AiTool({
                     ) : (
                         experts.map((e) => (
                             // 行本体用 div 承载点击（里面还要放编辑小按钮，button 不能嵌套
-                            // button——与 ToolsZone/TerminalZone 的行结构同一取舍）。
-                            // 选中样式对齐设置对话框分节导航：左侧粗边框是最强信号，悬浮只有字色变化
+                            // button——与 ToolsZone/TerminalZone 的行结构同一取舍）
                             <div
                                 key={e.id}
                                 role="button"
@@ -327,23 +345,30 @@ export default function AiTool({
                                         setGate(null);
                                     }
                                 }}
-                                className={`flex w-full cursor-default items-center gap-1.5 border-l-2 px-2 py-1.5 text-left text-[13px] ${
+                                className={`group flex w-full cursor-default items-center gap-2 rounded-[10px] px-2 py-[7px] text-left text-[12.5px] transition-colors ${
                                     e.id === activeId
-                                        ? "border-text bg-faint text-text"
-                                        : "border-transparent text-muted hover:text-dim"
+                                        ? "bg-white/[0.15] font-semibold text-white"
+                                        : "text-white/70 hover:bg-white/[0.06] hover:text-white/90"
                                 }`}
                             >
-                                {/* 该专家正在流式：克制的呼吸圆点，颜色随行文字 */}
+                                {/* 该专家正在流式：克制的呼吸圆点,选中行直接白,非选中随文字 */}
                                 {convStreaming(e.id) && (
                                     <span className="size-1.5 flex-none animate-pulse rounded-full bg-current" />
                                 )}
                                 <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                                <span className="flex-none text-[10.5px] text-muted">
+                                {/* 模式 chip:选中行薄荷绿,普通行白 8% */}
+                                <span
+                                    className={`flex-none rounded-md px-1.5 py-[3px] font-mono text-[9.5px] font-normal leading-none ${
+                                        e.id === activeId
+                                            ? "bg-accent/[0.15] text-accent"
+                                            : "bg-white/[0.08] text-white/45"
+                                    }`}
+                                >
                                     {t(e.multi ? "ai.modeMulti" : "ai.modeSingle")}
                                 </span>
                                 <button
                                     type="button"
-                                    className="flex-none px-0.5 text-muted hover:text-text"
+                                    className="flex-none px-0.5 text-muted opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
                                     title={t("ai.editExpert")}
                                     onClick={(ev) => {
                                         ev.stopPropagation();
@@ -356,64 +381,64 @@ export default function AiTool({
                         ))
                     )}
                 </div>
-                <Button
+                <button
                     type="button"
-                    variant="outline"
-                    size="xs"
-                    className="mx-1.5 my-1.5"
+                    className="mx-2 mb-2.5 mt-1 flex h-8 flex-none items-center justify-center gap-1 rounded-[10px] bg-white/[0.08] text-[12px] text-white/75 transition-colors hover:bg-white/[0.14] hover:text-white active:scale-[0.98]"
                     onClick={() => setEditing("new")}
                 >
                     ＋ {t("ai.newExpert")}
-                </Button>
+                </button>
             </aside>
 
-            {/* ── 右栏：头部 + 会话 + 输入 ── */}
-            <section className="flex min-w-0 flex-1 flex-col gap-2 p-3">
+            {/* ── 右栏:头部 + 会话 + 输入 ── */}
+            <section className="flex min-w-0 flex-1 flex-col gap-2.5 p-3">
                 {!noModelsConfigured && activeExpert && (
-                    <header className="flex flex-none items-center gap-2">
-                        <span className="min-w-0 truncate text-[13px] text-text">{activeExpert.name}</span>
-                        <span className="flex-none text-[10.5px] text-muted">
-                            {t(activeExpert.multi ? "ai.modeMulti" : "ai.modeSingle")}
+                    <header className="flex flex-none items-center gap-2 border-b border-white/[0.12] px-1 pb-2.5">
+                        <span className="min-w-0 truncate text-[13px] font-semibold text-white">
+                            {activeExpert.name}
                         </span>
                         <span className="flex-1" />
                         {/* 会话内模型临时切换：只改 conv.override 不写回专家；换模型历史照常携带 */}
-                        <select
-                            className={`${inputCls} w-56 flex-none px-1 py-0.5 text-[12px]`}
-                            value={effectiveModel(activeExpert) || NO_MODEL}
-                            onChange={(e) => setOverride(activeExpert.id, e.target.value || null)}
-                            title={t("ai.bindModel")}
-                        >
-                            <option value={NO_MODEL} disabled>
-                                {t("ai.unbound")}
-                            </option>
-                            {(aiModels ?? []).map((m) => (
-                                <option key={m.id} value={m.id}>
-                                    {PROVIDER_LABEL[m.provider]} · {m.model}
+                        <label className={chipShell} title={t("ai.bindModel")}>
+                            <select
+                                className={chipSelect}
+                                value={effectiveModel(activeExpert) || NO_MODEL}
+                                onChange={(e) => setOverride(activeExpert.id, e.target.value || null)}
+                            >
+                                <option value={NO_MODEL} disabled>
+                                    {t("ai.unbound")}
                                 </option>
-                            ))}
-                        </select>
+                                {(aiModels ?? []).map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                        {PROVIDER_LABEL[m.provider]} · {m.model}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown size={11} className="pointer-events-none absolute right-1.5 text-white/45" />
+                        </label>
                         {/* 会话内思考强度临时切换：语义与模型切换一致，不写回专家配置 */}
-                        <select
-                            className={`${inputCls} w-20 flex-none px-1 py-0.5 text-[12px]`}
-                            value={effectiveEffort(activeExpert)}
-                            onChange={(e) => setEffortOverride(activeExpert.id, e.target.value as AiEffortId)}
-                            title={t("ai.effort")}
-                        >
-                            {EFFORT_IDS.map((id) => (
-                                <option key={id} value={id}>
-                                    {t(EFFORT_LABEL[id])}
-                                </option>
-                            ))}
-                        </select>
+                        <label className={chipShell} title={t("ai.effort")}>
+                            <select
+                                className={chipSelect}
+                                value={effectiveEffort(activeExpert)}
+                                onChange={(e) => setEffortOverride(activeExpert.id, e.target.value as AiEffortId)}
+                            >
+                                {EFFORT_IDS.map((id) => (
+                                    <option key={id} value={id}>
+                                        {t(EFFORT_LABEL[id])}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown size={11} className="pointer-events-none absolute right-1.5 text-white/45" />
+                        </label>
                         {/* 单轮/多轮都给清空：单轮的历史同样需要一键重来 */}
-                        <Button
+                        <button
                             type="button"
-                            variant="outline"
-                            size="xs"
+                            className="h-[26px] flex-none rounded-lg border border-white/20 px-2.5 text-[11px] text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white active:scale-[0.97]"
                             onClick={() => activeId != null && clearConv(activeId)}
                         >
                             {t("ai.clear")}
-                        </Button>
+                        </button>
                     </header>
                 )}
 
@@ -442,7 +467,7 @@ export default function AiTool({
                                   )
                                 : pairUp(convs[activeExpert.id]?.msgs ?? []).map((pair, gi) => (
                                       /* 单轮：一问一答一张卡片，卡间用外层 gap 分隔 */
-                                      <div key={gi} className="rounded-sm border border-line p-2.5">
+                                      <div key={gi} className="flex flex-col gap-2 rounded-2xl bg-white/[0.04] p-2.5">
                                           {pair.map((msg, mi) => (
                                               <Fragment key={mi}>
                                                   {msg.role === "user"
@@ -466,11 +491,12 @@ export default function AiTool({
                     </div>
                 )}
 
-                {/* 输入区：流式中发送按钮变停止；Enter 发送 Shift+Enter 换行 */}
-                <div className="flex flex-none items-end gap-2">
+                {/* 输入区(设计定稿):白 8% 圆角 14 容器 + 薄荷绿胶囊发送键;
+                    流式中发送按钮变停止;Enter 发送 Shift+Enter 换行 */}
+                <div className="flex flex-none items-end gap-2 rounded-2xl border border-white/[0.14] bg-white/[0.08] p-2 pl-3.5 transition-colors focus-within:border-accent/40">
                     <textarea
                         ref={textareaRef}
-                        className={`${inputCls} h-16 min-w-0 flex-1 resize-none px-2 py-1.5 leading-relaxed`}
+                        className="h-16 min-w-0 flex-1 resize-none bg-transparent text-[12.5px] leading-relaxed text-text outline-none placeholder:text-muted"
                         value={draft}
                         placeholder={t("ai.placeholder")}
                         spellCheck={false}
@@ -482,11 +508,10 @@ export default function AiTool({
                             void send(draft); // send 内部处理 stop-then-send 与守卫
                         }}
                     />
-                    {/* 主操作实心：发送/停止同一颗按钮随流式状态切换（disabled 半透明由 Button 自带） */}
-                    <Button
+                    {/* 发送/停止同一颗胶囊随流式状态切换(disabled 半透明) */}
+                    <button
                         type="button"
-                        size="xs"
-                        className="flex-none px-3"
+                        className="h-[30px] flex-none rounded-full bg-accent/[0.15] px-4 text-[12px] font-semibold text-accent transition-all duration-150 hover:bg-accent/25 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
                         disabled={!streaming && !draft.trim()}
                         onClick={() => {
                             if (streaming && activeId != null) stopExpertStreams(activeId);
@@ -494,7 +519,7 @@ export default function AiTool({
                         }}
                     >
                         {streaming ? t("ai.stop") : t("ai.send")}
-                    </Button>
+                    </button>
                 </div>
             </section>
 

@@ -14,7 +14,6 @@ import {
 } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang } from "@/i18n";
-import type { ThemeMode } from "@/theme";
 import { BasicSection } from "./settings/BasicSection";
 import { ToolsSection } from "./settings/ToolsSection";
 import { TranslateSection } from "./settings/TranslateSection";
@@ -24,9 +23,6 @@ import { GallerySection } from "./settings/GallerySection";
 type Props = {
     open: boolean;
     onClose: () => void;
-    /** 主题与语言控制在 App 层（设置页与顶栏共用同一状态源） */
-    theme: ThemeMode;
-    onTheme: (mode: ThemeMode) => void;
     lang: Lang;
     onChangeLang: (lang: Lang) => void;
     platform: string;
@@ -69,8 +65,6 @@ export type SectionId = (typeof SECTION_DEFS)[number]["id"];
 export function SettingsDialog({
     open,
     onClose,
-    theme,
-    onTheme,
     lang,
     onChangeLang,
     platform,
@@ -128,8 +122,6 @@ export function SettingsDialog({
                     <div className="grid min-h-0 min-w-0 flex-1 content-start gap-3 overflow-y-auto">
                         {sec === "basic" && (
                             <BasicSection
-                                theme={theme}
-                                onTheme={onTheme}
                                 lang={lang}
                                 onChangeLang={onChangeLang}
                                 platform={platform}

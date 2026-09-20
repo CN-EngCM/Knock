@@ -16,7 +16,7 @@ import {
 } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang, MessageKey } from "@/i18n";
-import type { ThemeMode } from "@/theme";
+import { BG_PRESETS, loadBgColor, saveBgColor } from "@/lib/theme";
 import { CommitInput, row } from "./shared";
 import { FontPicker } from "./FontPicker";
 
@@ -33,8 +33,6 @@ const HOTKEY_LABEL: Record<HotkeyId, MessageKey> = {
 };
 
 type Props = {
-    theme: ThemeMode;
-    onTheme: (mode: ThemeMode) => void;
     lang: Lang;
     onChangeLang: (lang: Lang) => void;
     platform: string;
@@ -51,10 +49,8 @@ type Props = {
     onClipSec: (seconds: number) => Promise<boolean>;
 };
 
-/** 基础设置分节：主题 / 语言 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 书签导入 / 运行环境 */
+/** 基础设置分节：语言 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 书签导入 / 运行环境 */
 export function BasicSection({
-    theme,
-    onTheme,
     lang,
     onChangeLang,
     platform,
@@ -76,6 +72,8 @@ export function BasicSection({
     const [fontSize, setFontSize] = useState("13");
     // 剪贴板时限编辑态（秒）
     const [clipSecEdit, setClipSecEdit] = useState("5");
+    // 背景色编辑态：预设/取色都即点即存（saveBgColor 写 localStorage + 应用 --bg-base）
+    const [bg, setBg] = useState(loadBgColor);
     // 数据目录（null = 尚未拉取）；迁移是「搬库 → 重启」的长流程，pending 防重复触发
     const [dataDirInfo, setDataDirInfo] = useState<{ dir: string; isDefault: boolean } | null>(null);
     const [migrating, setMigrating] = useState(false);
@@ -216,20 +214,6 @@ export function BasicSection({
     return (
         <>
             <div className={row}>
-                <Label>{t("settings.theme")}</Label>
-                <Select value={theme} onValueChange={(v) => onTheme(v as ThemeMode)}>
-                    <SelectTrigger className="w-full">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="auto">{t("theme.auto")}</SelectItem>
-                        <SelectItem value="light">{t("theme.light")}</SelectItem>
-                        <SelectItem value="dark">{t("theme.dark")}</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-
-            <div className={row}>
                 <Label>{t("settings.language")}</Label>
                 <Select value={lang} onValueChange={(v) => onChangeLang(v as Lang)}>
                     <SelectTrigger className="w-full">
@@ -240,6 +224,45 @@ export function BasicSection({
                         <SelectItem value="en">{t("settings.lang.en")}</SelectItem>
                     </SelectContent>
                 </Select>
+            </div>
+
+            <div className={row}>
+                <Label>{t("settings.bg")}</Label>
+                <span className="flex min-h-9 flex-wrap items-center gap-2">
+                    {BG_PRESETS.map((p) => (
+                        <button
+                            key={p.value}
+                            type="button"
+                            title={t(p.key)}
+                            aria-pressed={bg === p.value}
+                            onClick={() => {
+                                setBg(p.value);
+                                saveBgColor(p.value);
+                            }}
+                            className={`size-6 flex-none rounded-full border border-white/25 transition-transform hover:scale-110 ${
+                                bg === p.value ? "ring-2 ring-accent" : ""
+                            }`}
+                            style={{ background: p.value }}
+                        />
+                    ))}
+                    {/* 自定义取色:原生 color input 透明铺在当前色圆点上,点击弹系统取色器 */}
+                    <label
+                        title={t("settings.bg.custom")}
+                        className="relative size-6 flex-none cursor-pointer rounded-full border border-white/25 transition-transform hover:scale-110"
+                        style={{ background: bg }}
+                    >
+                        <input
+                            type="color"
+                            value={bg}
+                            onChange={(e) => {
+                                setBg(e.target.value);
+                                saveBgColor(e.target.value);
+                            }}
+                            aria-label={t("settings.bg.custom")}
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        />
+                    </label>
+                </span>
             </div>
 
             <div className={row}>
