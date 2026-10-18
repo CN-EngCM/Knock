@@ -34,7 +34,7 @@ export function ToolsSection({ toolAliases, onToolAlias }: Props) {
     return (
         <>
             {toolAliases === null ? (
-                <span className="px-1 text-[13px] text-muted">…</span>
+                <span className="px-1 text-[13px] text-dim-foreground">…</span>
             ) : (
                 TOOLS.map((tool) => (
                     <div className={row} key={tool.id}>
@@ -49,7 +49,7 @@ export function ToolsSection({ toolAliases, onToolAlias }: Props) {
                     </div>
                 ))
             )}
-            <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.tools.aliasHint")}</div>
+            <div className="-mt-1 px-1 text-[11.5px] text-dim-foreground">{t("settings.tools.aliasHint")}</div>
         </>
     );
 }

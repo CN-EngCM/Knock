@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BarcodeFormat, BrowserMultiFormatReader } from "@zxing/library";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/useI18n";
 
 // 条形码 / 二维码识别：@zxing/library（纯 JS）随本 chunk 懒加载。
@@ -54,8 +55,6 @@ export default function ScanTool() {
         }
     }
 
-    const btn = "tbtn border border-line px-3 py-1 text-[12px] hover:bg-faint";
-
     return (
         <div
             className="flex h-full flex-col gap-3 overflow-auto p-4"
@@ -72,14 +71,14 @@ export default function ScanTool() {
             }}
         >
             <div
-                className={`flex flex-none flex-col items-center gap-3 border border-dashed px-6 py-8 text-center ${
-                    dragOver ? "border-text bg-faint" : "border-line"
+                className={`flex flex-none flex-col items-center gap-3 rounded-md border border-dashed px-6 py-8 text-center ${
+                    dragOver ? "border-border bg-rowsel" : "border-line"
                 }`}
             >
-                <span className="text-[14px] text-dim">{t("scan.drop")}</span>
-                <button type="button" className={btn} onClick={() => fileInput.current?.click()}>
-                    [ {t("scan.pick")} ]
-                </button>
+                <span className="text-[14px] text-muted-foreground">{t("scan.drop")}</span>
+                <Button appearance="standard" variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
+                    {t("scan.pick")}
+                </Button>
                 <input
                     ref={fileInput}
                     type="file"
@@ -93,28 +92,26 @@ export default function ScanTool() {
                 />
             </div>
 
-            <h3 className="flex-none text-[11.5px] tracking-widest text-muted">
+            <h3 className="flex-none text-[11.5px] tracking-widest text-dim-foreground">
                 {t("scan.results")} ── {results.length ? "" : t("scan.none")}
             </h3>
             {results.map((r, i) => (
                 <div
                     key={`${i}-${r.text}`}
-                    className="flex flex-none items-center gap-2.5 border border-line bg-bg px-2.5 py-1.5"
+                    className="flex flex-none items-center gap-2.5 rounded-md border border-line bg-background px-2.5 py-1.5"
                 >
-                    <span className="flex-none border border-line px-1.5 py-0.5 text-[11px] text-muted">
-                        {r.format}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-text">{r.text}</span>
-                    <button type="button" className={btn} onClick={() => copyText(r.text)}>
-                        [ {t("scan.copy")} ]
+                    <span className="kind-badge flex-none">{r.format}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">{r.text}</span>
+                    <button type="button" className="tbtn" onClick={() => copyText(r.text)}>
+                        {t("scan.copy")}
                     </button>
                     {/^https?:\/\//i.test(r.text) && (
                         <button
                             type="button"
-                            className={btn}
+                            className="tbtn"
                             onClick={() => window.open(r.text, "_blank", "noreferrer")}
                         >
-                            [ {t("scan.open")} ]
+                            {t("scan.open")}
                         </button>
                     )}
                 </div>

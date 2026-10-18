@@ -101,7 +101,7 @@ export function AiSection({ aiModels, onAiModels }: Props) {
                 ))}
             </datalist>
 
-            <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.ai.hint")}</div>
+            <div className="-mt-1 px-1 text-[11.5px] text-dim-foreground">{t("settings.ai.hint")}</div>
 
             {list.map((cfg) => {
                 const test = tests[cfg.id] ?? { state: "idle" as const };
@@ -148,7 +148,7 @@ export function AiSection({ aiModels, onAiModels }: Props) {
                         </div>
 
                         <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pl-[7rem]">
-                            <span className="mr-auto flex items-center gap-1 text-[12px] text-dim">
+                            <span className="mr-auto flex items-center gap-1 text-[12px] text-dim-foreground">
                                 {test.state === "ok" && (
                                     <>
                                         <Check size={13} />
@@ -159,6 +159,9 @@ export function AiSection({ aiModels, onAiModels }: Props) {
                             </span>
                             <Button
                                 type="button"
+                                appearance="standard"
+                                variant="primary"
+                                size="default"
                                 className="w-fit px-4"
                                 disabled={!complete(cfg) || test.state === "testing"}
                                 onClick={() => void testCard(cfg)}
@@ -167,7 +170,9 @@ export function AiSection({ aiModels, onAiModels }: Props) {
                             </Button>
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="outline"
+                                size="default"
                                 className="w-fit px-3"
                                 onClick={() => removeCard(cfg.id)}
                             >
@@ -179,15 +184,18 @@ export function AiSection({ aiModels, onAiModels }: Props) {
             })}
 
             {list.length === 0 && (
-                <div className="py-6 text-center text-[12.5px] text-muted">{t("settings.ai.empty")}</div>
+                <div className="py-6 text-center text-[12.5px] text-dim-foreground">{t("settings.ai.empty")}</div>
             )}
 
             <div className="flex justify-between">
-                <Button type="button" variant="outline" onClick={addCard}>
+                <Button type="button" appearance="standard" variant="outline" size="default" onClick={addCard}>
                     ＋ {t("settings.ai.add")}
                 </Button>
                 <Button
                     type="button"
+                    appearance="standard"
+                    variant="primary"
+                    size="default"
                     className="w-fit px-6"
                     disabled={saving || !list.every(complete)}
                     onClick={() => void save()}

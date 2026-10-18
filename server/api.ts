@@ -104,6 +104,7 @@ import {
     ptySpawnSchema,
     ptyWriteSchema,
     termPatchSchema,
+    themeSchema,
     toolAliasPatchSchema,
     updateExpertSchema,
     updateGroupSchema,
@@ -133,6 +134,7 @@ import {
     type PtySpawnInput,
     type TermConfig,
     type TermPatch,
+    type ThemeId,
     type ToolAliases,
     type ToolAliasPatch,
     type TranslateConfig,
@@ -214,6 +216,10 @@ export interface MpApi {
     // ── 剪贴板素材时限（v2.3）：呼出时最近一次复制落在时限内才自动进搜索框 ──
     getClipPaste(): Promise<ApiResult<{ seconds: number }>>;
     setClipPaste(seconds: number): Promise<ApiResult<{ seconds: number }>>;
+    // ── 界面主题：唯一权威来源是 settings 表 theme 键；主进程开窗前另经
+    //    server/util/settings 直读同一键定窗口底色/系统边线，渲染端首帧前套 .dark ──
+    getTheme(): Promise<ApiResult<{ theme: ThemeId }>>;
+    setTheme(theme: ThemeId): Promise<ApiResult<{ theme: ThemeId }>>;
     // ── 文件搜索（工具 files）：es.exe 查询 Everything；打开/定位是结果行的动作，不经 DB 条目 ──
     fileSearch(input: FileSearchInput): Promise<ApiResult<{ hits: FileHit[] }>>;
     openPath(path: string): Promise<ApiResult<null>>;
@@ -604,6 +610,15 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         setSetting("clipPasteWindow", String(v.seconds));
         return { ok: true, data: { seconds: v.seconds } };
+    },
+
+    // ── 界面主题：脏值（手改库）回落深色 ──
+    getTheme: async () => ({ ok: true, data: { theme: readThemeSetting() } }),
+    setTheme: async (theme) => {
+        const v = guard(themeSchema, theme);
+        if (!v) return badRequest;
+        setSetting("theme", v);
+        return { ok: true, data: { theme: v } };
     },
 
     // ── 文件搜索：Windows 走 Everything（es.exe），macOS 走 Spotlight（mdfind）；
@@ -1017,6 +1032,11 @@ function readToolAliases(): ToolAliases {
 // 字体设置读回：空串 = 用默认字体栈（拼接在渲染端 fonts.ts 做）
 function readFontConfig(): FontConfig {
     return { uiFont: getSetting("uiFont", ""), monoFont: getSetting("monoFont", "") };
+}
+
+// 主题读回：脏值（手改库）一律回落深色
+function readThemeSetting(): ThemeId {
+    return getSetting("theme", "dark") === "light" ? "light" : "dark";
 }
 
 // 字体键一次性迁移（幂等，风格同 experts.ensureSeeded）：旧版等宽字体存在

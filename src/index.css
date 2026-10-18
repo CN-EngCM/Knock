@@ -1,13 +1,13 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 /* ─────────────────────────────────────────────────────────────
-   晨雾 Aurora Glass 主题令牌(单一深色玻璃体系,docs/Design.pen 定稿)
-
-   结构:窗口本体即玻璃浮窗(.knock-glass 贴满窗口)——设计稿里玻璃窗外的
-   极光 mesh 矩形只是画布背景(用户明确:不做进应用)。窗口内区块用
-   .glass-panel 白色渐变叠层 + 18px 圆角。
-   单强调色薄荷绿 #7FE3C9;文字 = 白色不透明度阶梯。
-   字体:Outfit(可变,拉丁) + IBM Plex Mono(等宽徽章/代码),CJK 走系统栈。
+   敲敲视觉体系：GaN.UI 中性灰（来源 D:\MyCode\GaN.UI v0.1.0，源码接入）
+   深色为默认主主题，浅色为 Darwin UI 取色的 GaN.UI 浅色基线。
+   字体沿用敲敲自带体系（Outfit + IBM Plex Mono，本地 woff2 内嵌），
+   不引入 Geist。令牌值与 GaN.UI src/index.css 保持同源，仅追加
+   敲敲应用层令牌（终端实色、悬停填充、行选中）。
    ───────────────────────────────────────────────────────────── */
 
 /* 字体文件本地内嵌:离线可用,latin 子集;CJK 字符不在 unicode-range 内,
@@ -53,100 +53,333 @@
         U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-:root {
-    color-scheme: dark;
-    /* --bg-base 全族底色锚点:用户可在设置里改(localStorage 持久,见 lib/theme.ts),
-       玻璃浮窗/弹窗/下拉/终端底色全部从它派生,改一处全族跟随 */
-    --bg-base: #0d1428;
-    /* --bg 是「实底深海军蓝」:壁纸底色、输入框等内嵌实底、终端光标反色 */
-    --bg: var(--bg-base);
-    /* --panel 玻璃叠层:半透明白,叠在玻璃浮窗上提亮区块(工具区底/组头带) */
-    --panel: rgba(255, 255, 255, 0.07);
-    --text: #f2f6ff;
-    --dim: rgba(242, 246, 255, 0.72);
-    --muted: rgba(242, 246, 255, 0.45);
-    --line: rgba(255, 255, 255, 0.14);
-    --faint: rgba(255, 255, 255, 0.1);
-    --glow: rgba(127, 227, 201, 0.3);
-    --accent: #7fe3c9;
-    --destructive: #ff7a8a;
-    /* 终端专用:xterm 需要实底色(不支持 alpha),取底色锚点 */
-    --term-bg: var(--bg-base);
-    /* 弹窗/下拉族:底色提亮一档(surface);悬浮下拉取 97% 透明度留一点透视感 */
-    --surface: color-mix(in srgb, var(--bg-base) 90%, white);
-    --surface-raised: color-mix(in srgb, var(--surface) 97%, transparent);
-    --term-fg: #e8eefb;
+@custom-variant dark (&:is(.dark *));
 
-    /* ── 动效体系(Emil:出场 ease-out 定制曲线、UI < 300ms、按压即回馈) ── */
-    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
-}
-
-/* 字体栈单独放非 inline 的 @theme 块:inline 模式下 Tailwind 把值直接内联进
-   font-sans/font-mono 工具类,运行时 setProperty("--font-mono") 覆盖不了;
-   非 inline 生成 var(--font-sans)/var(--font-mono) 引用,设置页改字体才能热生效。
-   默认值与 src/lib/fonts.ts 的 DEFAULT_*_STACK 手工同步(渲染端拿不到这里的值)。 */
 @theme {
+    /* 字体栈单独放非 inline 的 @theme 块:inline 模式下 Tailwind 把值直接内联进
+       font-sans/font-mono 工具类,运行时 setProperty("--font-mono") 覆盖不了;
+       非 inline 生成 var(--font-sans)/var(--font-mono) 引用,设置页改字体才能热生效。
+       默认值与 src/lib/fonts.ts 的 DEFAULT_*_STACK 手工同步(渲染端拿不到这里的值)。 */
     --font-sans: "Outfit", system-ui, sans-serif;
     --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace;
 }
 
 @theme inline {
-    --color-bg: var(--bg);
-    --color-panel: var(--panel);
-    --color-text: var(--text);
-    --color-dim: var(--dim);
-    --color-muted: var(--muted);
-    --color-line: var(--line);
-    --color-faint: var(--faint);
-    --color-glow: var(--glow);
-    --color-accent: var(--accent);
-
-    /* shadcn 语义别名:弹窗/下拉浮层用实底玻璃蓝 + backdrop 模糊(见下方 slot 规则);
-       经 :root 的 --surface 间接引用 --bg-base,用户换底色全族跟随 */
-    --color-background: var(--surface);
-    --color-foreground: var(--text);
-    --color-border: var(--line);
-    --color-input: var(--line);
-    --color-primary: var(--accent);
-    --color-primary-foreground: #06251c;
-    --color-secondary: rgba(255, 255, 255, 0.1);
-    --color-secondary-foreground: var(--text);
-    --color-muted-foreground: var(--dim);
-    --color-accent-foreground: var(--text);
-    --color-popover: var(--surface);
-    --color-raised: var(--surface-raised);
-    --color-popover-foreground: var(--text);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
     --color-destructive: var(--destructive);
-    --color-ring: rgba(127, 227, 201, 0.4);
-    --radius-lg: 14px;
-    --radius-md: 10px;
-    --radius-sm: 8px;
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-panel: var(--panel);
+    --color-window-border: var(--window-border);
+    --color-window-control: var(--window-control);
+    --color-well: var(--well);
+    --color-canvas: var(--canvas);
+    --color-bar: var(--bar);
+    --color-line: var(--line);
+    --color-dim-foreground: var(--dim-foreground);
+    --radius-sm: calc(var(--radius) - 2px);
+    --radius-md: var(--radius);
+    --radius-lg: calc(var(--radius) + 1px);
+    --radius-xl: calc(var(--radius) + 3px);
+    /* 敲敲应用层令牌:悬停填充(列表行/图标按钮)与选中行填充(启动列表/候选行) */
+    --color-hover: var(--hover-fill);
+    --color-rowsel: var(--row-selected);
 }
 
-body {
-    background: var(--bg);
-    color: var(--text);
+/* 浅色:GaN.UI 的 Darwin 浅色基线 */
+:root {
+    color-scheme: light;
+    --background: #f8f8f8;
+    --foreground: hsl(240 10% 3.9%);
+    --card: #ffffff;
+    --card-foreground: hsl(240 10% 3.9%);
+    --popover: #ffffff;
+    --popover-foreground: hsl(240 10% 3.9%);
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+    --secondary: #e4e4e7;
+    --secondary-foreground: #18181b;
+    --muted: #f4f4f5;
+    --muted-foreground: rgb(0 0 0 / 60%);
+    --accent: #ececee;
+    --accent-foreground: #18181b;
+    --destructive: #dc2626;
+    --border: rgb(0 0 0 / 10%);
+    --input: #f4f4f5;
+    --ring: color-mix(in srgb, #2563eb 60%, transparent);
+    --radius: 0.3125rem;
+    --panel: #f8f8f8;
+    --bar-top: #fafafa;
+    --bar-bottom: #f0f0f1;
+    --well-top: #f0f0f2;
+    --well-bottom: #f7f7f8;
+    --window-border: rgb(0 0 0 / 10%);
+    --window-control: rgb(0 0 0 / 35%);
+    --well: #f4f4f5;
+    --canvas: #ffffff;
+    --bar: #f8f8f8;
+    --line: rgb(0 0 0 / 5%);
+    --dim-foreground: rgb(0 0 0 / 40%);
+    --motion-duration: 100ms;
+    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --text-selection: color-mix(in srgb, var(--primary) 20%, transparent);
+    /* 桌面控件材质 */
+    --control-indicator: #18181b;
+    --control-arc: #bdbdbd;
+    --control-arc-track: #e4e4e7;
+    --menu-border: rgb(0 0 0 / 10%);
+    --menu-highlight: rgb(59 130 246 / 10%);
+    --control-chevron: rgb(0 0 0 / 45%);
+    --disclosure-body: #f4f4f5;
+    --inspector-label: rgb(0 0 0 / 60%);
+    --control-muted: rgb(0 0 0 / 60%);
+    --control-selection: #d4d4d8;
+    --button-standard-secondary: #e4e4e7;
+    --button-standard-destructive: #dc2626;
+    --button-standard-link: #2563eb;
+    --button-invalid: #dc2626;
+    /* 控件输入/选择/开关底(GaN.UI 阶段3公开预览材质) */
+    --control-input-background: #ffffff;
+    --control-input-edge: rgb(0 0 0 / 20%);
+    --control-select-background: #f4f4f5;
+    --control-neutral-selected: #d4d4d8;
+    --control-toggle-background: #e4e4e7;
+    --control-toggle-selected: #d4d4d8;
+    --alert-description: rgb(0 0 0 / 60%);
+    --bubble-secondary: #f4f4f5;
+    --bubble-secondary-foreground: #09090b;
+    --bubble-tinted: color-mix(in srgb, var(--primary) 10%, var(--background));
+    --shadow-toast: 0 6px 22px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 10%);
+    /* 敲敲应用层:悬停填充 / 选中行 / 终端实色(xterm 不吃透明度,选区用 rgba) */
+    --hover-fill: rgb(0 0 0 / 4%);
+    --row-selected: rgb(37 99 235 / 10%);
+    --term-bg: #ffffff;
+    --term-fg: #1f1f23;
+    --term-sel: rgb(37 99 235 / 25%);
 }
 
-::selection {
-    background: rgba(127, 227, 201, 0.32);
-    color: #ffffff;
+/* 深色:GaN.UI 中性灰主主题(默认) */
+.dark {
+    color-scheme: dark;
+    --background: #303030;
+    --foreground: #ededed;
+    --card: #3b3b3b;
+    --card-foreground: #ededed;
+    --popover: #353535;
+    --popover-foreground: #ededed;
+    --primary: #0a84ff;
+    --primary-foreground: #ffffff;
+    --secondary: #555555;
+    --secondary-foreground: #eeeeee;
+    --muted: #414141;
+    --muted-foreground: #aaaaaa;
+    --accent: #525252;
+    --accent-foreground: #ffffff;
+    --destructive: #ef7770;
+    --border: #4c4c4c;
+    --input: #252525;
+    --ring: color-mix(in srgb, #0a84ff 70%, transparent);
+    --radius: 0.3125rem;
+    --panel: #383838;
+    --bar-top: #4a4a4a;
+    --bar-bottom: #3e3e3e;
+    --well-top: #252525;
+    --well-bottom: #2b2b2b;
+    --window-border: #222222;
+    --window-control: #696a6c;
+    --well: #1c1c1c;
+    --canvas: #262626;
+    --bar: #474747;
+    --line: #454545;
+    --dim-foreground: #777;
+    --motion-duration: 100ms;
+    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --text-selection: color-mix(in srgb, var(--primary) 35%, transparent);
+    --knob-rotation-top: #686868;
+    --knob-rotation-bottom: #535353;
+    --knob-audio-top: #a2a2a2;
+    --knob-audio-bottom: #707070;
+    --control-indicator: var(--input);
+    --control-arc: #bdbdbd;
+    --control-arc-track: #232323;
+    --menu-border: #111111;
+    --menu-highlight: var(--control-selection);
+    --meter-green: #78bc82;
+    --control-chevron: #bcbcbc;
+    --slider-thumb-top: #c5c5c5;
+    --slider-thumb-bottom: #969696;
+    --slider-standard-thumb: #aaaaaa;
+    --disclosure-body: #4f4f4f;
+    --inspector-tabs: #282828;
+    --inspector-label: #747679;
+    --inspector-value: #e2e2e1;
+    --statusbar-foreground: #8c8e90;
+    --statusbar-emphasis: #d9d9d8;
+    --control-muted: #a6a6a6;
+    --action-surface: linear-gradient(#484848, #3d3d3d);
+    --action-dark-surface: linear-gradient(#303030, #282828);
+    --action-light-surface: linear-gradient(#b7b7b7, #ababab);
+    --action-foreground: #dedede;
+    --action-light-foreground: #454545;
+    --action-control: rgb(255 255 255 / 5.5%);
+    --action-light-control: rgb(255 255 255 / 15%);
+    --action-active: rgb(0 0 0 / 52%);
+    --action-pressed: rgb(0 0 0 / 35%);
+    --action-well-surface: linear-gradient(var(--well-top), var(--well-bottom));
+    --bar-slider-thumb: #cccccc;
+    --sub-slider-fill: #000000;
+    --sub-slider-well: rgb(0 0 0 / 40%);
+    --sub-slider-track: var(--control-selection);
+    --toolbar-surface: linear-gradient(#494949, #414141);
+    --toolbar-active: #616161;
+    --toolbar-separator: #242527;
+    --toolbar-search: #2a2a2a;
+    --toolbar-search-line: #181818;
+    --scope-active: rgb(0 0 0 / 30%);
+    --action-record: #a43131;
+    --action-loop: #80651c;
+    --control-selection: #626262;
+    --slider-pointer: #808080;
+    --slider-pointer-border: #181818;
+    --button-standard-secondary: #606060;
+    --button-standard-destructive: #a94440;
+    --button-standard-link: #69b5ff;
+    --button-invalid: #a96560;
+    --control-input-background: #2a2a2a;
+    --control-input-edge: #181818;
+    --control-select-background: #505050;
+    --control-neutral-selected: #737373;
+    --control-toggle-background: #4e4e4e;
+    --control-toggle-selected: #626262;
+    --avatar-background: #555555;
+    --avatar-fallback: #5b5b5b;
+    --alert-description: #bcbcbc;
+    --bubble-secondary: #494949;
+    --bubble-secondary-foreground: #dedede;
+    --bubble-tinted: oklch(0.3 0.0822 255.49);
+    --shadow-toast: 0 6px 22px rgb(0 0 0 / 46.7%), 0 1px 3px rgb(0 0 0 / 26.7%);
+    /* 敲敲应用层 */
+    --hover-fill: rgb(255 255 255 / 5%);
+    --row-selected: #254563;
+    --term-bg: #1c1c1c;
+    --term-fg: #e0e0e0;
+    --term-sel: rgb(10 132 255 / 35%);
 }
 
-/* 玻璃滚动条:细、半透明,悬停提亮 */
+/* 无边框窗口拖拽区:唯一把手 = 顶栏左上角品牌区,其余全部可点(用户决策:
+   大范围 app-drag 会在窗口层吞掉 hover/点击/滚轮) */
+.app-drag {
+    -webkit-app-region: drag;
+}
+.app-no-drag {
+    -webkit-app-region: no-drag;
+}
+
+/* 统一焦点环:键盘导航时可见。放在层外,优先级高于 utilities 层的 outline-none,
+   组件无法用 outline-none 意外丢失键盘焦点提示 */
+:where(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [data-slot],
+    [role="button"],
+    [role="tab"],
+    [role="slider"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="menuitem"],
+    [role="option"]
+):focus-visible {
+    outline: 1.5px solid var(--ring);
+    outline-offset: 1px;
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        overflow: hidden;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+
+    html {
+        @apply font-sans;
+    }
+
+    ::selection {
+        background: var(--text-selection);
+    }
+
+    /* 桌面软件感:交互控件不响应文本选择;禁用态统一光标 */
+    :where(
+        button,
+        input,
+        select,
+        textarea,
+        a,
+        label,
+        summary,
+        kbd,
+        output,
+        [data-slot],
+        [role="button"],
+        [role="tab"],
+        [role="slider"],
+        [role="switch"],
+        [role="checkbox"],
+        [role="radio"],
+        [role="menuitem"],
+        [role="option"]
+    ):is(:disabled, [aria-disabled="true"]) {
+        cursor: not-allowed;
+    }
+}
+
+/* 滚动条:细、按主题取色,悬停提亮 */
 ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
+    background: rgb(0 0 0 / 18%);
     border-radius: 999px;
     border: 3px solid transparent;
     background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.24);
+    background: rgb(0 0 0 / 30%);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+}
+.dark ::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 16%);
+    border: 3px solid transparent;
+    background-clip: padding-box;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+    background: rgb(255 255 255 / 28%);
     border: 3px solid transparent;
     background-clip: padding-box;
 }
@@ -155,92 +388,33 @@ body {
     background: transparent;
 }
 
-/* ── 玻璃浮窗 = 窗口本体:深蓝玻璃底贴满窗口。
-   不画自描边:窗口可见边缘的圆角与描边全归 DWM(Win11 8px 圆角;系统 1px 边线
-   已由主进程 tintSystemBorder 染成同款深蓝,视觉隐形)——自画描边反而会与
-   DWM 圆角曲率打架,且客户端区顶部贴边/两侧缩进不对称。
-   圆角 8px 对齐 DWM 物理圆角;顶部内高光保留(Design.pen 的玻璃上缘反光) */
-.knock-glass {
-    position: relative;
-    background: color-mix(in srgb, var(--bg-base) 65%, transparent);
-    border-radius: 8px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-/* 浮窗内的顶部柔光(Design.pen LightGlow):纯装饰,不接事件 */
-.knock-glow {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: radial-gradient(60% 45% at 50% 0%, rgba(255, 255, 255, 0.09) 0%, transparent 70%);
-}
-
-/* ── 内层玻璃面板(启动区/工具区):白色纵向渐变叠层 + 19% 描边 + 18px 圆角 ── */
-.glass-panel {
-    background: linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.15) 0%,
-        rgba(255, 255, 255, 0.04) 45%,
-        rgba(255, 255, 255, 0.1) 100%
-    );
-    border: 1px solid rgba(255, 255, 255, 0.19);
-    border-radius: 18px;
-    box-shadow: 0 8px 32px rgba(2, 6, 20, 0.25);
-}
-
-/* ── 顶栏搜索 pill:白色渐变玻璃 + 32% 描边,聚焦时薄荷绿光晕 ── */
-.knock-search {
-    background: linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.22) 0%,
-        rgba(255, 255, 255, 0.07) 45%,
-        rgba(255, 255, 255, 0.16) 100%
-    );
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 999px;
-    transition:
-        border-color 160ms ease,
-        box-shadow 200ms var(--ease-out);
-}
-.knock-search:focus-within {
-    border-color: rgba(127, 227, 201, 0.55);
-    box-shadow: 0 0 0 3px rgba(127, 227, 201, 0.14);
-}
-
-/* ── 圆形图标按钮(顶栏钉子/设置等) ── */
+/* ── 顶栏/工具栏图标按钮(28px,原型 .kn-icon 语言):无底,悬停浮填充,
+   aria-pressed 用强调色表达选中 ── */
 .icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     flex: none;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: rgba(255, 255, 255, 0.85);
-    cursor: pointer;
+    border-radius: 4px;
+    color: var(--muted-foreground);
+    cursor: default;
+    user-select: none;
     transition:
-        background-color 140ms ease,
-        color 140ms ease,
-        border-color 140ms ease,
-        transform 120ms var(--ease-out);
+        background-color 100ms var(--motion-ease),
+        color 100ms var(--motion-ease);
 }
 .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: #ffffff;
-}
-.icon-btn:active {
-    transform: scale(0.94);
+    background: var(--hover-fill);
+    color: var(--foreground);
 }
 .icon-btn[aria-pressed="true"] {
-    background: rgba(127, 227, 201, 0.16);
-    border-color: rgba(127, 227, 201, 0.38);
-    color: var(--accent);
+    background: var(--row-selected);
+    color: var(--primary);
 }
 
-/* ── 幽灵图标按钮(tab 行的 ＋ / 工具 / 侧栏开关):无底,悬停浮白 ── */
+/* ── 幽灵小图标按钮(tab 行 ＋ 等 26px) ── */
 .ghost-btn {
     display: inline-flex;
     align-items: center;
@@ -248,243 +422,218 @@ body {
     width: 26px;
     height: 26px;
     flex: none;
-    border-radius: 8px;
-    color: rgba(255, 255, 255, 0.55);
-    cursor: pointer;
+    border-radius: 4px;
+    color: var(--dim-foreground);
+    cursor: default;
+    user-select: none;
     transition:
-        background-color 130ms ease,
-        color 130ms ease,
-        transform 120ms var(--ease-out);
+        background-color 100ms var(--motion-ease),
+        color 100ms var(--motion-ease);
 }
 .ghost-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.92);
+    background: var(--hover-fill);
+    color: var(--foreground);
 }
-.ghost-btn:active {
-    transform: scale(0.94);
+.ghost-btn[aria-pressed="true"] {
+    color: var(--primary);
 }
 
-/* ── 条目类型徽章:等宽小字 + 白 9% 底圆角 6 ── */
+/* ── 条目类型徽章:等宽小字,井底 + 分隔线 ── */
 .kind-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 34px;
     padding: 2px 6px;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.09);
-    color: rgba(255, 255, 255, 0.65);
+    border-radius: 4px;
+    background: var(--well);
+    color: var(--muted-foreground);
     font-family: var(--font-mono);
     font-size: 9.5px;
     line-height: 1.2;
     letter-spacing: 0.02em;
 }
 
-/* ── 搜索下拉入场:从触发器上方展开(Emil:出场 ease-out,永不 scale(0) 起步) ── */
+/* ── 搜索下拉/悬浮层入场:从触发器上方展开 ── */
 .drop-anim {
     transform-origin: top center;
     transition:
-        opacity 160ms var(--ease-out),
-        transform 180ms var(--ease-out);
+        opacity 100ms var(--motion-ease),
+        transform 100ms var(--motion-ease);
     @starting-style {
         opacity: 0;
         transform: translateY(-4px) scale(0.98);
     }
 }
 
-/* 无边框窗口拖拽区:唯一把手 = 顶栏左上角品牌区,其余全部可点 */
-.app-drag {
-    -webkit-app-region: drag;
-}
-.app-no-drag {
-    -webkit-app-region: no-drag;
-}
-
-/* ── 弹窗/下拉浮层(shadcn radix slot):实底玻璃蓝 + 毛玻璃 + 进出动效。
-   颜色经 --background/--popover 令牌生效,这里补 backdrop 与动画 */
-[data-slot="dialog-overlay"] {
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    animation: overlay-in 160ms var(--ease-out);
-}
-[data-slot="dialog-overlay"][data-state="closed"] {
-    animation: overlay-out 120ms ease-out;
-}
-[data-slot="dialog-content"] {
-    background: linear-gradient(180deg, rgba(24, 34, 66, 0.97), rgba(15, 22, 45, 0.97));
-    backdrop-filter: blur(24px) saturate(1.3);
-    -webkit-backdrop-filter: blur(24px) saturate(1.3);
-    box-shadow: 0 24px 70px rgba(2, 6, 20, 0.6);
-    animation: dialog-in 200ms var(--ease-out);
-}
-[data-slot="dialog-content"][data-state="closed"] {
-    animation: dialog-out 130ms ease-out;
-}
-/* 关键帧只管缩放+淡入淡出,不含位移:Content 的居中是 Tailwind v4 的独立
-   translate 属性,关键帧里再写 translate(-50%,-50%) 会与之叠加成 -100%,
-   弹窗就会从「中心偏左上一个身位」处弹入/退出(此前的真实毛病) */
-@keyframes dialog-in {
-    from {
-        opacity: 0;
-        transform: scale(0.96);
-    }
-}
-@keyframes dialog-out {
-    to {
-        opacity: 0;
-        transform: scale(0.97);
-    }
-}
-@keyframes overlay-in {
-    from {
-        opacity: 0;
-    }
-}
-@keyframes overlay-out {
-    to {
-        opacity: 0;
-    }
-}
-
-/* 右键菜单/下拉选择浮层:origin 已由组件的 --radix-* 变量给定,动画补在这里 */
-[data-slot="context-menu-content"],
-[data-slot="context-menu-sub-content"],
-[data-slot="select-content"] {
-    background: linear-gradient(180deg, rgba(26, 37, 70, 0.97), rgba(17, 24, 48, 0.97));
-    backdrop-filter: blur(24px) saturate(1.3);
-    -webkit-backdrop-filter: blur(24px) saturate(1.3);
-    box-shadow: 0 16px 48px rgba(2, 6, 20, 0.55);
-    animation: popover-in 140ms var(--ease-out);
-}
-[data-slot="context-menu-content"][data-state="closed"],
-[data-slot="context-menu-sub-content"][data-state="closed"],
-[data-slot="select-content"][data-state="closed"] {
-    animation: popover-out 90ms ease-out;
-}
-@keyframes popover-in {
-    from {
-        opacity: 0;
-        transform: scale(0.97);
-    }
-}
-@keyframes popover-out {
-    to {
-        opacity: 0;
-        transform: scale(0.98);
-    }
-}
-
-/* ── 空态 ASCII 标志(AsciiSplash):扫光 + 轻浮动 + 光标闪烁,全纯 CSS ──
-   扫光用 background-clip:text 渐变横移实现,颜色全部取主题令牌。 */
-.ascii-art {
-    color: transparent;
-    background: linear-gradient(
-        100deg,
-        var(--muted) 20%,
-        var(--dim) 38%,
-        var(--text) 50%,
-        var(--dim) 62%,
-        var(--muted) 80%
-    );
-    background-size: 220% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    animation: ascii-shimmer 5s linear infinite;
-}
-@keyframes ascii-shimmer {
-    from {
-        background-position: 160% 0;
-    }
-    to {
-        background-position: -60% 0;
-    }
-}
-.ascii-float {
-    animation: ascii-float 4s ease-in-out infinite;
-}
-@keyframes ascii-float {
-    0%,
-    100% {
-        transform: translateY(-3px);
-    }
-    50% {
-        transform: translateY(3px);
-    }
-}
-.ascii-cursor {
-    animation: ascii-blink 1.1s steps(1) infinite;
-}
-@keyframes ascii-blink {
-    50% {
-        opacity: 0;
-    }
-}
-
-/* 终端式文字按钮([ xxx ] 形态,弹窗与工具内广泛使用):
-   玻璃体系下 = 白字降不透明度,悬停提亮,按压轻微下沉 */
+/* 终端式文字按钮(工具栏轻量动作,原型 .kn-text-action):
+   次级色文字,悬停提亮,按压降不透明度 */
 .tbtn {
     display: inline-flex;
     align-items: center;
+    gap: 5px;
     background: none;
     border: 0;
-    padding: 2px 0;
-    color: var(--dim);
+    padding: 3px 6px;
+    border-radius: 3px;
+    color: var(--muted-foreground);
     font: inherit;
-    font-size: 13px;
-    cursor: pointer;
+    font-size: 11px;
+    cursor: default;
+    user-select: none;
     white-space: nowrap;
     transition:
-        color 130ms ease,
-        opacity 130ms ease;
+        color 100ms var(--motion-ease),
+        background-color 100ms var(--motion-ease);
 }
 .tbtn:hover,
 .tbtn[aria-pressed="true"] {
-    color: var(--text);
+    background: var(--hover-fill);
+    color: var(--foreground);
 }
 .tbtn:active {
     opacity: 0.7;
 }
-.tbtn:focus-visible,
-.rowbtn:focus-visible {
-    outline: 1px dashed rgba(127, 227, 201, 0.55);
-    outline-offset: 2px;
+/* 危险文字动作(删除选中之类):悬停红 */
+.tbtn-danger:hover,
+.tbtn-danger[aria-pressed="true"] {
+    color: var(--destructive);
+    background: transparent;
 }
 
-/* 切换按钮(segmented/chip)的选中态:薄荷绿描边 + 薄荷绿字(玻璃体系强调语言) */
+/* 切换按钮(segmented/chip)的选中态:强调色文字 + 选中填充 */
 .seg-on {
-    background: rgba(127, 227, 201, 0.14);
-    color: var(--accent);
-    border-color: rgba(127, 227, 201, 0.38);
+    background: var(--row-selected);
+    color: var(--primary);
 }
 .tbtn.seg-on:hover,
 .seg-on:hover {
-    color: var(--accent);
+    color: var(--primary);
 }
 
-/* ── 减弱动态(reduced motion):去位移/扫光,保留透明度与颜色过渡 ── */
+/* ── GaN.UI 浅色适配(结构同源,仅取色):按钮填充改实底深字、悬停用低透明黑叠加、
+   浮层阴影减淡。暗色渲染值不受影响 ── */
+:root:not(.dark) [data-slot="button"][data-variant="secondary"]:not([data-active]) {
+    color: var(--foreground);
+}
+:root:not(.dark)
+    [data-slot="button"][data-appearance="desktop"][data-variant="secondary"]:not([data-active]):not(
+        [data-state="open"]
+    ) {
+    background: #e4e4e7;
+}
+:root:not(.dark)
+    [data-slot="button"][data-appearance="standard"][data-variant="default"]:not([data-active]):not(
+        [data-state="open"]
+    ) {
+    background: #e4e4e7;
+}
+:root:not(.dark) [data-slot="button"][data-appearance="standard"][data-variant="secondary"] {
+    color: #18181b;
+}
+:root:not(.dark)
+    [data-slot="button"][data-appearance="standard"][data-variant="outline"]:not([data-active]):not(
+        [data-state="open"]
+    ) {
+    background: rgb(0 0 0 / 2%);
+}
+:root:not(.dark) [data-slot="button"][data-appearance="standard"][data-active] {
+    color: #18181b;
+}
+:root:not(.dark)
+    [data-slot="button"][data-appearance="desktop"][data-variant="secondary"]:enabled:is(:active, [data-pressed]):not(
+        [data-active]
+    ),
+:root:not(.dark)
+    [data-slot="button"][data-appearance="standard"]:is(
+        [data-variant="default"],
+        [data-variant="secondary"]
+    ):enabled:is(:active, [data-pressed]):not([data-active]) {
+    background: #d4d4d8;
+}
+:root:not(.dark)
+    [data-slot="button"][data-appearance="standard"][data-variant="primary"]:enabled:is(:active, [data-pressed]):not(
+        [data-active]
+    ) {
+    background: #1d4ed8;
+}
+:root:not(.dark)
+    [data-slot="button"][data-appearance="standard"][data-variant="destructive"]:enabled:is(
+        :active,
+        [data-pressed]
+    ):not([data-active]) {
+    background: #b91c1c;
+}
+:root:not(.dark) [data-slot="button"][data-variant="ghost"]:enabled:hover:not([data-active]),
+:root:not(.dark) [data-slot="button"][data-variant="outline"]:enabled:hover:not([data-active]) {
+    background: rgb(0 0 0 / 4%);
+}
+:root:not(.dark) [data-slot="button"][data-variant="ghost"]:enabled:is(:active, [data-pressed]):not([data-active]),
+:root:not(.dark) [data-slot="button"][data-variant="outline"]:enabled:is(:active, [data-pressed]):not([data-active]) {
+    background: rgb(0 0 0 / 6%);
+}
+:root:not(.dark) [data-slot="input"]::file-selector-button {
+    background: rgb(0 0 0 / 4%);
+}
+
+/* 浅色浮层:保留层数与几何,仅降低阴影黑度;select 浮层边框减淡 */
+:root:not(.dark) [data-slot="dialog-content"] {
+    box-shadow:
+        0 16px 60px rgb(0 0 0 / 14%),
+        inset 0 0.5px 0 rgb(255 255 255 / 7%);
+}
+:root:not(.dark) [data-slot="menu-content"] {
+    box-shadow:
+        inset 0 1px 0 rgb(255 255 255 / 7%),
+        0 5px 16px rgb(0 0 0 / 12%);
+}
+:root:not(.dark) [data-slot="select-content"] {
+    border-color: rgb(0 0 0 / 10%);
+}
+:root:not(.dark) [data-slot="select-trigger"]:enabled:active,
+:root:not(.dark) [data-slot="select-trigger"]:enabled[data-state="open"] {
+    box-shadow:
+        inset 0 0 0 100px rgb(0 0 0 / 5%),
+        inset 0 0.5px 0 rgb(255 255 255 / 15%),
+        inset 0 0 0 0.5px rgb(0 0 0 / 20%);
+}
+
+/* 免费 Button 样板的相对填充高光;随底色合成,避免一条过亮的白边 */
+@layer components {
+    [data-slot="button"][data-appearance="desktop"][data-variant="secondary"]::before {
+        content: "";
+        position: absolute;
+        pointer-events: none;
+        inset: 0.5px;
+        border-radius: inherit;
+        background: linear-gradient(
+            to bottom,
+            rgb(255 255 255 / calc(var(--button-highlight-opacity, 0.35) * var(--button-fill-opacity, 0.15) * 0.65)),
+            rgb(255 255 255 / calc(var(--button-highlight-opacity, 0.35) * var(--button-fill-opacity, 0.15) * 0.25))
+                var(--button-highlight-start, 1px),
+            transparent var(--button-highlight-end, 3px)
+        );
+    }
+    [data-slot="button"][data-appearance="standard"]::before {
+        content: "";
+        position: absolute;
+        pointer-events: none;
+        inset: 0.5px;
+        border-radius: inherit;
+        background: linear-gradient(to bottom, rgb(255 255 255 / 3.5%), rgb(255 255 255 / 1%) 1px, transparent 3px);
+    }
+    [data-slot="button"][data-appearance="standard"][data-variant="destructive"]::before {
+        background: linear-gradient(to bottom, rgb(255 255 255 / 15%), rgb(255 255 255 / 6.3%) 0.5px, transparent 2px);
+    }
+}
+
+/* ── 减弱动态:去过渡与动画,保留颜色变化 ── */
 @media (prefers-reduced-motion: reduce) {
-    .ascii-art,
-    .ascii-float,
-    .ascii-cursor {
-        animation: none;
-    }
-    .ascii-art {
-        color: var(--dim);
-    }
     .icon-btn,
     .ghost-btn,
-    .knock-search {
+    .knock-search,
+    .tbtn,
+    .drop-anim {
         transition: none;
-    }
-    .icon-btn:active,
-    .ghost-btn:active {
-        transform: none;
-    }
-    [data-slot="dialog-content"],
-    [data-slot="dialog-overlay"],
-    [data-slot="context-menu-content"],
-    [data-slot="context-menu-sub-content"],
-    [data-slot="select-content"] {
-        animation-duration: 1ms;
     }
 }

@@ -156,7 +156,9 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                             {kind === "app" && (platform === "win32" || platform === "darwin") && (
                                 <Button
                                     type="button"
+                                    appearance="standard"
                                     variant="outline"
+                                    size="default"
                                     className="flex-none whitespace-nowrap"
                                     onClick={() => setPickerOpen(true)}
                                 >
@@ -166,7 +168,9 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                             {(kind === "app" || kind === "file") && (
                                 <Button
                                     type="button"
+                                    appearance="standard"
                                     variant="outline"
+                                    size="default"
                                     className="flex-none whitespace-nowrap"
                                     onClick={() => void browseTarget()}
                                 >
@@ -191,7 +195,9 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                 {kind === "command" && (
                                     <Button
                                         type="button"
+                                        appearance="standard"
                                         variant="outline"
+                                        size="default"
                                         className="flex-none whitespace-nowrap"
                                         onClick={() => void browseDir()}
                                     >
@@ -219,10 +225,10 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                     </div>
 
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>
+                        <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
                             {t("common.cancel")}
                         </Button>
-                        <Button type="submit" disabled={saving}>
+                        <Button type="submit" appearance="standard" variant="primary" size="default" disabled={saving}>
                             {item ? t("common.save") : t("common.create")}
                         </Button>
                     </DialogFooter>

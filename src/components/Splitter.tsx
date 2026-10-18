@@ -7,7 +7,7 @@ type Props = {
 };
 
 export function Splitter({ orientation, onDrag }: Props) {
-    const base = "flex-none hover:bg-faint active:bg-faint";
+    const base = "flex-none hover:bg-hover active:bg-hover";
     return (
         <div
             role="separator"

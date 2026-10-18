@@ -206,10 +206,10 @@ export function Slideshow({ password, onClose }: Props) {
         }
     }
 
-    // 覆盖层按钮：黑底白幽灵态（同 Viewer 的 vbtn 配色）
-    const sbtn =
-        "flex h-7 min-w-7 items-center justify-center rounded px-1.5 text-[10.5px] text-white/75 hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40";
-    const sep = <span className="mx-0.5 h-4 w-px bg-white/20" aria-hidden />;
+    // 控制条按钮：项目统一 icon-btn 图标按钮（悬停浮填充、aria-pressed 选中态由全局 CSS 给出），
+    // 补按压与禁用两态；文字档位（布局/间隔）覆写字号保持紧凑
+    const sbtn = "icon-btn active:opacity-60 disabled:pointer-events-none disabled:opacity-40";
+    const sep = <span className="mx-0.5 h-4 w-px flex-none bg-border" aria-hidden />;
     const ready = status === "done" && items != null && items.length > 0;
 
     return (
@@ -267,7 +267,8 @@ export function Slideshow({ password, onClose }: Props) {
                     uiVisible ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
             >
-                <div className="flex items-center gap-0.5 rounded-md border border-white/15 bg-black/60 p-1">
+                {/* 控制条：主题面板材质（表面/文字/边框随深浅主题），浮在黑舞台上靠底色对比 */}
+                <div className="flex items-center gap-0.5 rounded-md border border-border bg-panel p-1 shadow-[var(--shadow-toast)]">
                     <button type="button" className={sbtn} title={t("common.close")} onClick={onClose}>
                         <X size={15} />
                     </button>
@@ -293,7 +294,8 @@ export function Slideshow({ password, onClose }: Props) {
                             key={l.id}
                             type="button"
                             title={t("gallery.slide.layout")}
-                            className={`${sbtn} ${prefs.layout === l.id ? "bg-white/15 text-white" : ""}`}
+                            aria-pressed={prefs.layout === l.id}
+                            className={`${sbtn} text-[10.5px]`}
                             onClick={() => switchLayout(l.id)}
                         >
                             {l.id.replace("x", "×")}
@@ -305,7 +307,8 @@ export function Slideshow({ password, onClose }: Props) {
                             key={ms}
                             type="button"
                             title={t("gallery.slide.interval")}
-                            className={`${sbtn} ${prefs.ms === ms ? "bg-white/15 text-white" : ""}`}
+                            aria-pressed={prefs.ms === ms}
+                            className={`${sbtn} text-[10.5px]`}
                             onClick={() => switchInterval(ms)}
                         >
                             {ms === 0 ? t("gallery.slide.manual") : `${ms / 1000}s`}

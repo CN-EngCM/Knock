@@ -1,6 +1,7 @@
 import type { MpApi } from "../../server/api";
 import type { PtyEvent } from "../../server/pty";
 import type { AiEvent } from "../../server/ai";
+import type { ThemeId } from "../../server/schemas";
 
 // 类型再导出：前端组件从这里拿行类型，避免各处写 '../../server/...' 的深路径
 export type {
@@ -15,6 +16,7 @@ export type {
     ShellOption,
     TermConfig,
     TermPatch,
+    ThemeId,
     FontConfig,
     FontPatch,
     ToolId,
@@ -53,8 +55,12 @@ declare global {
     interface Window {
         knock: {
             invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
+            /** 首帧前同步取持久化主题（index.html 内联脚本用） */
+            getThemeSync: () => "dark" | "light";
             hideWindow: () => void;
             setPinned: (v: boolean) => void;
+            /** 主题切换即时同步：主进程更新窗口底色与系统边线（持久化另走 api.setTheme） */
+            setTheme: (theme: ThemeId) => void;
             /** 拖拽导入取本机路径：Electron 32+ 渲染进程 File 不再带 .path，经 webUtils 在 preload 换 */
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
@@ -107,6 +113,8 @@ export const api: MpApi = {
     setToolAliases: (patch) => invoke("setToolAliases", patch),
     getClipPaste: () => invoke("getClipPaste"),
     setClipPaste: (seconds) => invoke("setClipPaste", seconds),
+    getTheme: () => invoke("getTheme"),
+    setTheme: (theme) => invoke("setTheme", theme),
     fileSearch: (input) => invoke("fileSearch", input),
     openPath: (path) => invoke("openPath", path),
     revealPath: (path) => invoke("revealPath", path),

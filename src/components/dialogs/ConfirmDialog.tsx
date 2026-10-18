@@ -41,10 +41,17 @@ export function ConfirmDialog({ open, title, description, onClose, onConfirm }: 
                     {description && <DialogDescription>{description}</DialogDescription>}
                 </DialogHeader>
                 <DialogFooter>
-                    <Button type="button" variant="outline" onClick={onClose}>
+                    <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
                         {t("common.cancel")}
                     </Button>
-                    <Button type="button" variant="destructive" onClick={handleConfirm} disabled={busy}>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="destructive"
+                        size="default"
+                        onClick={handleConfirm}
+                        disabled={busy}
+                    >
                         {t("common.delete")}
                     </Button>
                 </DialogFooter>

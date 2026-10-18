@@ -22,11 +22,16 @@ import type { AiEvent } from "../server/ai";
 
 contextBridge.exposeInMainWorld("knock", {
     invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
+    /** 首帧前同步取持久化主题（index.html 内联脚本用；值来自主进程已读的 settings 表） */
+    getThemeSync: (): "dark" | "light" => ipcRenderer.sendSync("mp:get-theme-sync") ?? "dark",
     hideWindow: (): void => {
         ipcRenderer.send("mp:hide-window");
     },
     setPinned: (v: boolean): void => {
         ipcRenderer.send("mp:set-pinned", v);
+    },
+    setTheme: (theme: "dark" | "light"): void => {
+        ipcRenderer.send("mp:set-theme", theme);
     },
     filePathFor: (file: File): string => webUtils.getPathForFile(file),
     onOpenSettings: (cb: () => void): void => {

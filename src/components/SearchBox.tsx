@@ -4,6 +4,8 @@ import { TOOLS, type ToolId } from "@/tools/registry";
 import { api, type Expert, type Group, type Item, type ToolAliases } from "@/api/client";
 import { KIND_TAG } from "@/lib/kindTag";
 import { useExperts } from "@/lib/experts";
+import { Kbd } from "@/components/ui/kbd";
+import type { MessageKey } from "@/i18n";
 import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
@@ -23,7 +25,7 @@ const PATH_PROBE_DEBOUNCE_MS = 200;
 
 type Candidate =
     | { kind: "item"; item: Item; groupName: string }
-    | { kind: "tool"; id: ToolId; name: string; desc: string }
+    | { kind: "tool"; id: ToolId; name: string; desc: MessageKey }
     /** 勾了「推荐到搜索栏」的 AI 专家：进推荐区一行 */
     | { kind: "expert"; expert: Expert }
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
@@ -106,12 +108,12 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
             for (const tool of TOOLS) {
                 if (out.length >= MAX_CANDIDATES) break;
                 const name = t(tool.nameKey);
-                const desc = t(tool.descKey);
+                const desc = tool.descKey;
                 const aliases = (toolAliases[tool.id] ?? "").split(/[\s,，]+/).filter(Boolean);
                 const hit =
                     name.toLowerCase().includes(q) ||
                     tool.id.includes(q) ||
-                    desc.toLowerCase().includes(q) ||
+                    t(desc).toLowerCase().includes(q) ||
                     aliases.some((a) => a.toLowerCase().includes(q));
                 if (hit) out.push({ kind: "tool", id: tool.id, name, desc });
             }
@@ -172,9 +174,8 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
             kind: "tool",
             id: tool.id,
             name: t(tool.nameKey),
-            desc: t(tool.descKey),
-        }));
-        // 勾了推荐的专家排在工具行之后、同一推荐区里（下标数学不用动）
+            desc: tool.descKey,
+        })); // 勾了推荐的专家排在工具行之后、同一推荐区里（下标数学不用动）
         for (const expert of experts.filter((e) => e.recommend)) {
             rec.push({ kind: "expert", expert });
         }
@@ -229,19 +230,17 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
     }
 
     return (
-        /* 顶栏搜索 pill(设计定稿):玻璃渐变底 + 32% 白描边,聚焦薄荷绿光晕(见 .knock-search)。
-           高 46 = 顶栏整行(设计稿 SearchBar 与 TitleBar 同高),非小号内嵌胶囊 */
-        <div className="knock-search relative flex h-[46px] min-w-0 flex-1 items-center gap-2 px-3.5">
-            {" "}
-            <Search size={15} className="flex-none text-white/55" aria-hidden />
+        /* 顶栏搜索框：34px 高的输入井(搜索保留宽松点击区域),尾端 / 键提示 */
+        <div className="relative flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[5px] border border-well bg-[var(--control-input-background)] px-2.5 shadow-[0_1px_0_#ffffff0b]">
+            <Search className="flex-none text-muted-foreground" size={15} aria-hidden />
             {/* 素材 chip：只读，键入即弃（见 onChange），× 手动移除 */}
             {clip !== null && (
-                <span className="flex max-w-[70%] min-w-0 flex-none items-center gap-1.5 truncate rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[12px] text-dim">
+                <span className="flex max-w-[70%] min-w-0 flex-none items-center gap-1.5 truncate rounded-full border border-border bg-well px-2.5 py-0.5 text-[11px] text-muted-foreground">
                     <span aria-hidden>❐</span>
                     <span className="truncate">{chipLabel(clip)}</span>
                     <button
                         type="button"
-                        className="flex-none px-0.5 text-muted transition-colors hover:text-text"
+                        className="flex-none px-0.5 text-dim-foreground transition-colors hover:text-foreground"
                         aria-label={t("common.delete")}
                         onClick={() => setClip(null)}
                     >
@@ -266,13 +265,14 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                 aria-label={t("search.placeholder")}
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13.5px] text-text outline-none placeholder:text-white/45"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-foreground outline-none placeholder:text-muted-foreground"
             />
+            <Kbd className="flex-none">/</Kbd>
             {open && (
-                <div className="app-no-drag absolute left-0 right-0 top-[calc(100%+10px)] z-50 max-h-80 overflow-y-auto rounded-2xl border border-white/16 bg-raised p-1.5 shadow-2xl shadow-black/40 backdrop-blur-2xl drop-anim">
+                <div className="drop-anim absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[0_12px_30px_rgb(0_0_0/40%)]">
                     {/* 只剩推荐工具或路径动作行时不算「无匹配」——指的是没有条目/工具命中 */}
                     {hits.length === 0 && pathRows.length === 0 && (
-                        <span className="block px-2.5 py-1.5 text-[12.5px] text-muted">{t("search.noHit")}</span>
+                        <span className="block px-2.5 py-2 text-xs text-muted-foreground">{t("search.noHit")}</span>
                     )}
                     {/* 推荐区分隔标签的位置随布局：置顶在第 0 行前，沉底在命中区之后 */}
                     {candidates.map((c, i) => {
@@ -299,7 +299,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                             c.kind === "item"
                                 ? c.groupName
                                 : c.kind === "tool"
-                                  ? c.desc
+                                  ? t(c.desc)
                                   : c.kind === "expert"
                                     ? t(c.expert.multi ? "ai.modeMulti" : "ai.modeSingle")
                                     : c.target;
@@ -316,12 +316,12 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                 }
                             >
                                 {i === pathStart && (
-                                    <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
+                                    <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] text-dim-foreground">
                                         ── {t("search.pathGroup")} ──
                                     </div>
                                 )}
                                 {i === recStart && (
-                                    <div className="px-2.5 pb-0.5 pt-1 text-[10.5px] text-muted">
+                                    <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] text-dim-foreground">
                                         ── {t("search.recommended")} ──
                                     </div>
                                 )}
@@ -331,15 +331,14 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                     onMouseDown={(e) => e.preventDefault()}
                                     onMouseEnter={() => setHi(i)}
                                     onClick={() => select(c)}
-                                    // 高亮行浮白玻璃底 + 白字——玻璃体系的选中语言（不做反色）
-                                    className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${
-                                        sel ? "bg-white/10 text-text" : "text-dim"
+                                    className={`flex w-full items-center gap-2.5 rounded-[4px] px-2 py-1.5 text-left text-xs transition-colors ${
+                                        sel ? "bg-rowsel text-foreground" : "text-muted-foreground"
                                     }`}
                                 >
                                     <span className="kind-badge flex-none">{tag}</span>
                                     <span className="min-w-0 flex-1 truncate">{title}</span>
                                     <span
-                                        className={`max-w-[40%] flex-none truncate text-[11.5px] ${sel ? "text-dim" : "text-muted"}`}
+                                        className={`max-w-[40%] flex-none truncate text-[10.5px] ${sel ? "text-muted-foreground" : "text-dim-foreground"}`}
                                     >
                                         {tail}
                                     </span>

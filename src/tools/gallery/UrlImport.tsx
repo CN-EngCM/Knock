@@ -68,7 +68,7 @@ type Phase = "form" | "collecting" | "grid" | "importing";
 type Progress = { stage: "page"; page: number; found: number } | { stage: "download"; done: number; total: number };
 
 const inputCls =
-    "h-6 border border-line bg-bg px-2 text-[12px] text-text outline-none placeholder:text-muted focus:border-dim";
+    "h-6 rounded-[4px] border border-line bg-[var(--control-input-background)] px-2 text-[12px] text-foreground outline-none placeholder:text-dim-foreground focus:border-primary";
 
 // 表单里的参数字段（label 的 i18n 键）；min* 同时是网格阶段的实时过滤控件，同一份 state
 const FIELDS: readonly { key: keyof Params; label: MessageKey }[] = [
@@ -97,7 +97,7 @@ const FILTERS: readonly { key: keyof Params; label: MessageKey }[] = [
 function CandThumb({ index }: { index: number }) {
     const [failed, setFailed] = useState(false);
     if (failed) {
-        return <div className="h-full w-full bg-faint" />;
+        return <div className="h-full w-full bg-hover" />;
     }
     return (
         <img
@@ -406,7 +406,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
                 {phase === "form" && (
                     <div className="flex flex-col gap-4 px-1">
-                        <label className="flex items-center gap-2 text-[12px] text-dim">
+                        <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
                             <span className="w-10 flex-none text-right">{t("gallery.url.url")}</span>
                             <input
                                 value={url}
@@ -419,7 +419,10 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                         </label>
                         <div className="flex flex-wrap gap-x-5 gap-y-2">
                             {FIELDS.map((f) => (
-                                <label key={f.key} className="flex items-center gap-1.5 text-[11.5px] text-muted">
+                                <label
+                                    key={f.key}
+                                    className="flex items-center gap-1.5 text-[11.5px] text-dim-foreground"
+                                >
                                     <span>{t(f.label)}</span>
                                     <input
                                         value={params[f.key]}
@@ -430,10 +433,11 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                 </label>
                             ))}
                         </div>
-                        <div className="flex items-center gap-2 text-[11.5px] text-muted">
+                        <div className="flex items-center gap-2 text-[11.5px] text-dim-foreground">
                             <span>{t("gallery.url.loginHint")}</span>
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="outline"
                                 size="xs"
                                 disabled={!canStart || loginBusy}
@@ -443,6 +447,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                             </Button>
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="outline"
                                 size="xs"
                                 disabled={!canStart || syncBusy}
@@ -452,6 +457,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                             </Button>
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="outline"
                                 size="xs"
                                 className="ml-auto"
@@ -466,7 +472,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
                 {phase === "collecting" && (
                     <div className="flex flex-1 flex-col items-center justify-center gap-4">
-                        <span className="text-[13px] text-dim">
+                        <span className="text-[13px] text-muted-foreground">
                             {progress?.stage === "page"
                                 ? fmt(t("gallery.url.fetchingPage"), { n: progress.page }) +
                                   fmt(t("gallery.url.found"), { m: progress.found })
@@ -475,14 +481,20 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                   : "…"}
                         </span>
                         {progress?.stage === "download" && (
-                            <div className="h-0.5 w-64 bg-line">
+                            <div className="h-0.5 w-64 rounded-full bg-well">
                                 <div
-                                    className="h-full bg-text"
+                                    className="h-full rounded-full bg-primary"
                                     style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }}
                                 />
                             </div>
                         )}
-                        <Button type="button" variant="outline" size="xs" onClick={() => (cancelRef.current = true)}>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="outline"
+                            size="xs"
+                            onClick={() => (cancelRef.current = true)}
+                        >
                             {t("gallery.cancelImport")}
                         </Button>
                     </div>
@@ -490,7 +502,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
                 {phase === "grid" && (
                     <>
-                        <div className="flex flex-none flex-wrap items-center gap-3 px-1 text-[11.5px] text-muted">
+                        <div className="flex flex-none flex-wrap items-center gap-3 px-1 text-[11.5px] text-dim-foreground">
                             {FILTERS.map((f) => (
                                 <label key={f.key} className="flex items-center gap-1">
                                     <span>{t(f.label)}</span>
@@ -502,7 +514,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                     />
                                 </label>
                             ))}
-                            <span className="text-dim">
+                            <span className="text-muted-foreground">
                                 {fmt(t("gallery.url.matchCount"), { n: visible.length, m: sorted.length })}
                             </span>
                             <span>{fmt(t("gallery.url.selected"), { n: importIndices.length })}</span>
@@ -520,17 +532,17 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                             key={c.ok ? c.index : c.url}
                                             title={c.url}
                                             onClick={() => toggle(c)}
-                                            className={`relative aspect-square overflow-hidden rounded border ${
+                                            className={`relative aspect-square overflow-hidden rounded-[4px] border ${
                                                 checked
-                                                    ? "border-text ring-1 ring-text"
-                                                    : "border-line hover:border-dim"
+                                                    ? "border-primary ring-1 ring-primary"
+                                                    : "border-line hover:border-border"
                                             } ${clickable ? "cursor-pointer" : "cursor-default"}`}
                                             style={{ contentVisibility: "auto", containIntrinsicSize: "auto 132px" }}
                                         >
                                             {c.ok ? (
                                                 <CandThumb index={c.index} />
                                             ) : (
-                                                <div className="flex h-full w-full items-center justify-center bg-faint px-1 text-center text-[10.5px] text-muted">
+                                                <div className="flex h-full w-full items-center justify-center bg-hover px-1 text-center text-[10.5px] text-dim-foreground">
                                                     {t("gallery.url.failed")}
                                                 </div>
                                             )}
@@ -551,7 +563,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                                 </div>
                                             )}
                                             {c.ok && c.inLibrary && (
-                                                <span className="absolute right-1 top-1 rounded-[3px] bg-dim px-1 text-[10px] text-bg">
+                                                <span className="absolute right-1 top-1 rounded-[3px] bg-foreground/85 px-1 text-[10px] text-background">
                                                     {t("gallery.url.inLibrary")}
                                                 </span>
                                             )}
@@ -559,7 +571,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                                 <span
                                                     className={`absolute left-1 top-1 flex size-4 items-center justify-center rounded-[3px] border ${
                                                         checked
-                                                            ? "border-text bg-text text-bg"
+                                                            ? "border-primary bg-primary text-primary-foreground"
                                                             : "border-white/70 bg-black/30"
                                                     }`}
                                                 >
@@ -576,20 +588,26 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
                 {phase === "importing" && (
                     <div className="flex flex-1 flex-col items-center justify-center gap-4">
-                        <span className="text-[13px] text-dim">
+                        <span className="text-[13px] text-muted-foreground">
                             {importing
                                 ? fmt(t("gallery.importing"), { done: importing.done, total: importing.total })
                                 : "…"}
                         </span>
-                        <div className="h-0.5 w-64 bg-line">
+                        <div className="h-0.5 w-64 rounded-full bg-well">
                             <div
-                                className="h-full bg-text"
+                                className="h-full rounded-full bg-primary"
                                 style={{
                                     width: `${importing && importing.total ? (importing.done / importing.total) * 100 : 0}%`,
                                 }}
                             />
                         </div>
-                        <Button type="button" variant="outline" size="xs" onClick={() => (cancelRef.current = true)}>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="outline"
+                            size="xs"
+                            onClick={() => (cancelRef.current = true)}
+                        >
                             {t("gallery.cancelImport")}
                         </Button>
                     </div>
@@ -597,18 +615,27 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
                 <div className="mt-auto flex flex-none items-center justify-end gap-2 pt-1">
                     {(phase === "form" || phase === "grid") && (
-                        <Button type="button" variant="outline" size="sm" onClick={requestClose}>
+                        <Button type="button" appearance="standard" variant="outline" size="sm" onClick={requestClose}>
                             {t("gallery.url.close")}
                         </Button>
                     )}
                     {phase === "form" && (
-                        <Button type="button" size="sm" disabled={!canStart} onClick={() => void startCollect()}>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="primary"
+                            size="sm"
+                            disabled={!canStart}
+                            onClick={() => void startCollect()}
+                        >
                             {t("gallery.url.start")}
                         </Button>
                     )}
                     {phase === "grid" && (
                         <Button
                             type="button"
+                            appearance="standard"
+                            variant="primary"
                             size="sm"
                             disabled={importIndices.length === 0}
                             onClick={() => void importSelected()}

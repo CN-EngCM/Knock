@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/useI18n";
 import { useToolInput } from "./toolInput";
 
@@ -54,25 +55,28 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
         toast.success(t("qr.saved"));
     }
 
-    const btn = "tbtn border border-line px-3 py-1 text-[12px] hover:bg-faint";
-    const field = "border border-line bg-bg px-2 py-1 text-[12.5px] text-text outline-none";
+    // 输入框与选择器各用 GaN.UI 控件材质：输入取凹陷底，选择取抬升底
+    const fieldInput =
+        "border border-border bg-[var(--control-input-background)] px-2 py-1 text-[12.5px] text-foreground outline-none";
+    const fieldSelect =
+        "border border-border bg-[var(--control-select-background)] px-2 py-1 text-[12.5px] text-foreground outline-none";
 
     return (
         <div className="flex h-full gap-4 p-4">
             <div className="flex min-w-0 flex-1 flex-col gap-3 text-[12.5px]">
                 <label className="flex items-center gap-2.5">
-                    <span className="w-12 flex-none text-muted">{t("qr.content")}</span>
+                    <span className="w-12 flex-none text-dim-foreground">{t("qr.content")}</span>
                     <input
                         type="text"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        className={`min-w-0 flex-1 ${field}`}
+                        className={`min-w-0 flex-1 ${fieldInput}`}
                     />
                 </label>
                 <div className="flex flex-wrap items-center gap-2.5">
                     <span className="flex items-center gap-2.5">
-                        <span className="w-12 flex-none text-muted">{t("qr.size")}</span>
-                        <select value={size} onChange={(e) => setSize(Number(e.target.value))} className={field}>
+                        <span className="w-12 flex-none text-dim-foreground">{t("qr.size")}</span>
+                        <select value={size} onChange={(e) => setSize(Number(e.target.value))} className={fieldSelect}>
                             {[128, 216, 512].map((s) => (
                                 <option key={s} value={s}>
                                     {s} px
@@ -81,8 +85,8 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
                         </select>
                     </span>
                     <span className="flex items-center gap-2.5">
-                        <span className="flex-none text-muted">{t("qr.ec")}</span>
-                        <select value={ec} onChange={(e) => setEc(e.target.value as typeof ec)} className={field}>
+                        <span className="flex-none text-dim-foreground">{t("qr.ec")}</span>
+                        <select value={ec} onChange={(e) => setEc(e.target.value as typeof ec)} className={fieldSelect}>
                             {(["L", "M", "Q", "H"] as const).map((v) => (
                                 <option key={v} value={v}>
                                     {v}
@@ -92,14 +96,14 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
                     </span>
                 </div>
                 <div className="flex gap-2 text-[12px]">
-                    <button type="button" className={btn} onClick={copyImage}>
-                        [ {t("qr.copy")} ]
-                    </button>
-                    <button type="button" className={btn} onClick={save}>
-                        [ {t("qr.save")} ]
-                    </button>
+                    <Button appearance="standard" variant="outline" size="sm" onClick={copyImage}>
+                        {t("qr.copy")}
+                    </Button>
+                    <Button appearance="standard" variant="outline" size="sm" onClick={save}>
+                        {t("qr.save")}
+                    </Button>
                 </div>
-                {!text.trim() && <span className="text-[11.5px] text-muted">{t("qr.empty")}</span>}
+                {!text.trim() && <span className="text-[11.5px] text-dim-foreground">{t("qr.empty")}</span>}
             </div>
             <div className="flex flex-none items-start justify-center">
                 {url ? (
@@ -107,11 +111,11 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
                         src={url}
                         alt="QR"
                         style={{ width: size }}
-                        className="max-w-full border border-line bg-white p-1"
+                        className="max-w-full rounded-md border border-border bg-white p-1"
                     />
                 ) : (
                     <div
-                        className="flex items-center justify-center border border-dashed border-line text-[11.5px] text-muted"
+                        className="flex items-center justify-center rounded-md border border-dashed border-line text-[11.5px] text-dim-foreground"
                         style={{ width: size, height: size }}
                     >
                         {t("qr.empty")}

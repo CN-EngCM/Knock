@@ -51,7 +51,7 @@ export function GallerySection() {
 
     return (
         <>
-            <div className="px-1 text-[11.5px] text-muted">{t("settings.gallery.hint")}</div>
+            <div className="px-1 text-[11.5px] text-dim-foreground">{t("settings.gallery.hint")}</div>
 
             <div className={row}>
                 <Label htmlFor="gallery-password">{t("settings.gallery.password")}</Label>
@@ -75,7 +75,9 @@ export function GallerySection() {
                         {confirmClear ? (
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="destructive"
+                                size="default"
                                 className="w-fit px-4"
                                 onClick={() => void clearPassword()}
                             >
@@ -84,7 +86,9 @@ export function GallerySection() {
                         ) : (
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="outline"
+                                size="default"
                                 className="w-fit px-4"
                                 onClick={() => setConfirmClear(true)}
                             >

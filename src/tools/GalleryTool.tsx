@@ -714,8 +714,14 @@ export default function GalleryTool() {
 
             <section className="flex min-w-0 flex-1 flex-col">
                 {/* 工具条 */}
-                <div className="flex flex-none flex-wrap items-center gap-1.5 px-2 py-1.5">
-                    <Button type="button" size="xs" variant="outline" onClick={() => void importFiles()}>
+                <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-line bg-panel px-2 py-1.5">
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="outline"
+                        size="xs"
+                        onClick={() => void importFiles()}
+                    >
                         <ImagePlus />
                         {t("gallery.import")}
                     </Button>
@@ -726,7 +732,10 @@ export default function GalleryTool() {
                             checked={selectMode}
                             onCheckedChange={(v) => (v ? setSelectMode(true) : exitSelectMode())}
                         />
-                        <label htmlFor="gallery-select-mode" className="cursor-pointer text-[12px] text-dim">
+                        <label
+                            htmlFor="gallery-select-mode"
+                            className="cursor-pointer text-[12px] text-muted-foreground"
+                        >
                             {t("gallery.select.mode")}
                         </label>
                     </span>
@@ -735,7 +744,7 @@ export default function GalleryTool() {
                         onChange={(e) => setSearchInput(e.target.value)}
                         spellCheck={false}
                         placeholder={t("gallery.searchPlaceholder")}
-                        className="h-6 w-44 flex-none border border-line bg-bg px-2 text-[12px] text-text outline-none placeholder:text-muted focus:border-dim"
+                        className="h-6 w-44 flex-none rounded-[4px] border border-line bg-[var(--control-input-background)] px-2 text-[12px] text-foreground outline-none placeholder:text-dim-foreground focus:border-primary"
                     />
                     <Select value={query.sort} onValueChange={(v) => setQuery((q) => ({ ...q, sort: v as SortId }))}>
                         {/* h-6 必须 !：SelectTrigger 内部 data-[size=sm]:h-8 带属性选择器，普通 h-6 压不过 */}
@@ -754,8 +763,9 @@ export default function GalleryTool() {
                     {query.group === "wall" && (
                         <Button
                             type="button"
-                            size="xs"
+                            appearance="standard"
                             variant="outline"
+                            size="xs"
                             disabled={wallCount === 0}
                             onClick={() => setSlideshow(true)}
                         >
@@ -768,16 +778,22 @@ export default function GalleryTool() {
                 {/* 导入进度 */}
                 {importing && (
                     <div className="flex flex-none items-center gap-2 px-2 pb-1.5">
-                        <span className="flex-none text-[11px] text-muted">
+                        <span className="flex-none text-[11px] text-dim-foreground">
                             {fmt(t("gallery.importing"), { done: importing.done, total: importing.total })}
                         </span>
-                        <div className="h-0.5 min-w-8 flex-1 bg-line">
+                        <div className="h-0.5 min-w-8 flex-1 rounded-full bg-well">
                             <div
-                                className="h-full bg-text"
+                                className="h-full rounded-full bg-primary"
                                 style={{ width: `${importing.total ? (importing.done / importing.total) * 100 : 0}%` }}
                             />
                         </div>
-                        <Button type="button" variant="outline" size="xs" onClick={() => (cancelImport.current = true)}>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="outline"
+                            size="xs"
+                            onClick={() => (cancelImport.current = true)}
+                        >
                             {t("gallery.cancelImport")}
                         </Button>
                     </div>
@@ -833,7 +849,7 @@ export default function GalleryTool() {
                 />
 
                 {/* 底部统计 */}
-                <div className="flex flex-none items-center gap-3 border-t border-line px-2.5 py-1 text-[11px] text-muted">
+                <div className="flex flex-none items-center gap-3 border-t border-line px-2.5 py-1 text-[11px] text-dim-foreground">
                     <span>{fmt(t("gallery.total"), { n: total })}</span>
                     {selectedIds.size > 0 && <span>{fmt(t("gallery.selectedCount"), { m: selectedIds.size })}</span>}
                 </div>

@@ -73,27 +73,36 @@ export function ImportDialog({ open, onClose, onImported }: Props) {
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>{t("import.title")}</DialogTitle>
-                    <DialogDescription className="text-dim">{t("import.step1")}</DialogDescription>
+                    <DialogDescription>{t("import.step1")}</DialogDescription>
                 </DialogHeader>
 
-                <label className="flex cursor-pointer items-center justify-between gap-3 border border-line px-3 py-2.5 text-[13px] hover:bg-faint">
-                    <span className={fileName ? "text-text" : "text-muted"}>{fileName || t("import.pick")}</span>
+                <label className="flex cursor-pointer items-center justify-between gap-3 border border-line px-3 py-2.5 text-[13px] hover:bg-hover">
+                    <span className={fileName ? "text-foreground" : "text-dim-foreground"}>
+                        {fileName || t("import.pick")}
+                    </span>
                     <input type="file" accept=".html,.htm" onChange={handleFile} className="hidden" />
-                    <span className="text-dim">[ {t("import.pick")} ]</span>
+                    <span className="text-dim-foreground">{t("import.pick")}</span>
                 </label>
 
                 {result && (
-                    <div className="border border-line bg-faint px-3 py-2 text-[13px] text-dim">
+                    <div className="border border-line bg-well px-3 py-2 text-[13px] text-dim-foreground">
                         {t("import.createdGroups")} {result.createdGroups} · {t("import.imported")}{" "}
                         {result.importedItems} · {t("import.skipped")} {result.skipped}
                     </div>
                 )}
 
                 <DialogFooter>
-                    <Button type="button" variant="outline" onClick={onClose}>
+                    <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
                         {t("common.cancel")}
                     </Button>
-                    <Button type="button" onClick={handleImport} disabled={running || !html}>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="primary"
+                        size="default"
+                        onClick={handleImport}
+                        disabled={running || !html}
+                    >
                         {running ? t("import.running") : t("import.run")}
                     </Button>
                 </DialogFooter>

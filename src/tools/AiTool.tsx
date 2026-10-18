@@ -206,9 +206,9 @@ export default function AiTool({
         }
     }, [seq, experts, aiModels]);
 
-    // 会话头部 chip 外壳(设计定稿):白 8% 底圆角 8 的原生 select 套壳,右侧自画箭头
+    // 会话头部 chip 外壳:选择控件底 + 结构边框的原生 select 套壳,右侧自画箭头
     const chipShell =
-        "relative flex h-[26px] flex-none items-center rounded-lg bg-white/[0.08] pl-2.5 pr-6 text-[11px] text-white/85 transition-colors hover:bg-white/[0.13]";
+        "relative flex h-[26px] flex-none items-center rounded-[4px] border border-border bg-[var(--control-select-background)] pl-2.5 pr-6 text-[11px] text-foreground";
     const chipSelect = "appearance-none bg-transparent text-[11px] text-inherit outline-none";
     const activeExpert = experts.find((e) => e.id === activeId) ?? null;
     const noModelsConfigured = aiModels !== null && aiModels.length === 0;
@@ -232,12 +232,12 @@ export default function AiTool({
         }
     }
 
-    // 消息行渲染(设计定稿):用户=右侧白 17% 气泡;AI=薄荷绿 AI 头像 + 白 8% 气泡。
+    // 消息行渲染:用户=右侧次级气泡;AI=强调色 AI 头像 + 井底气泡。
     // 单轮把一对问答包进一张卡片(问题行右对齐、回答紧随其下)
     function renderUserMsg(m: Msg) {
         return (
             <div className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-white/[0.17] px-3.5 py-2 text-[12.5px] whitespace-pre-wrap break-words text-white">
+                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-[var(--bubble-secondary)] px-3.5 py-2 text-[12.5px] whitespace-pre-wrap break-words text-[var(--bubble-secondary-foreground)]">
                     {m.content}
                 </div>
             </div>
@@ -249,7 +249,7 @@ export default function AiTool({
             <div className="group flex gap-2.5">
                 {/* 流式中头像轻呼吸,回答落定即静止 */}
                 <span
-                    className={`mt-0.5 flex size-[22px] flex-none select-none items-center justify-center rounded-full bg-accent/[0.18] text-[9px] font-semibold text-accent ${
+                    className={`mt-0.5 flex size-[22px] flex-none select-none items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary ${
                         !m.status ? "animate-pulse" : ""
                     }`}
                 >
@@ -257,23 +257,23 @@ export default function AiTool({
                 </span>
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                     {!!m.reasoning && (
-                        <details className="rounded-lg border border-dashed border-line bg-white/[0.04] px-2 py-1">
-                            <summary className="cursor-pointer select-none text-[11.5px] text-muted">
+                        <details className="rounded-lg border border-dashed border-line px-2 py-1">
+                            <summary className="cursor-pointer select-none text-[11.5px] text-dim-foreground">
                                 {t("ai.thinking")}
                             </summary>
-                            <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted">
+                            <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-dim-foreground">
                                 {m.reasoning}
                             </div>
                         </details>
                     )}
-                    <div className="rounded-2xl rounded-tl-md bg-white/[0.08] px-3.5 py-2 text-[13px] leading-relaxed break-words text-text [&_a]:underline [&_li]:ml-4 [&_ul]:list-disc">
+                    <div className="rounded-2xl rounded-tl-md bg-well px-3.5 py-2 text-[13px] leading-relaxed break-words text-foreground [&_a]:underline [&_li]:ml-4 [&_ul]:list-disc">
                         {/* react-markdown v10 无顶层 className，样式挂在包裹层 */}
                         <Markdown
                             components={{
                                 pre: ({ node: _node, ...rest }) => (
                                     <pre
                                         {...rest}
-                                        className="overflow-auto rounded-lg bg-white/[0.07] p-2 font-mono text-[12.5px]"
+                                        className="overflow-auto rounded-lg bg-[var(--control-input-background)] p-2 font-mono text-[12.5px]"
                                     />
                                 ),
                                 code: ({ node: _node, ...rest }) => (
@@ -286,7 +286,7 @@ export default function AiTool({
                     </div>
                     <div className="flex items-center gap-2">
                         {m.status === "stopped" && (
-                            <span className="text-[11px] text-muted">〔{t("ai.stopped")}〕</span>
+                            <span className="text-[11px] text-dim-foreground">〔{t("ai.stopped")}〕</span>
                         )}
                         {m.status === "error" &&
                             (() => {
@@ -301,7 +301,7 @@ export default function AiTool({
                         {(!m.status || m.status === "stopped") && m.content && (
                             <button
                                 type="button"
-                                className="-my-0.5 text-muted opacity-60 transition-opacity hover:text-text group-hover:opacity-100"
+                                className="-my-0.5 text-dim-foreground opacity-60 transition-opacity hover:text-foreground group-hover:opacity-100"
                                 title={t("ai.copy")}
                                 onClick={() => void copyMsg(m.content)}
                             >
@@ -316,15 +316,15 @@ export default function AiTool({
 
     return (
         <div className="flex h-full">
-            {/* ── 左栏:专家列表(设计定稿:顶部小标签 + 选中浮白行 + 模式 chip) ── */}
-            <aside className="flex w-[188px] flex-none flex-col border-r border-white/[0.12]">
-                <span className="px-2.5 pb-1 pt-2.5 text-[10px] font-semibold tracking-wider text-white/35">
+            {/* ── 左栏:专家列表(顶部小标签 + 选中行填充 + 模式 chip) ── */}
+            <aside className="flex w-[148px] flex-none flex-col border-e border-line bg-background">
+                <span className="px-2.5 pb-1 pt-2.5 text-[11px] font-semibold tracking-wider text-dim-foreground">
                     {t("search.expert")}
                 </span>
                 <div className="min-h-0 flex-1 overflow-y-auto px-1.5">
                     {experts.length === 0 ? (
                         <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
-                            <span className="text-[12px] text-muted">{t("ai.noExperts")}</span>
+                            <span className="text-[12px] text-dim-foreground">{t("ai.noExperts")}</span>
                         </div>
                     ) : (
                         experts.map((e) => (
@@ -345,30 +345,28 @@ export default function AiTool({
                                         setGate(null);
                                     }
                                 }}
-                                className={`group flex w-full cursor-default items-center gap-2 rounded-[10px] px-2 py-[7px] text-left text-[12.5px] transition-colors ${
+                                className={`group flex w-full cursor-default items-center gap-2 rounded-[4px] px-2 py-[7px] text-left text-[12px] transition-colors ${
                                     e.id === activeId
-                                        ? "bg-white/[0.15] font-semibold text-white"
-                                        : "text-white/70 hover:bg-white/[0.06] hover:text-white/90"
+                                        ? "bg-rowsel font-semibold text-primary"
+                                        : "text-muted-foreground hover:bg-hover hover:text-foreground"
                                 }`}
                             >
-                                {/* 该专家正在流式：克制的呼吸圆点,选中行直接白,非选中随文字 */}
+                                {/* 该专家正在流式：克制的呼吸圆点，颜色随当前行文字（选中行即强调色） */}
                                 {convStreaming(e.id) && (
                                     <span className="size-1.5 flex-none animate-pulse rounded-full bg-current" />
                                 )}
                                 <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                                {/* 模式 chip:选中行薄荷绿,普通行白 8% */}
+                                {/* 模式 chip:选中行强调色,普通行井底 */}
                                 <span
                                     className={`flex-none rounded-md px-1.5 py-[3px] font-mono text-[9.5px] font-normal leading-none ${
-                                        e.id === activeId
-                                            ? "bg-accent/[0.15] text-accent"
-                                            : "bg-white/[0.08] text-white/45"
+                                        e.id === activeId ? "bg-primary/15 text-primary" : "bg-well text-dim-foreground"
                                     }`}
                                 >
                                     {t(e.multi ? "ai.modeMulti" : "ai.modeSingle")}
                                 </span>
                                 <button
                                     type="button"
-                                    className="flex-none px-0.5 text-muted opacity-0 transition-opacity hover:text-text group-hover:opacity-100"
+                                    className="flex-none px-0.5 text-dim-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                                     title={t("ai.editExpert")}
                                     onClick={(ev) => {
                                         ev.stopPropagation();
@@ -383,7 +381,7 @@ export default function AiTool({
                 </div>
                 <button
                     type="button"
-                    className="mx-2 mb-2.5 mt-1 flex h-8 flex-none items-center justify-center gap-1 rounded-[10px] bg-white/[0.08] text-[12px] text-white/75 transition-colors hover:bg-white/[0.14] hover:text-white active:scale-[0.98]"
+                    className="mx-2 mb-2.5 mt-1 flex h-8 flex-none items-center justify-center gap-1 rounded-[4px] border border-dashed border-border text-[12px] text-dim-foreground transition-colors hover:bg-hover hover:text-foreground active:scale-[0.98]"
                     onClick={() => setEditing("new")}
                 >
                     ＋ {t("ai.newExpert")}
@@ -393,8 +391,8 @@ export default function AiTool({
             {/* ── 右栏:头部 + 会话 + 输入 ── */}
             <section className="flex min-w-0 flex-1 flex-col gap-2.5 p-3">
                 {!noModelsConfigured && activeExpert && (
-                    <header className="flex flex-none items-center gap-2 border-b border-white/[0.12] px-1 pb-2.5">
-                        <span className="min-w-0 truncate text-[13px] font-semibold text-white">
+                    <header className="flex flex-none items-center gap-2 border-b border-line px-1 pb-2.5">
+                        <span className="min-w-0 truncate text-[13px] font-semibold text-foreground">
                             {activeExpert.name}
                         </span>
                         <span className="flex-1" />
@@ -414,7 +412,10 @@ export default function AiTool({
                                     </option>
                                 ))}
                             </select>
-                            <ChevronDown size={11} className="pointer-events-none absolute right-1.5 text-white/45" />
+                            <ChevronDown
+                                size={11}
+                                className="pointer-events-none absolute right-1.5 text-dim-foreground"
+                            />
                         </label>
                         {/* 会话内思考强度临时切换：语义与模型切换一致，不写回专家配置 */}
                         <label className={chipShell} title={t("ai.effort")}>
@@ -429,12 +430,15 @@ export default function AiTool({
                                     </option>
                                 ))}
                             </select>
-                            <ChevronDown size={11} className="pointer-events-none absolute right-1.5 text-white/45" />
+                            <ChevronDown
+                                size={11}
+                                className="pointer-events-none absolute right-1.5 text-dim-foreground"
+                            />
                         </label>
                         {/* 单轮/多轮都给清空：单轮的历史同样需要一键重来 */}
                         <button
                             type="button"
-                            className="h-[26px] flex-none rounded-lg border border-white/20 px-2.5 text-[11px] text-white/75 transition-colors hover:bg-white/[0.08] hover:text-white active:scale-[0.97]"
+                            className="h-[26px] flex-none rounded-[4px] border border-border px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground active:scale-[0.97]"
                             onClick={() => activeId != null && clearConv(activeId)}
                         >
                             {t("ai.clear")}
@@ -445,13 +449,20 @@ export default function AiTool({
                 {noModelsConfigured ? (
                     /* 无任何模型配置：TranslateTool 式引导直达设置页（实心 CTA） */
                     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-                        <span className="text-[13px] text-text">{t("ai.errNoModels")}</span>
-                        <Button type="button" size="sm" className="px-4" onClick={() => openSettings?.()}>
+                        <span className="text-[13px] text-foreground">{t("ai.errNoModels")}</span>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="primary"
+                            size="sm"
+                            className="px-4"
+                            onClick={() => openSettings?.()}
+                        >
                             {t("translate.openSettings")}
                         </Button>
                     </div>
                 ) : !activeExpert ? (
-                    <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-muted">
+                    <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-dim-foreground">
                         {experts.length === 0 ? t("ai.noExperts") : ""}
                     </div>
                 ) : (
@@ -467,7 +478,7 @@ export default function AiTool({
                                   )
                                 : pairUp(convs[activeExpert.id]?.msgs ?? []).map((pair, gi) => (
                                       /* 单轮：一问一答一张卡片，卡间用外层 gap 分隔 */
-                                      <div key={gi} className="flex flex-col gap-2 rounded-2xl bg-white/[0.04] p-2.5">
+                                      <div key={gi} className="flex flex-col gap-2 rounded-2xl bg-background p-2.5">
                                           {pair.map((msg, mi) => (
                                               <Fragment key={mi}>
                                                   {msg.role === "user"
@@ -485,18 +496,24 @@ export default function AiTool({
                 {gate === "unbound" && !noModelsConfigured && activeExpert && (
                     <div className="flex flex-none items-center gap-2 text-[12px] text-destructive">
                         {t("ai.errUnbound")}
-                        <Button type="button" variant="outline" size="xs" onClick={() => setEditing(activeExpert.id)}>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="outline"
+                            size="xs"
+                            onClick={() => setEditing(activeExpert.id)}
+                        >
                             {t("ai.editExpert")}
                         </Button>
                     </div>
                 )}
 
-                {/* 输入区(设计定稿):白 8% 圆角 14 容器 + 薄荷绿胶囊发送键;
+                {/* 输入区:控件输入底圆角容器 + 主操作发送键;
                     流式中发送按钮变停止;Enter 发送 Shift+Enter 换行 */}
-                <div className="flex flex-none items-end gap-2 rounded-2xl border border-white/[0.14] bg-white/[0.08] p-2 pl-3.5 transition-colors focus-within:border-accent/40">
+                <div className="flex flex-none items-end gap-2 rounded-md border border-border bg-[var(--control-input-background)] p-2 transition-colors focus-within:border-primary/50">
                     <textarea
                         ref={textareaRef}
-                        className="h-16 min-w-0 flex-1 resize-none bg-transparent text-[12.5px] leading-relaxed text-text outline-none placeholder:text-muted"
+                        className="h-16 min-w-0 flex-1 resize-none bg-transparent text-[12.5px] leading-relaxed text-foreground outline-none placeholder:text-dim-foreground"
                         value={draft}
                         placeholder={t("ai.placeholder")}
                         spellCheck={false}
@@ -508,10 +525,11 @@ export default function AiTool({
                             void send(draft); // send 内部处理 stop-then-send 与守卫
                         }}
                     />
-                    {/* 发送/停止同一颗胶囊随流式状态切换(disabled 半透明) */}
-                    <button
-                        type="button"
-                        className="h-[30px] flex-none rounded-full bg-accent/[0.15] px-4 text-[12px] font-semibold text-accent transition-all duration-150 hover:bg-accent/25 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
+                    {/* 发送/停止同一颗按钮随流式状态切换(禁用态半透明由 Button 自带) */}
+                    <Button
+                        appearance="standard"
+                        variant="primary"
+                        size="sm"
                         disabled={!streaming && !draft.trim()}
                         onClick={() => {
                             if (streaming && activeId != null) stopExpertStreams(activeId);
@@ -519,7 +537,7 @@ export default function AiTool({
                         }}
                     >
                         {streaming ? t("ai.stop") : t("ai.send")}
-                    </button>
+                    </Button>
                 </div>
             </section>
 

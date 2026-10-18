@@ -202,10 +202,13 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
         [t("gallery.info.path"), img.sourcePath || "—"],
     ];
 
-    // 覆盖层上的小按钮：黑底上用白色幽灵态（主题 tbtn 的配色在这里不可读）
-    const vbtn =
-        "flex size-7 items-center justify-center rounded text-white/75 hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40";
-    const sep = <span className="mx-0.5 h-4 w-px bg-white/20" aria-hidden />;
+    // 控制条按钮：项目统一 icon-btn 图标按钮（悬停浮填充、aria-pressed 选中态由全局 CSS 给出），
+    // 补按压与禁用两态；信息面板与工具条用主题面板材质，浮在黑舞台上靠底色对比
+    const vbtn = "icon-btn active:opacity-60 disabled:pointer-events-none disabled:opacity-40";
+    // 删除按钮特例：悬停变红需覆盖 icon-btn 的悬停文字色，icon-btn 定义在层外会压掉工具类，故整串内联
+    const vbtnDanger =
+        "flex size-7 flex-none items-center justify-center rounded text-muted-foreground transition-colors hover:bg-hover hover:text-destructive active:opacity-60 disabled:pointer-events-none disabled:opacity-40";
+    const sep = <span className="mx-0.5 h-4 w-px flex-none bg-border" aria-hidden />;
 
     return (
         <div
@@ -220,12 +223,12 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     {img.title} ({index + 1}/{items.length})
                 </div>
 
-                {/* 信息浮层 */}
+                {/* 信息浮层：主题面板材质（表面/文字/边框随深浅主题） */}
                 {info && (
-                    <div className="absolute right-3 top-3 flex max-h-[calc(100%-1.5rem)] w-72 flex-col gap-1.5 overflow-auto rounded-md border border-white/15 bg-black/70 p-3 text-[11.5px] text-white/80">
+                    <div className="absolute right-3 top-3 flex max-h-[calc(100%-1.5rem)] w-72 flex-col gap-1.5 overflow-auto rounded-md border border-border bg-panel p-3 text-[11.5px] text-foreground shadow-[var(--shadow-toast)]">
                         {infoRows.map(([k, v]) => (
                             <div key={k} className="flex gap-2">
-                                <span className="w-16 flex-none text-white/45">{k}</span>
+                                <span className="w-16 flex-none text-dim-foreground">{k}</span>
                                 <span className="min-w-0 flex-1 break-all">{v}</span>
                             </div>
                         ))}
@@ -283,7 +286,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
 
             {/* 底部工具条 */}
             <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
-                <div className="pointer-events-auto flex items-center gap-0.5 rounded-md border border-white/15 bg-black/60 p-1">
+                <div className="pointer-events-auto flex items-center gap-0.5 rounded-md border border-border bg-panel p-1 shadow-[var(--shadow-toast)]">
                     <button type="button" className={vbtn} title={t("common.close")} onClick={onClose}>
                         <X size={15} />
                     </button>
@@ -325,12 +328,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     <button type="button" className={vbtn} title={t("gallery.view.fit")} onClick={fit}>
                         <Maximize size={15} />
                     </button>
-                    <button
-                        type="button"
-                        className={`${vbtn} w-auto px-1.5 text-[10.5px]`}
-                        title="1:1"
-                        onClick={oneToOne}
-                    >
+                    <button type="button" className={`${vbtn} text-[10.5px]`} title="1:1" onClick={oneToOne}>
                         1:1
                     </button>
                     <button
@@ -344,7 +342,8 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     {sep}
                     <button
                         type="button"
-                        className={`${vbtn} ${info ? "bg-white/15 text-white" : ""}`}
+                        className={vbtn}
+                        aria-pressed={info}
                         title={t("gallery.view.info")}
                         onClick={() => setInfo((v) => !v)}
                     >
@@ -385,7 +384,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     {onDelete && (
                         <button
                             type="button"
-                            className={`${vbtn} hover:text-destructive`}
+                            className={vbtnDanger}
                             title={t("gallery.view.delete")}
                             onClick={() => onDelete(img)}
                         >

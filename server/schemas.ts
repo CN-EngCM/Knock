@@ -66,6 +66,12 @@ export const autostartSchema = z.object({ enabled: z.boolean() });
 // 呼出时剪贴板素材的时限（秒）：0 = 关闭自动粘贴
 export const clipPasteSchema = z.object({ seconds: z.number().int().min(0).max(60) });
 
+// ── 界面主题（GaN.UI 深浅双主题）：唯一权威来源是 settings 表的 theme 键，
+//    主进程开窗前读它定窗口底色与系统边线，渲染端首帧前读它套 .dark 类 ──
+export const THEME_IDS = ["dark", "light"] as const;
+export type ThemeId = (typeof THEME_IDS)[number];
+export const themeSchema = z.enum(THEME_IDS);
+
 // ── 终端设置（v2.3）──
 // shell 用 id 存 settings 表：'auto' = 平台默认探测（Windows pwsh→powershell→cmd，
 // 其余 $SHELL→bash），具体 id 由 server/pty.ts 在运行时探测可用性（探不到不出现在下拉里）。

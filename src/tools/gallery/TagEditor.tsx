@@ -78,7 +78,8 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
         });
     }
 
-    const chip = "flex items-center gap-1 border border-line px-1.5 py-0.5 text-[12px] text-dim";
+    const chip =
+        "flex items-center gap-1 rounded-[3px] border border-line px-1.5 py-0.5 text-[12px] text-muted-foreground";
 
     return (
         <Dialog open onOpenChange={(v) => !v && onClose()}>
@@ -98,7 +99,7 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
                                         type="button"
                                         aria-label={tag}
                                         onClick={() => setTags((prev) => prev.filter((x) => x !== tag))}
-                                        className="text-muted hover:text-text"
+                                        className="text-dim-foreground hover:text-foreground"
                                     >
                                         <X size={11} />
                                     </button>
@@ -113,7 +114,7 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
                         onKeyDown={onDraftKeyDown}
                         spellCheck={false}
                         placeholder={t("gallery.tags.placeholder")}
-                        className="h-8 w-full border border-line bg-bg px-2 text-[12.5px] text-text outline-none placeholder:text-muted focus:border-dim"
+                        className="h-8 w-full rounded-[4px] border border-line bg-[var(--control-input-background)] px-2 text-[12.5px] text-foreground outline-none placeholder:text-dim-foreground focus:border-primary"
                     />
                     {suggestions.length > 0 && (
                         <div className="flex flex-wrap gap-1">
@@ -121,7 +122,7 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
                                 <button
                                     key={p}
                                     type="button"
-                                    className="border border-line px-1.5 py-0.5 text-[12px] text-muted hover:bg-faint hover:text-text"
+                                    className="rounded-[3px] border border-line px-1.5 py-0.5 text-[12px] text-dim-foreground hover:bg-hover hover:text-foreground"
                                     onClick={() => {
                                         addTag(p);
                                         inputRef.current?.focus();
@@ -135,10 +136,17 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
                 </div>
 
                 <DialogFooter>
-                    <Button type="button" variant="outline" onClick={onClose}>
+                    <Button type="button" appearance="standard" variant="outline" size="sm" onClick={onClose}>
                         {t("common.cancel")}
                     </Button>
-                    <Button type="button" disabled={busy} onClick={save}>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="primary"
+                        size="sm"
+                        disabled={busy}
+                        onClick={save}
+                    >
                         {t("common.save")}
                     </Button>
                 </DialogFooter>

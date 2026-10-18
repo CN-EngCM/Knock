@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, type ApiResult, type TranslateResult, type YoudaoLangId } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
@@ -150,11 +151,10 @@ export default function TranslateTool({
         setText("");
     }
 
-    const btn = "tbtn border border-line px-2.5 py-1 text-[12px] hover:bg-faint";
-
     return (
-        <div className="flex h-full flex-col gap-2 p-3">
-            <div className="flex flex-none items-center gap-2">
+        <div className="flex h-full flex-col">
+            {/* 语言栏：源/目标选择 + 交换方向，工具条吃满宽度 */}
+            <div className="flex min-h-[46px] flex-none items-center gap-2 border-b border-line bg-panel px-3.5">
                 <Select value={from} onValueChange={(v) => pickFrom(v as FromId)}>
                     <SelectTrigger className="w-36">
                         <SelectValue />
@@ -168,8 +168,8 @@ export default function TranslateTool({
                         ))}
                     </SelectContent>
                 </Select>
-                <button type="button" className={btn} title={t("translate.swap")} onClick={swap}>
-                    <ArrowLeftRight size={13} />
+                <button type="button" className="icon-btn" title={t("translate.swap")} onClick={swap}>
+                    <ArrowLeftRight className="size-4" />
                 </button>
                 <Select value={to} onValueChange={(v) => pickTo(v as YoudaoLangId)}>
                     <SelectTrigger className="w-36">
@@ -185,63 +185,77 @@ export default function TranslateTool({
                 </Select>
             </div>
 
-            <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={onKeyDown}
-                spellCheck={false}
-                placeholder={t("translate.placeholder")}
-                className="h-36 flex-none resize-none border border-line bg-bg px-2.5 py-1.5 text-[12.5px] text-text outline-none placeholder:text-muted"
-            />
+            {/* 双栏编辑：左原文右译文，弱分隔线隔开 */}
+            <div className="flex min-h-0 flex-1">
+                <textarea
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    onKeyDown={onKeyDown}
+                    spellCheck={false}
+                    placeholder={t("translate.placeholder")}
+                    className="min-w-0 flex-1 resize-none bg-transparent px-4 py-3.5 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+                />
 
-            <div className="min-h-0 flex-1 overflow-auto border-t border-line pt-2">
-                {status === "idle" && (
-                    <div className="px-1 py-6 text-center text-[12px] text-muted">{t("translate.hint")}</div>
-                )}
-
-                {status === "loading" && (
-                    <div className="px-1 py-6 text-center text-[12px] text-muted">{t("translate.loading")}</div>
-                )}
-
-                {status === "noConfig" && (
-                    <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-                        <span className="text-[13px] text-text">{t("translate.noConfig")}</span>
-                        <button type="button" className={btn} onClick={() => openSettings?.()}>
-                            [ {t("translate.openSettings")} ]
-                        </button>
-                    </div>
-                )}
-
-                {status === "error" && (
-                    <div className="px-1 py-6 text-center text-[12.5px] text-dim">
-                        {(() => {
-                            const k = youdaoErrKey(errCode);
-                            return k ? t(k) : `${t("translate.errFallback")}: ${errCode}`;
-                        })()}
-                    </div>
-                )}
-
-                {status === "done" && result && (
-                    <div className="flex flex-col gap-2 px-1">
-                        <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-text">
-                            {result.text}
+                <div className="min-w-0 flex-1 overflow-auto border-l border-line px-4 py-3.5">
+                    {status === "idle" && (
+                        <div className="px-1 py-6 text-center text-[12px] text-dim-foreground">
+                            {t("translate.hint")}
                         </div>
-                        {result.dictUrl && (
-                            <a
-                                href={result.dictUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="w-fit text-[12px] text-dim underline hover:text-text"
+                    )}
+
+                    {status === "loading" && (
+                        <div className="px-1 py-6 text-center text-[12px] text-dim-foreground">
+                            {t("translate.loading")}
+                        </div>
+                    )}
+
+                    {status === "noConfig" && (
+                        <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+                            <span className="text-[13px] text-foreground">{t("translate.noConfig")}</span>
+                            <Button
+                                appearance="standard"
+                                variant="primary"
+                                size="sm"
+                                className="px-4"
+                                onClick={() => openSettings?.()}
                             >
-                                {t("translate.dict")}
-                            </a>
-                        )}
-                    </div>
-                )}
+                                {t("translate.openSettings")}
+                            </Button>
+                        </div>
+                    )}
+
+                    {status === "error" && (
+                        <div className="px-1 py-6 text-center text-[12.5px] text-muted-foreground">
+                            {(() => {
+                                const k = youdaoErrKey(errCode);
+                                return k ? t(k) : `${t("translate.errFallback")}: ${errCode}`;
+                            })()}
+                        </div>
+                    )}
+
+                    {status === "done" && result && (
+                        <div className="flex flex-col gap-2 px-1">
+                            <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+                                {result.text}
+                            </div>
+                            {result.dictUrl && (
+                                <a
+                                    href={result.dictUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="w-fit text-[12px] text-muted-foreground underline hover:text-foreground"
+                                >
+                                    {t("translate.dict")}
+                                </a>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div className="flex flex-none items-center justify-between gap-2">
-                <span className="min-w-0 truncate text-[11px] text-muted">
+            {/* 状态条：检测语言 + 轻量动作 */}
+            <div className="flex flex-none items-center justify-between gap-2 border-t border-line px-3.5 py-1.5">
+                <span className="min-w-0 truncate text-[11px] text-dim-foreground">
                     {status === "done" && result
                         ? `${t("translate.detected")}: ${
                               (LANGS as readonly string[]).includes(result.detected)
@@ -251,11 +265,11 @@ export default function TranslateTool({
                         : ""}
                 </span>
                 <span className="flex flex-none items-center gap-2">
-                    <button type="button" className={btn} onClick={clearInput}>
-                        [ {t("translate.clear")} ]
+                    <button type="button" className="tbtn" onClick={clearInput}>
+                        {t("translate.clear")}
                     </button>
-                    <button type="button" className={btn} onClick={() => void copyResult()}>
-                        [ {t("translate.copy")} ]
+                    <button type="button" className="tbtn" onClick={() => void copyResult()}>
+                        {t("translate.copy")}
                     </button>
                 </span>
             </div>

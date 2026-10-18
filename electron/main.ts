@@ -47,8 +47,10 @@ protocol.registerSchemesAsPrivileged([
     { scheme: "mpimg", privileges: { standard: true, stream: true, supportFetchAPI: true } },
 ]);
 
-// 固定 IPv4：与 vite.config 的 server.host 保持一致（localhost 可能解析成 ::1）
-const DEV_URL = "http://127.0.0.1:5173";
+// 固定 IPv4：与 vite.config 的 server.host 保持一致（localhost 可能解析成 ::1）。
+// KNOCK_DEV_URL 可覆盖端口：默认 5173 被别的 dev 服务占用时，Vite 会自动跳号，
+// 此时用该变量指向实际端口（pnpm dev 的 Vite 输出会给出）
+const DEV_URL = process.env.KNOCK_DEV_URL || "http://127.0.0.1:5173";
 // 便携版/自启场景：带 --hidden 启动则只进托盘不弹窗
 const startHidden = process.argv.includes("--hidden");
 
@@ -73,6 +75,27 @@ if (!app.requestSingleInstanceLock()) {
         ({ startClipWatch, freshClipboardText } = await import("./clipWatch"));
         ({ initHotkey, shutdownHotkey, unlockForeground } = await import("./hotkey"));
         ({ loadWindowState, trackWindowState } = await import("./windowState"));
+        // 主题在开窗前读定（settings 表 theme 键，脏值回落深色）：
+        // 决定窗口预绘底色与 DWM 系统边线颜色
+        const { getSetting } = await import("../server/util/settings");
+        currentTheme = getSetting("theme", "dark") === "light" ? "light" : "dark";
+
+        // 首帧前渲染端同步取主题（index.html 内联脚本套 .dark 类防闪色）：
+        // sendSync 会阻塞渲染进程，只服务这一个「开窗定色」场景，勿作他用
+        ipcMain.on("mp:get-theme-sync", (e) => {
+            e.returnValue = currentTheme;
+        });
+
+        // 渲染端主题切换的即时同步：只更新窗口外观（底色/系统边线），
+        // 持久化由渲染端走 setTheme RPC（settings 表是唯一权威来源）
+        ipcMain.on("mp:set-theme", (_e, v: unknown) => {
+            const next = v === "light" ? "light" : "dark";
+            if (next === currentTheme) return;
+            currentTheme = next;
+            if (!win || win.isDestroyed()) return;
+            win.setBackgroundColor(THEME_BG[currentTheme]);
+            tintSystemBorder(win);
+        });
 
         // ── mpimg 协议：mpimg://<orig|thumb>/<id>（库内图）与 mpimg://cand/<n>（网址导入候选），
         //    图片直读不走 IPC 字节。host 只认三个 kind，path 段必须纯数字，其余一律 404；
@@ -150,24 +173,34 @@ if (!app.requestSingleInstanceLock()) {
     app.on("window-all-closed", () => {});
 }
 
+// ── 界面主题（GaN.UI 深浅双主题）──
+// 窗口预绘底色与 DWM 边线颜色随主题走；渲染端令牌见 src/index.css（同源值）
+type Theme = "dark" | "light";
+let currentTheme: Theme = "dark";
+const THEME_BG: Record<Theme, string> = { dark: "#303030", light: "#f8f8f8" };
+// DWM 边线取 GaN.UI 的 --window-border：深色 #222222；浅色为黑 10% 透明，
+// COLORREF 不支持透明度，取等视觉的实色
+const THEME_BORDER: Record<Theme, string> = { dark: "#222222", light: "#e2e2e6" };
+
 // ── Win11 DWM 系统描边染色 ──
 // frame:false + 默认 thickFrame 保留了边缘缩放与系统阴影，但 Win11 会沿窗口边缘
-// 自画一条 1px 边线，颜色跟随系统强调色（紫色/蓝色都会与薄荷绿主题打架）。
-// DWMWA_BORDER_COLOR 可把它染成任意色：这里染成本应用深蓝，与玻璃窗口融为一体
-// （实测 DWMWA_COLOR_NONE 只是换成中性灰，染色才是真隐身）。
+// 自画一条 1px 边线，颜色跟随系统强调色（紫色/蓝色都会与应用中性灰主题打架）。
+// DWMWA_BORDER_COLOR 可把它染成任意色：这里染成主题边线色，与窗口融为一体。
 // Electron 未暴露该属性，经 PowerShell P/Invoke 一次性设置；该属性跨 hide/show
-// 持久（spotlight 式高频呼出不受影响），窗口生命周期内只需调用一次。
+// 持久（spotlight 式高频呼出不受影响），窗口生命周期内只需按主题调用一次。
 // 失败静默：旧系统无此属性只会返回错误 HRESULT，不影响任何功能。
 function tintSystemBorder(w: BrowserWindow): void {
     if (process.platform !== "win32") return;
     try {
         const hwnd = w.getNativeWindowHandle().readBigUInt64LE(0);
+        const hex = THEME_BORDER[currentTheme].slice(1);
+        const colorref = parseInt(hex.slice(4, 6) + hex.slice(2, 4) + hex.slice(0, 2), 16); // COLORREF = 0x00BBGGRR
         // 脚本经 -EncodedCommand 投递（base64 UTF-16LE），免去引号转义地狱
         const script =
             `$h=[IntPtr]([long]${hwnd.toString()});` +
             `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;` +
             `public class K{[DllImport("dwmapi.dll")]public static extern int DwmSetWindowAttribute(IntPtr h,int a,ref uint v,int s);}';` +
-            `$v=[uint32]2493964;` + // COLORREF 0x0026120C ← rgb(12,18,38)，与 --bg 同族
+            `$v=[uint32]${colorref};` +
             `[K]::DwmSetWindowAttribute($h,34,[ref]$v,4)|Out-Null`; // 34 = DWMWA_BORDER_COLOR
         const child = spawn(
             "powershell.exe",
@@ -193,9 +226,9 @@ function createWindow(): BrowserWindow {
         minHeight: 520,
         show: !startHidden, // 隐藏启动：首帧就不可见，等热键呼出
         autoHideMenuBar: true,
-        frame: false, // 无边框（Aurora Glass 设计）：窗口自绘玻璃浮窗，拖拽区在渲染端 app-drag 类上
+        frame: false, // 无边框：窗口拖拽区在渲染端 app-drag 类上（仅顶栏品牌区）
         // 预绘帧用应用底色：窗口创建到首帧渲染之间的空窗不闪白，与主题一体
-        backgroundColor: "#0d1428",
+        backgroundColor: THEME_BG[currentTheme],
         webPreferences: {
             preload: join(__dirname, "preload.cjs"),
             contextIsolation: true, // 隔离：页面拿不到 require/ipcRenderer

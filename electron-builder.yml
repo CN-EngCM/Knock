@@ -17,6 +17,8 @@ files:
     # es.exe 不进 asar：它经 extraResources 单独放到 resources/（exe 无法从 asar 内 spawn）
     - "!assets/es.exe"
     - package.json
+    # 第三方声明(shadcn/ui 组件与 Darwin UI 配色)随产物分发
+    - THIRD_PARTY_NOTICES.md
     # ── 原生模块瘦身：删源码/构建残留/明确用不到的预编译 ──
     # 注意：darwin 预编译不在这里排除（mac 包运行时需要），win 包的 darwin 裁剪
     # 由 afterPack.cjs 按平台完成，否则 mac 包原生模块加载失败

@@ -119,12 +119,15 @@ export function applyHotkey(id: HotkeyId): HotkeyResult {
         return { ok: false, error: "unauthorized" };
     }
 
-    deactivate();
+    if (id === active) return { ok: true };
+
     if (acc) {
-        // register 失败 = 组合键已被占用（如其他全局启动器）
+        // 先注册新组合键，成功后才注销旧热键，避免冲突时连旧入口也失效。
         const ok = globalShortcut.register(acc, () => onToggle?.());
         if (!ok) return { ok: false, error: "conflict" };
-    } else {
+    }
+    deactivate();
+    if (!acc) {
         lastPress = 0;
         sawOtherKey = false;
         downKeys.clear();

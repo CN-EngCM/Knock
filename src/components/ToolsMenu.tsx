@@ -1,73 +1,59 @@
-import { useEffect, useRef, useState } from "react";
-import { LayoutGrid } from "lucide-react";
+import { LayoutGrid, Plus } from "lucide-react";
 import { TOOLS, type ToolId } from "@/tools/registry";
+import { MenuTrigger, MenuContent, MenuItem } from "@/components/ui/menu";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/useI18n";
 
-// tab 行右簇的「工具」下拉(原顶栏「工具 ▾」的新家):内置工具的可见入口。
-// ● = 已打开（点它只是切到该 tab），○ = 未打开（点它在工具区开新 tab）。
+// 工具下拉：内置工具的可见入口（顶栏按钮 + tab 行的 ＋ 共用）。
+// 已打开的工具行尾亮蓝点（点它只是切到该 tab），未打开显示一句描述。
 type Props = {
     open: ToolId[];
     onOpen: (id: ToolId) => void;
+    /** header = 顶栏带文字按钮；tab = tab 行的 ＋ 图标按钮 */
+    placement?: "header" | "tab";
 };
 
-export function ToolsMenu({ open, onOpen }: Props) {
+export function ToolsMenu({ open, onOpen, placement = "header" }: Props) {
     const { t } = useI18n();
-    const [show, setShow] = useState(false);
-    const wrap = useRef<HTMLDivElement>(null);
-
-    // 打开状态下点外部 / Esc 关闭；菜单未打开时不挂监听
-    useEffect(() => {
-        if (!show) return;
-        const close = (e: MouseEvent) => {
-            if (!wrap.current?.contains(e.target as Node)) setShow(false);
-        };
-        const esc = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setShow(false);
-        };
-        document.addEventListener("mousedown", close);
-        document.addEventListener("keydown", esc);
-        return () => {
-            document.removeEventListener("mousedown", close);
-            document.removeEventListener("keydown", esc);
-        };
-    }, [show]);
-
     return (
-        /* app-no-drag:显式豁免拖拽把手,防交互被窗口层吞(拖拽区现为品牌区,此为保险) */
-        <div ref={wrap} className="app-no-drag relative flex-none">
-            <button
-                type="button"
-                aria-expanded={show}
-                className="icon-btn"
-                title={t("tools.menu")}
-                onClick={() => setShow((v) => !v)}
-            >
-                <LayoutGrid size={14} />
-            </button>
-            {show && (
-                <div className="app-no-drag drop-anim absolute right-0 top-[calc(100%+8px)] z-50 min-w-80 rounded-2xl border border-white/16 bg-raised p-1.5 shadow-2xl shadow-black/40 backdrop-blur-2xl">
-                    {/* app-no-drag:悬浮层悬出所在面板,不豁免会被全窗 app-drag 拖拽区吞掉点击/滚轮 */}
-                    {TOOLS.map((tool) => (
-                        <button
-                            key={tool.id}
-                            type="button"
-                            className="flex w-full items-baseline justify-between gap-6 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[12.5px] text-dim transition-colors hover:bg-white/10 hover:text-text"
-                            onClick={() => {
-                                onOpen(tool.id);
-                                setShow(false);
-                            }}
-                        >
-                            <span>
-                                <span className={open.includes(tool.id) ? "text-accent" : "text-muted"}>
-                                    {open.includes(tool.id) ? "●" : "○"}
-                                </span>{" "}
-                                {t(tool.nameKey)}
-                            </span>
-                            <span className="text-[11.5px] text-muted">{t(tool.descKey)}</span>
-                        </button>
-                    ))}
-                </div>
+        <MenuTrigger align="end">
+            {placement === "header" ? (
+                <Button size="default" className="gap-1.5" aria-label={t("tools.menu")}>
+                    <LayoutGrid className="size-3.5" />
+                    <span>{t("tools.menu")}</span>
+                </Button>
+            ) : (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6"
+                    aria-label={t("tools.menu")}
+                    title={t("tools.menu")}
+                >
+                    <Plus className="size-3.5" />
+                </Button>
             )}
-        </div>
+            <MenuContent className="w-[248px]">
+                {TOOLS.map((tool) => {
+                    const Icon = tool.icon;
+                    const opened = open.includes(tool.id);
+                    return (
+                        <MenuItem
+                            key={tool.id}
+                            onSelect={() => onOpen(tool.id)}
+                            className={opened ? "text-foreground" : undefined}
+                        >
+                            <Icon className="flex-none text-muted-foreground" />
+                            <span className="min-w-0 flex-1 truncate">{t(tool.nameKey)}</span>
+                            <span
+                                className={`ms-auto ps-4 text-[10px] ${opened ? "text-primary" : "text-dim-foreground"}`}
+                            >
+                                {opened ? `● ${t("tools.opened")}` : t(tool.descKey)}
+                            </span>
+                        </MenuItem>
+                    );
+                })}
+            </MenuContent>
+        </MenuTrigger>
     );
 }

@@ -52,10 +52,12 @@ export function ShortcutPickerDialog({ open, onClose, onPick }: Props) {
 
                 <div className="max-h-[50vh] overflow-y-auto border border-line">
                     {shortcuts === null && (
-                        <div className="px-3 py-6 text-center text-[13px] text-muted">{t("picker.loading")}</div>
+                        <div className="px-3 py-6 text-center text-[13px] text-dim-foreground">
+                            {t("picker.loading")}
+                        </div>
                     )}
                     {shortcuts !== null && visible.length === 0 && (
-                        <div className="px-3 py-6 text-center text-[13px] text-muted">{t("picker.empty")}</div>
+                        <div className="px-3 py-6 text-center text-[13px] text-dim-foreground">{t("picker.empty")}</div>
                     )}
                     {visible.map((s) => (
                         <button
@@ -65,10 +67,10 @@ export function ShortcutPickerDialog({ open, onClose, onPick }: Props) {
                                 onPick(s);
                                 onClose();
                             }}
-                            className="flex w-full flex-col gap-0.5 border-b border-line px-3 py-2 text-left last:border-b-0 hover:bg-faint"
+                            className="flex w-full flex-col gap-0.5 border-b border-line px-3 py-2 text-left last:border-b-0 hover:bg-hover"
                         >
-                            <span className="truncate text-[13.5px] text-text">{s.name}</span>
-                            {s.target && <span className="truncate text-[11.5px] text-muted">{s.target}</span>}
+                            <span className="truncate text-[13.5px] text-foreground">{s.name}</span>
+                            {s.target && <span className="truncate text-[11.5px] text-dim-foreground">{s.target}</span>}
                         </button>
                     ))}
                 </div>

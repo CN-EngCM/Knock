@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/useI18n";
 import { useToolInput } from "./toolInput";
 
@@ -33,47 +34,47 @@ export default function JsonTool({ initialInput }: { initialInput?: string | nul
         }
     }
 
-    const btn = "tbtn border border-line px-3 py-1 text-[12px] hover:bg-faint";
-
     return (
-        <div className="flex h-full flex-col gap-2 p-3">
-            <div className="flex flex-none items-center gap-2 text-[12px]">
-                <button type="button" className={btn} onClick={() => run(false)}>
-                    [ {t("json.format")} ]
-                </button>
-                <button type="button" className={btn} onClick={() => run(true)}>
-                    [ {t("json.minify")} ]
-                </button>
-                <button type="button" className={btn} onClick={copy}>
-                    [ {t("json.copy")} ]
-                </button>
+        <div className="flex h-full flex-col">
+            {/* 工具栏：主操作蓝实心，次操作描边，轻量动作用 tbtn */}
+            <div className="flex min-h-[46px] flex-none items-center gap-2 border-b border-line bg-panel px-3.5">
+                <Button appearance="standard" variant="primary" size="sm" onClick={() => run(false)}>
+                    {t("json.format")}
+                </Button>
+                <Button appearance="standard" variant="outline" size="sm" onClick={() => run(true)}>
+                    {t("json.minify")}
+                </Button>
+                <Button appearance="standard" variant="outline" size="sm" onClick={copy}>
+                    {t("json.copy")}
+                </Button>
                 <button
                     type="button"
-                    className={btn}
+                    className="tbtn"
                     onClick={() => {
                         setInput("");
                         setOutput("");
                         setError(null);
                     }}
                 >
-                    [ {t("json.clear")} ]
+                    {t("json.clear")}
                 </button>
                 {input && (
-                    <span className={`text-[11.5px] ${error ? "text-destructive" : "text-muted"}`}>
+                    <span className={`text-[11.5px] ${error ? "text-destructive" : "text-dim-foreground"}`}>
                         {error ?? (output ? t("json.ok") : "")}
                     </span>
                 )}
             </div>
-            <div className="flex min-h-0 flex-1 gap-2">
+            {/* 双栏编辑器：左输入右结果，弱分隔线隔开；结果区用井底区分 */}
+            <div className="flex min-h-0 flex-1">
                 <textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     spellCheck={false}
                     placeholder={t("json.input")}
-                    className="min-w-0 flex-1 resize-none border border-line bg-bg p-2.5 font-mono text-[12.5px] text-text outline-none placeholder:text-muted"
+                    className="min-w-0 flex-1 resize-none bg-transparent p-3 font-mono text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground"
                 />
-                <div className="min-w-0 flex-1 overflow-auto border border-line bg-bg p-2.5 font-mono text-[12.5px]">
-                    <pre className="whitespace-pre text-text">{output}</pre>
+                <div className="min-w-0 flex-1 overflow-auto border-l border-line bg-well p-3 font-mono text-[12.5px]">
+                    <pre className="whitespace-pre text-foreground">{output}</pre>
                 </div>
             </div>
         </div>

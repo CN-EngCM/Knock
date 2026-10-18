@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { api, type AiEffortId, type AiModelConfig, type AiProviderId, type Expert } from "@/api/client";
 import { loadExperts, useExperts } from "@/lib/experts";
 import { dropConv, getActive, setActive } from "@/tools/aiSessions";
@@ -122,9 +123,9 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                     {/* 提示词占满整行多行输入，脱离 row 网格（标签在上不占标签列） */}
                     <div className="flex flex-col gap-2">
                         <Label htmlFor="ee-prompt">{t("ai.prompt")}</Label>
-                        <textarea
+                        <Textarea
                             id="ee-prompt"
-                            className="min-h-36 w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                            className="min-h-36 resize-none"
                             value={prompt}
                             maxLength={8000}
                             spellCheck={false}
@@ -132,16 +133,16 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                         />
                     </div>
 
+                    {/* 单轮/多轮用井底分段控件（与基础设置的主题切换同一套语言） */}
                     <div className={row}>
                         <Label>{t("ai.mode")}</Label>
-                        <div className="flex gap-2">
+                        <div className="inline-flex w-fit items-center gap-0.5 rounded-[4px] border border-border bg-well p-0.5">
                             {[false, true].map((m) => (
                                 <button
                                     key={String(m)}
                                     type="button"
-                                    className={`rounded-md border border-line px-3 py-1.5 text-sm transition-colors ${
-                                        multi === m ? "bg-text text-bg" : "text-dim hover:bg-faint"
-                                    }`}
+                                    className={`tbtn ${multi === m ? "seg-on" : ""}`}
+                                    aria-pressed={multi === m}
                                     onClick={() => setMulti(m)}
                                 >
                                     {t(m ? "ai.modeMulti" : "ai.modeSingle")}
@@ -193,18 +194,34 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                     {typeof target === "number" && (
                         <Button
                             type="button"
+                            appearance="standard"
                             variant="outline"
+                            size="default"
                             disabled={busy}
-                            className={`mr-auto ${confirmDelete ? "border-destructive text-destructive hover:text-destructive" : ""}`}
+                            className={`mr-auto ${confirmDelete ? "text-destructive" : ""}`}
                             onClick={() => void remove()}
                         >
                             {confirmDelete ? t("ai.confirmDelete") : t("ai.delete")}
                         </Button>
                     )}
-                    <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="outline"
+                        size="default"
+                        disabled={busy}
+                        onClick={onClose}
+                    >
                         {t("common.cancel")}
                     </Button>
-                    <Button type="button" disabled={busy || !name.trim() || !prompt.trim()} onClick={() => void save()}>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="primary"
+                        size="default"
+                        disabled={busy || !name.trim() || !prompt.trim()}
+                        onClick={() => void save()}
+                    >
                         {target === "new" ? t("common.create") : t("common.save")}
                     </Button>
                 </DialogFooter>

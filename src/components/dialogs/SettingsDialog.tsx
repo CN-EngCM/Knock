@@ -5,8 +5,10 @@ import {
     type AiModelConfig,
     type FontConfig,
     type FontPatch,
+    type HotkeyId,
     type TermConfig,
     type TermPatch,
+    type ThemeId,
     type ToolAliasPatch,
     type ToolAliases,
     type TranslateConfig,
@@ -26,6 +28,9 @@ type Props = {
     lang: Lang;
     onChangeLang: (lang: Lang) => void;
     platform: string;
+    /** 界面主题（App 状态）：提交走 onTheme（App 负责落库与全局换装） */
+    theme: ThemeId;
+    onTheme: (theme: ThemeId) => void;
     /** 从设置里打开书签导入 */
     onOpenImport: () => void;
     /** 终端设置：shell 候选与当前值；提交走 onTermPatch（App 负责落库与回填） */
@@ -43,6 +48,8 @@ type Props = {
     /** 有道翻译密钥：提交走 onTranslateCfg（App 负责落库与回填） */
     translateCfg: TranslateConfig | null;
     onTranslateCfg: (patch: TranslateConfigPatch) => Promise<boolean>;
+    /** 呼出热键保存成功回填（App 同步左栏脚提示；成败与回滚由 BasicSection 自管） */
+    onHotkeySaved: (hotkey: HotkeyId) => void;
     /** AI 模型配置整表：提交走 onAiModels（App 负责落库与回填） */
     aiModels: AiModelConfig[] | null;
     onAiModels: (list: AiModelConfig[]) => Promise<boolean>;
@@ -68,6 +75,8 @@ export function SettingsDialog({
     lang,
     onChangeLang,
     platform,
+    theme,
+    onTheme,
     onOpenImport,
     termCfg,
     onTermPatch,
@@ -79,6 +88,7 @@ export function SettingsDialog({
     onClipSec,
     translateCfg,
     onTranslateCfg,
+    onHotkeySaved,
     aiModels,
     onAiModels,
     initialSection,
@@ -94,37 +104,39 @@ export function SettingsDialog({
 
     return (
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            {/* 固定高度让四个 tab 高度一致（切 tab 不跳动）；flex 能覆盖基类 grid 是因为 cn() 基于 tailwind-merge 同组后者胜 */}
-            <DialogContent className="flex h-[560px] max-h-[85vh] flex-col sm:max-w-[640px]">
-                <DialogHeader>
+            {/* 固定高度让各分节高度一致（切分节不跳动）；flex 能覆盖基类 grid 是因为 cn() 基于 tailwind-merge 同组后者胜 */}
+            <DialogContent className="flex h-[560px] max-h-[85vh] flex-col gap-0 p-0 sm:max-w-[680px]">
+                <DialogHeader className="border-b border-border bg-panel px-4 py-3">
                     <DialogTitle>{t("settings.title")}</DialogTitle>
                 </DialogHeader>
 
                 {/* 两栏：左=分节导航（SECTION_DEFS 驱动），右=当前分节内容 */}
-                {/* min-h-0 允许本行在固定高度下收缩，溢出转给右侧内容区滚动 */}
-                <div className="flex min-h-0 flex-1 gap-4">
-                    <nav className="flex w-28 flex-none flex-col gap-0.5 border-r border-line pr-2">
+                <div className="flex min-h-0 flex-1">
+                    <nav className="flex w-36 flex-none flex-col gap-0.5 border-e border-line bg-canvas p-2">
                         {SECTION_DEFS.map((s) => (
                             <button
                                 key={s.id}
                                 type="button"
                                 onClick={() => setSec(s.id)}
-                                className={`border-l-2 px-2 py-1.5 text-left text-[13px] ${
+                                aria-pressed={sec === s.id}
+                                className={`min-h-8 rounded-[4px] px-2.5 text-left text-xs transition-colors ${
                                     sec === s.id
-                                        ? "border-text bg-faint text-text"
-                                        : "border-transparent text-muted hover:text-dim"
+                                        ? "bg-rowsel text-primary"
+                                        : "text-muted-foreground hover:bg-hover hover:text-foreground"
                                 }`}
                             >
                                 {t(s.labelKey)}
                             </button>
                         ))}
                     </nav>
-                    <div className="grid min-h-0 min-w-0 flex-1 content-start gap-3 overflow-y-auto">
+                    <div className="grid min-h-0 min-w-0 flex-1 content-start gap-3 overflow-y-auto p-5">
                         {sec === "basic" && (
                             <BasicSection
                                 lang={lang}
                                 onChangeLang={onChangeLang}
                                 platform={platform}
+                                theme={theme}
+                                onTheme={onTheme}
                                 onOpenImport={onOpenImport}
                                 termCfg={termCfg}
                                 onTermPatch={onTermPatch}
@@ -132,6 +144,7 @@ export function SettingsDialog({
                                 onFontPatch={onFontPatch}
                                 clipSec={clipSec}
                                 onClipSec={onClipSec}
+                                onHotkeySaved={onHotkeySaved}
                             />
                         )}
                         {sec === "tools" && <ToolsSection toolAliases={toolAliases} onToolAlias={onToolAlias} />}
@@ -143,8 +156,9 @@ export function SettingsDialog({
                     </div>
                 </div>
 
-                <DialogFooter>
-                    <Button type="button" variant="outline" onClick={onClose}>
+                {/* mx-0 mb-0 覆盖公共 Footer 配合默认 p-5 的 -mx-5 -mb-5（本弹窗 p-0，不覆盖会伸出弹窗边缘） */}
+                <DialogFooter className="mx-0 mb-0 px-4 py-2.5">
+                    <Button type="button" appearance="standard" variant="primary" onClick={onClose}>
                         {t("common.close")}
                     </Button>
                 </DialogFooter>

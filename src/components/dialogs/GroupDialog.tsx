@@ -60,10 +60,10 @@ export function GroupDialog({ open, initialName, onClose, onSubmit }: Props) {
                         />
                     </div>
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>
+                        <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
                             {t("common.cancel")}
                         </Button>
-                        <Button type="submit" disabled={saving}>
+                        <Button type="submit" appearance="standard" variant="primary" size="default" disabled={saving}>
                             {initialName === null ? t("common.create") : t("common.save")}
                         </Button>
                     </DialogFooter>

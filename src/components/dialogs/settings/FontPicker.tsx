@@ -118,7 +118,7 @@ export function FontPicker({ mono = false, value, onCommit }: Props) {
             )}
             {/* 样例按「即将生效」的栈渲染（用户值 + 默认栈回退），改动回填后即时可见 */}
             <div
-                className="mt-1.5 truncate text-[12px] text-muted"
+                className="mt-1.5 truncate text-[12px] text-dim-foreground"
                 style={{ fontFamily: withFallback(value, mono ? DEFAULT_MONO_STACK : DEFAULT_SANS_STACK) }}
             >
                 {FONT_SAMPLE}

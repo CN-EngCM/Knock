@@ -1,6 +1,18 @@
 import { Suspense, lazy, useCallback, Dispatch, useEffect, useMemo, useRef, SetStateAction, useState } from "react";
-import { Toaster, toast } from "sonner";
-import { Check, Pencil, Pin, PinOff, Plus, Settings } from "lucide-react";
+import { toast } from "sonner";
+import {
+    Check,
+    Keyboard,
+    Moon,
+    PanelLeft,
+    Pencil,
+    Pin,
+    PinOff,
+    Plus,
+    Settings2,
+    SquareTerminal,
+    Sun,
+} from "lucide-react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import {
@@ -11,17 +23,22 @@ import {
     type AiModelConfig,
     type FontPatch,
     type Group,
+    type HotkeyId,
     type Item,
     type TermPatch,
+    type ThemeId,
     type ToolAliasPatch,
     type TranslateConfigPatch,
 } from "./api/client";
-import { AsciiSplash } from "./components/AsciiSplash";
+import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
 import { GroupPanel } from "./components/GroupPanel";
 import { SearchBox } from "./components/SearchBox";
 import { Splitter } from "./components/Splitter";
+import { ToolHome } from "./components/ToolHome";
 import { ToolsMenu } from "./components/ToolsMenu";
 import { ToolsZone } from "./components/ToolsZone";
+import type { MessageKey } from "@/i18n/zh";
 import type { ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
@@ -32,6 +49,7 @@ import { ImportDialog } from "./components/dialogs/ImportDialog";
 import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
 import { useDragSensors } from "./lib/dnd";
 import { applyFonts } from "./lib/fonts";
+import { applyTheme, currentTheme } from "./lib/theme";
 import { useI18n } from "./i18n/useI18n";
 
 // 终端会话宿主懒加载：xterm 体积不小，首屏用不到就不进主 chunk（拆分由 Vite 自动完成）
@@ -59,7 +77,7 @@ type DialogState =
     // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
     | { kind: "settings"; section?: SectionId };
 
-// ── 布局状态：侧栏宽度 / 侧栏显隐 ──
+// ── 布局状态：启动列表宽度 / 显隐 ──
 // 与界面语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
 type Layout = {
     sidebarW: number;
@@ -67,7 +85,7 @@ type Layout = {
 };
 
 function loadLayout(): Layout {
-    const fallback: Layout = { sidebarW: 290, sidebarVisible: true };
+    const fallback: Layout = { sidebarW: 246, sidebarVisible: true };
     try {
         const raw = localStorage.getItem("mypage-layout");
         if (!raw) return fallback;
@@ -116,9 +134,11 @@ export default function App() {
     }, []);
     const [platform, setPlatform] = useState("");
     const [layout, setLayout] = useState<Layout>(loadLayout);
+    // 界面主题：初始值来自 main.tsx 首帧前套好的 <html> 类；切换经 settings 表持久化
+    const [theme, setTheme] = useState<ThemeId>(currentTheme);
     // 已打开工具是纯运行时状态：每次启动强制从空开始，不落盘不还原（用户决策）
     const [openTools, setOpenTools] = useState<ToolId[]>([]);
-    // 激活页签：工具 id（字符串）或终端会话 id（数字），null = 无激活。
+    // 激活页签：工具 id（字符串）或终端会话 id（数字），null = 工具首页。
     // 单一状态源避免「工具与会话各自记激活」的不可能态
     const [activeTab, setActiveTab] = useState<ToolId | number | null>(null);
     // 终端会话清单（tab 行里的一等 tab）：spawn 成功进、关 tab / shell 自退出；
@@ -169,6 +189,26 @@ export default function App() {
         });
     }, []);
 
+    // ── 主题切换：乐观更新界面类 + 通知主进程换窗口底色/边线，再落库；
+    //    落库失败回滚（settings 表是唯一权威来源）──
+    const switchTheme = useCallback(
+        async (next: ThemeId) => {
+            const prev = theme;
+            if (next === prev) return;
+            setTheme(next);
+            applyTheme(next);
+            window.knock.setTheme(next);
+            const r = await api.setTheme(next);
+            if (!r.ok) {
+                setTheme(prev);
+                applyTheme(prev);
+                window.knock.setTheme(prev);
+                toast.error(t("toast.error"));
+            }
+        },
+        [theme, t],
+    );
+
     // 启动顺序：先取运行环境（platform），再拉数据。
     useEffect(() => {
         (async () => {
@@ -188,6 +228,9 @@ export default function App() {
     // 剪贴板素材时限（主进程每次呼出直接读库，这里的值只喂设置页展示）
     const [clipPaste, setClipPaste] = useRpcValue(api.getClipPaste);
     const clipSec = clipPaste?.seconds ?? null;
+
+    // 呼出热键（侧栏脚提示用）：设置页保存成功经 onHotkeySaved 回填；预设标签复用设置页的 hotkey 文案
+    const [hotkeyCfg, setHotkeyCfg] = useRpcValue(api.getHotkey);
 
     // 翻译密钥（有道）：只喂设置页编辑态；翻译请求由主进程现读库，不经这里
     const [translateCfg, setTranslateCfg] = useRpcValue(api.getTranslateConfig);
@@ -249,6 +292,12 @@ export default function App() {
             () => api.setAiModels(list),
             () => setAiModels(list),
         );
+    }
+
+    // 热键保存成功回填：setHotkey 的成败与冲突回滚在 BasicSection 内自管，
+    // 成功后经此同步左栏脚提示（presets 等其余字段保留不动）
+    function onHotkeySaved(hotkey: HotkeyId) {
+        setHotkeyCfg((cur) => (cur ? { ...cur, hotkey } : cur));
     }
 
     // ── 变更操作：成功后重拉数据并轻提示，失败统一 toast ──
@@ -406,7 +455,7 @@ export default function App() {
         return () => window.removeEventListener("keydown", onWindowKeyDown);
     }, []);
 
-    // ── 工具生命周期：菜单/搜索候选打开 / 点 tab 切换 / 点 × 关闭（卸载释放）──
+    // ── 工具生命周期：菜单/首页卡片/搜索候选打开 / 点 tab 切换 / 点 × 关闭（卸载释放）──
     // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
     // 已开的 tab（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
     // expertId 仅 ai 工具有意义（进入指定专家）；它与 input 相互独立，
@@ -421,7 +470,7 @@ export default function App() {
     function closeTool(id: ToolId) {
         const next = openTools.filter((x) => x !== id);
         setOpenTools(next);
-        // 关掉活动工具 tab：回落最后剩余工具，其次最后一枚会话 tab
+        // 关掉活动工具 tab：回落最后剩余工具，其次最后一枚会话 tab，最终回工具首页
         setActiveTab((cur) => (cur === id ? (next.at(-1) ?? termSessions.at(-1)?.id ?? null) : cur));
     }
 
@@ -459,7 +508,7 @@ export default function App() {
     }, []);
 
     // 活动页签指向已不存在的会话（关 tab / shell 自退）时回落：
-    // 最后一枚会话 → 最后一个工具 → 无激活（右列空态）
+    // 最后一枚会话 → 最后一个工具 → 工具首页
     useEffect(() => {
         if (typeof activeTab === "number" && !termSessions.some((s) => s.id === activeTab)) {
             setActiveTab(termSessions.at(-1)?.id ?? openTools.at(-1) ?? null);
@@ -493,228 +542,252 @@ export default function App() {
         ));
 
     return (
-        /* 窗口本体即玻璃浮窗(设计稿里玻璃外的极光矩形是画布背景,不做进应用)。
-           拖拽区仅左上角品牌区(用户决策):整窗其余位置全部可点,
+        /* 两区结构：左 = 启动列表（可整栏收起），右 = tab 区（工具与终端会话共用一条 tab 行）。
+           拖拽区仅顶栏左上角品牌区(用户决策):整窗其余位置全部可点,
            避免大范围 app-drag 在窗口层吞事件(hover/点击/滚轮) */
-        <div className="flex h-screen flex-col overflow-hidden font-sans text-text">
-            <Toaster
-                position="bottom-center"
-                toastOptions={{
-                    style: {
-                        background: "var(--surface-raised)",
-                        color: "var(--text)",
-                        border: "1px solid rgba(255, 255, 255, 0.16)",
-                        borderRadius: "12px",
-                        fontFamily: "inherit",
-                    },
-                }}
-            />
+        <div className="flex h-screen flex-col overflow-hidden font-sans text-foreground">
+            <Toaster position="bottom-center" />
 
-            <div className="knock-glass relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="knock-glow" aria-hidden />
-
-                {/* 顶栏一行六件:品牌 + 过滤输入(占满剩余宽) + 工具菜单 + 新建终端 + 钉住 + 设置
-                    (工具菜单/新建终端用户定移顶栏,原 tab 栏右簇;顶栏高度由搜索胶囊撑出
-                    ——SearchBar 与 TitleBar 同高 46,pt-4 让胶囊顶边距 = 工作区四周的
-                    16px,不再垂直居中出 5px 贴顶缝。z-20 必须高于工作区的 z-10:搜索
-                    下拉悬出顶栏范围,同 z 会整树输给后出现的兄弟节点) */}
-                <header className="relative z-20 flex flex-none items-center gap-3 pt-4 pr-4 pl-5">
-                    {/* 唯一的窗口拖拽区:品牌文字块拉满顶栏行高当把手(self-stretch 撑出 46px 高) */}
-                    <span className="app-drag flex select-none self-stretch items-center pr-3 text-[14.5px] font-semibold tracking-wide text-white">
-                        敲敲 Knock
+            {/* 顶栏:品牌(唯一拖拽把手) + 搜索(占满剩余宽) + 常驻公共入口
+                (侧栏开关/工具菜单/新建终端 | 钉住/主题/设置) */}
+            <header className="app-no-drag relative z-20 flex h-[61px] flex-none items-center gap-3.5 border-b border-well bg-[linear-gradient(var(--bar-top),var(--bar-bottom))] pl-4 pr-3">
+                {/* 品牌区 = 窗口拖拽把手；宽度与收起时对齐侧栏视觉 */}
+                <span className="app-drag flex h-full w-[178px] flex-none select-none items-center gap-2.5 pr-2">
+                    <span
+                        className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
+                        aria-hidden
+                    >
+                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
                     </span>
-                    <div className="app-no-drag flex min-w-0 flex-1 items-center">
-                        <SearchBox
-                            groups={groups}
-                            items={items}
-                            // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
-                            toolAliases={toolAliases ?? {}}
-                            onOpenItem={openItem}
-                            onOpenTool={openTool}
-                            onOpenPath={openLocalPath}
-                        />
-                    </div>
+                    <strong className="text-base font-medium tracking-wider">敲敲</strong>
+                    <span className="text-[11px] tracking-wide text-dim-foreground">Knock</span>
+                </span>
+                <div className="app-no-drag relative flex min-w-0 flex-1 items-center">
+                    <SearchBox
+                        groups={groups}
+                        items={items}
+                        // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
+                        toolAliases={toolAliases ?? {}}
+                        onOpenItem={openItem}
+                        onOpenTool={openTool}
+                        onOpenPath={openLocalPath}
+                    />
+                </div>
+                <div className="app-no-drag flex flex-none items-center gap-1">
+                    <button
+                        type="button"
+                        className="icon-btn"
+                        aria-pressed={layout.sidebarVisible}
+                        onClick={() => setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))}
+                        title={t("btn.sidebar")}
+                        aria-label={t("btn.sidebar")}
+                    >
+                        <PanelLeft className="size-4" />
+                    </button>
                     <ToolsMenu open={openTools} onOpen={openTool} />
                     <button
                         type="button"
-                        className="icon-btn app-no-drag"
+                        className="icon-btn"
                         onClick={() => void spawnSession()}
                         title={t("term.new")}
+                        aria-label={t("term.new")}
                     >
-                        <Plus size={14} />
+                        <SquareTerminal className="size-4" />
                     </button>
+                    <span className="mx-1.5 h-[17px] w-px flex-none bg-border" aria-hidden />
                     <button
                         type="button"
-                        className="icon-btn app-no-drag"
+                        className="icon-btn"
                         aria-pressed={pinned}
                         onClick={togglePin}
                         title={t(pinned ? "btn.unpin" : "btn.pin")}
+                        aria-label={t(pinned ? "btn.unpin" : "btn.pin")}
                     >
-                        {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                        {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
                     </button>
                     <button
                         type="button"
-                        className="icon-btn app-no-drag"
+                        className="icon-btn"
+                        onClick={() => void switchTheme(theme === "dark" ? "light" : "dark")}
+                        title={t("btn.theme")}
+                        aria-label={t("btn.theme")}
+                    >
+                        {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                    </button>
+                    <button
+                        type="button"
+                        className="icon-btn"
                         onClick={() => setDialog({ kind: "settings" })}
                         title={t("btn.settings")}
+                        aria-label={t("btn.settings")}
                     >
-                        <Settings size={14} />
+                        <Settings2 className="size-4" />
                     </button>
-                </header>
+                </div>
+            </header>
 
-                {serverOk === false || groups.length === 0 ? (
-                    /* 断线态 / 冷启动空态：玻璃面板占满工作区居中提示 */
-                    <main className="glass-panel app-no-drag relative z-10 m-4 mt-2.5 flex min-h-0 flex-1 flex-col items-center justify-center gap-4 text-dim">
-                        {groups.length === 0 && serverOk !== false ? (
-                            <>
-                                <span className="text-[13px]">{t("group.none")}</span>
+            {/* 两区工作区 */}
+            <div className="relative z-10 flex min-h-0 flex-1">
+                {layout.sidebarVisible && (
+                    /* 启动列表：分组平铺 + 编辑开关；脚 = 呼出热键提示 + 编辑模式多选操作 */
+                    <aside
+                        className="app-no-drag flex min-h-0 flex-none flex-col border-r border-well bg-background"
+                        style={{ width: layout.sidebarW }}
+                    >
+                        <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
+                            <span className="text-xs font-medium">{t("side.title")}</span>
+                            <span className="flex items-center gap-0.5">
                                 <button
                                     type="button"
-                                    className="tbtn border border-line px-4 py-2 hover:bg-faint"
-                                    onClick={() => setDialog({ kind: "group-create" })}
+                                    className="icon-btn size-7"
+                                    aria-pressed={editing}
+                                    onClick={() => setEditing((v) => !v)}
+                                    title={editing ? t("btn.editing") : t("btn.edit")}
+                                    aria-label={editing ? t("btn.editing") : t("btn.edit")}
                                 >
-                                    [ {t("group.noneBtn")} ]
+                                    {editing ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
                                 </button>
-                            </>
-                        ) : (
-                            <>
-                                <span className="text-[13px] tracking-wide">──[ {t("offline.title")} ]──</span>
-                                <span className="max-w-[460px] text-center text-[12.5px] text-muted">
-                                    {t("offline.hint")}
-                                </span>
-                                <button
-                                    type="button"
-                                    className="tbtn border border-line px-4 py-2 hover:bg-faint"
-                                    onClick={() => refresh()}
-                                >
-                                    [ {t("offline.retry")} ]
-                                </button>
-                            </>
-                        )}
-                    </main>
-                ) : (
-                    /* 两栏工作区：左=启动面板(全部分组平铺,可整栏收起),右=tab 区
-                       （工具与终端会话共用一条 tab 行，各是一等 tab）。
-                       拖拽区仅品牌区,本容器与面板全部可点(面板保留 app-no-drag 语义) */
-                    <div className="relative z-10 flex min-h-0 flex-1 gap-1.5 p-4 pt-2.5">
-                        {layout.sidebarVisible && (
-                            <aside
-                                className="glass-panel app-no-drag flex flex-none flex-col overflow-hidden"
-                                style={{ width: layout.sidebarW }}
-                            >
-                                <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5">
-                                    {editing ? (
-                                        /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
-                                        <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
-                                            <SortableContext
-                                                items={groups.map((g) => g.id)}
-                                                strategy={verticalListSortingStrategy}
-                                            >
-                                                {sidebarGroups(true)}
-                                                <button
-                                                    className="mt-1 flex items-center justify-center rounded-[10px] border border-dashed border-line px-3 py-2.5 text-[12.5px] text-muted transition-colors hover:text-text"
-                                                    onClick={() => setDialog({ kind: "group-create" })}
-                                                >
-                                                    ＋ {t("group.new")}
-                                                </button>
-                                            </SortableContext>
-                                        </DndContext>
-                                    ) : (
-                                        sidebarGroups(false)
-                                    )}
-                                </div>
-
-                                {/* 面板脚：编辑开关常驻；编辑中勾了条目时多选操作条挪到这里 */}
-                                <div className="flex flex-none items-center gap-2 border-t border-white/10 px-2.5 py-1.5">
+                                {groups.length > 0 && (
                                     <button
                                         type="button"
-                                        className="ghost-btn"
-                                        aria-pressed={editing}
-                                        onClick={() => setEditing((v) => !v)}
-                                        title={editing ? t("btn.editing") : t("btn.edit")}
+                                        className="icon-btn size-7"
+                                        onClick={() => setDialog({ kind: "item-create", groupId: groups[0].id })}
+                                        title={t("side.add")}
+                                        aria-label={t("side.add")}
                                     >
-                                        {editing ? <Check size={14} /> : <Pencil size={14} />}
+                                        <Plus className="size-3.5" />
                                     </button>
-                                    {editing && selectedIds.size > 0 && (
-                                        <>
-                                            <span className="text-[12px] text-dim">
-                                                {t("edit.selected")}: {selectedIds.size}
-                                            </span>
-                                            <span className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    className="tbtn"
-                                                    onClick={() => setSelectedIds(new Set())}
-                                                >
-                                                    [ {t("edit.clear")} ]
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    className="tbtn"
-                                                    onClick={() =>
-                                                        setDialog({ kind: "items-bulk-delete", ids: [...selectedIds] })
-                                                    }
-                                                >
-                                                    [ {t("edit.deleteSelected")} ]
-                                                </button>
-                                            </span>
-                                        </>
-                                    )}
+                                )}
+                            </span>
+                        </div>
+
+                        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3">
+                            {groups.length === 0 ? (
+                                /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
+                                <div className="flex flex-col items-center gap-3 px-3 py-8 text-center">
+                                    <span className="text-xs text-muted-foreground">{t("group.none")}</span>
+                                    <span className="text-[11px] leading-relaxed text-dim-foreground">
+                                        {t("group.noneHint")}
+                                    </span>
+                                    <Button
+                                        appearance="standard"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setDialog({ kind: "group-create" })}
+                                    >
+                                        {t("group.noneBtn")}
+                                    </Button>
                                 </div>
-                            </aside>
-                        )}
-
-                        {layout.sidebarVisible && (
-                            <Splitter
-                                orientation="vertical"
-                                onDrag={(e) => setLayout((l) => ({ ...l, sidebarW: clamp(e.clientX, 230, 480) }))}
-                            />
-                        )}
-
-                        <div className="flex min-w-0 flex-1 flex-col">
-                            {openTools.length === 0 && termSessions.length === 0 ? (
-                                /* 右列全空（无工具无会话）→ ASCII 标志占位 */
-                                <AsciiSplash />
+                            ) : editing ? (
+                                /* 编辑模式：分组可拖拽排序，末尾出现新建分组块 */
+                                <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
+                                    <SortableContext
+                                        items={groups.map((g) => g.id)}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        {sidebarGroups(true)}
+                                        <button
+                                            className="flex min-h-[32px] w-full items-center justify-center rounded-[4px] border border-dashed border-border text-[11px] text-dim-foreground transition-colors hover:bg-hover hover:text-foreground"
+                                            onClick={() => setDialog({ kind: "group-create" })}
+                                        >
+                                            ＋ {t("group.new")}
+                                        </button>
+                                    </SortableContext>
+                                </DndContext>
                             ) : (
-                                <ToolsZone
-                                    open={openTools}
-                                    active={activeTab}
-                                    onActivate={setActiveTab}
-                                    onClose={closeTool}
-                                    sidebarVisible={layout.sidebarVisible}
-                                    onToggleSidebar={() =>
-                                        setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))
-                                    }
-                                    onOpenSettings={() =>
-                                        setDialog({
-                                            kind: "settings",
-                                            // 引导分节跟随当前激活工具（translate/ai 有缺配置态）
-                                            section:
-                                                (typeof activeTab === "string" && TOOL_SETTINGS_SECTION[activeTab]) ||
-                                                "translate",
-                                        })
-                                    }
-                                    sessions={termSessions}
-                                    onActivateSession={setActiveTab}
-                                    onCloseSession={closeSession}
-                                >
-                                    {/* 会话 xterm 宿主：随首个会话挂载、末个会话结束卸载；
-                        激活的是工具时仅 display:none（切回不丢屏幕与回滚缓冲） */}
-                                    {termSessions.length > 0 && (
-                                        <Suspense fallback={null}>
-                                            <TerminalZone
-                                                sessions={termSessions}
-                                                activeId={typeof activeTab === "number" ? activeTab : null}
-                                                monoFont={fontCfg?.monoFont ?? ""}
-                                                fontSize={termCfg?.fontSize ?? 13}
-                                            />
-                                        </Suspense>
-                                    )}
-                                </ToolsZone>
+                                sidebarGroups(false)
                             )}
                         </div>
-                    </div>
+
+                        {/* 面板脚：呼出热键提示；编辑中勾了条目时多选操作条挪到这里 */}
+                        <div className="flex min-h-[38px] flex-none flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-line px-3 py-2 text-[11px] text-dim-foreground">
+                            <Keyboard className="size-3 flex-none" aria-hidden />
+                            <span className="whitespace-nowrap">
+                                {hotkeyCfg ? `${t(`settings.hotkey.${hotkeyCfg.hotkey}` as MessageKey)}，` : ""}
+                                {t("side.hint")}
+                            </span>
+                            {editing && selectedIds.size > 0 && (
+                                <span className="ml-auto flex items-center gap-2 text-muted-foreground">
+                                    <span className="whitespace-nowrap">
+                                        {t("edit.selected")}: {selectedIds.size}
+                                    </span>
+                                    <button type="button" className="tbtn" onClick={() => setSelectedIds(new Set())}>
+                                        {t("edit.clear")}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="tbtn tbtn-danger"
+                                        onClick={() => setDialog({ kind: "items-bulk-delete", ids: [...selectedIds] })}
+                                    >
+                                        {t("edit.deleteSelected")}
+                                    </button>
+                                </span>
+                            )}
+                        </div>
+                    </aside>
                 )}
+
+                {layout.sidebarVisible && (
+                    <Splitter
+                        orientation="vertical"
+                        onDrag={(e) => setLayout((l) => ({ ...l, sidebarW: clamp(e.clientX, 230, 480) }))}
+                    />
+                )}
+
+                <main className="relative flex min-w-0 flex-1 flex-col bg-canvas">
+                    {serverOk === false ? (
+                        /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
+                        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+                            <span className="text-[13px] tracking-wide text-muted-foreground">
+                                ── {t("offline.title")} ──
+                            </span>
+                            <span className="max-w-[460px] text-center text-xs text-dim-foreground">
+                                {t("offline.hint")}
+                            </span>
+                            <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
+                                {t("offline.retry")}
+                            </Button>
+                        </div>
+                    ) : (
+                        <ToolsZone
+                            open={openTools}
+                            active={activeTab}
+                            onActivate={setActiveTab}
+                            onOpenTool={openTool}
+                            onClose={closeTool}
+                            onGoHome={() => setActiveTab(null)}
+                            home={<ToolHome onOpen={openTool} />}
+                            onOpenSettings={() =>
+                                setDialog({
+                                    kind: "settings",
+                                    // 引导分节跟随当前激活工具（translate/ai 有缺配置态）
+                                    section:
+                                        (typeof activeTab === "string" && TOOL_SETTINGS_SECTION[activeTab]) ||
+                                        "translate",
+                                })
+                            }
+                            sessions={termSessions}
+                            onActivateSession={setActiveTab}
+                            onCloseSession={closeSession}
+                        >
+                            {/* 会话 xterm 宿主：随首个会话挂载、末个会话结束卸载；
+                                激活的是工具时仅 display:none（切回不丢屏幕与回滚缓冲） */}
+                            {termSessions.length > 0 && (
+                                <Suspense fallback={null}>
+                                    <TerminalZone
+                                        sessions={termSessions}
+                                        activeId={typeof activeTab === "number" ? activeTab : null}
+                                        monoFont={fontCfg?.monoFont ?? ""}
+                                        fontSize={termCfg?.fontSize ?? 13}
+                                    />
+                                </Suspense>
+                            )}
+                        </ToolsZone>
+                    )}
+                </main>
             </div>
 
             {/* ── 弹窗区 ── */}
@@ -757,6 +830,8 @@ export default function App() {
                 lang={lang}
                 onChangeLang={setLang}
                 platform={platform}
+                theme={theme}
+                onTheme={switchTheme}
                 onOpenImport={() => setDialog({ kind: "import" })}
                 termCfg={termCfg}
                 onTermPatch={patchTerm}
@@ -768,6 +843,7 @@ export default function App() {
                 onClipSec={patchClipSec}
                 translateCfg={translateCfg}
                 onTranslateCfg={patchTranslate}
+                onHotkeySaved={onHotkeySaved}
                 aiModels={aiModels}
                 onAiModels={patchAiModels}
             />

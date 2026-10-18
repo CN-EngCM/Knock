@@ -1,10 +1,9 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { AppWindow, ArrowUpRight, Folder, Globe, GripVertical, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { api, type Item } from "@/api/client";
-import { KIND_TAG } from "@/lib/kindTag";
 import { useI18n } from "@/i18n/useI18n";
 
 // 从书签 URL 提取主机名作为图标缓存键；解析失败返回 null（不显示图标）
@@ -37,7 +36,7 @@ function useFavicon(domain: string): string | null | undefined {
                 const r = await api.getFavicon(domain);
                 if (r.ok) next = URL.createObjectURL(new Blob([r.data.bytes], { type: r.data.mime }));
             } catch {
-                /* 拉取失败 = 无图标，退回纯文字行 */
+                /* 拉取失败 = 无图标，退回类型图标 */
             }
             faviconCache.set(domain, next);
             if (alive) setUrl(next);
@@ -49,12 +48,21 @@ function useFavicon(domain: string): string | null | undefined {
     return url;
 }
 
-/** 16px favicon：加载中占位、失败整体隐藏（保持原 <img> 行为） */
-function FaviconImg({ domain }: { domain: string }) {
+/** 16px favicon：加载中占位、失败渲染回退（类型图标） */
+function FaviconImg({ domain, fallback }: { domain: string; fallback: React.ReactNode }) {
     const url = useFavicon(domain);
-    if (url === null) return null;
+    if (url === null) return <>{fallback}</>;
     if (url === undefined) return <span className="size-4 flex-none" aria-hidden />;
     return <img src={url} alt="" className="size-4 flex-none rounded-[2px]" />;
+}
+
+/** 行首类型图标：书签有 favicon 用 favicon（失败回退地球仪），其余按条目类型取 Lucide 图标 */
+function KindIcon({ item }: { item: Item }) {
+    const host = faviconHost(item);
+    const Icon = item.kind === "app" ? AppWindow : item.kind === "file" ? Folder : SquareTerminal;
+    const fallback = <Globe className="size-3.5 text-muted-foreground" aria-hidden />;
+    if (host) return <FaviconImg domain={host} fallback={fallback} />;
+    return <Icon className="size-3.5 text-muted-foreground" aria-hidden />;
 }
 
 type Props = {
@@ -78,29 +86,30 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
         transition: sortable.transition,
     };
 
-    // 行样式(设计定稿):10px 圆角 + 悬停浮白;文字 12.5px,行高 ~26px
+    // 行样式:38px 宽松点击区(启动列表保留宽松密度),悬停浮填充
     const rowClass =
-        "rowbtn group flex w-full items-center gap-2 rounded-[10px] border border-transparent px-2 py-1 text-[12.5px] text-left " +
-        "transition-colors hover:border-white/10 hover:bg-white/[0.07]";
-
-    const host = faviconHost(item);
+        "rowbtn group flex h-[38px] w-full items-center gap-2.5 rounded-[4px] border border-transparent px-2 text-left transition-colors hover:bg-hover";
 
     const content = (
         <>
-            <span className="kind-badge flex-none">{KIND_TAG[item.kind]}</span>
-            {host && <FaviconImg domain={host} />}
-            <span className="min-w-0 flex-1 truncate text-white/[0.94]">{item.title}</span>
-            {editing && <GripVertical className="size-3.5 flex-none text-muted" aria-hidden />}
-            <span
-                className="flex-none text-accent opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                aria-hidden
-            >
-                ❯
+            <span className="grid size-[25px] flex-none place-items-center rounded-[5px] border border-border bg-panel">
+                <KindIcon item={item} />
             </span>
+            <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                <span className="w-full truncate text-xs text-foreground">{item.title}</span>
+                <span className="w-full truncate text-[10px] leading-tight text-dim-foreground">{item.target}</span>
+            </span>
+            {editing && <GripVertical className="size-3.5 flex-none text-dim-foreground" aria-hidden />}
+            {!editing && (
+                <ArrowUpRight
+                    className="size-3.5 flex-none text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                    aria-hidden
+                />
+            )}
         </>
     );
 
-    // 三种形态：编辑模式（勾选框 + 点击=编辑，可拖拽）/ 普通模式 bookmark（真链接）/ 普通模式 app+file
+    // 三种形态：编辑模式（勾选框 + 点击=编辑，可拖拽）/ 普通模式 bookmark（真链接）/ 普通模式 app+file+command
     // 编辑态把勾选框放在按钮外层 wrapper 里：交互元素不嵌套，点击也不会冒泡成「编辑」
     const row = editing ? (
         <div ref={sortable.setNodeRef} style={style} className="flex w-full items-center gap-1">
@@ -109,7 +118,7 @@ export function ItemRow({ item, editing, selected, onToggleSelect, onOpen, onEdi
                 checked={!!selected}
                 onChange={() => onToggleSelect?.(item.id)}
                 aria-label={item.title}
-                className="ml-1 size-3 flex-none accent-text"
+                className="ml-1 size-3 flex-none accent-primary"
             />
             <button
                 type="button"

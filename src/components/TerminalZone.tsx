@@ -16,17 +16,17 @@ import { useI18n } from "@/i18n/useI18n";
 /** 会话 tab 行（App 与本组件共享；spawn/kill/清单维护在 App） */
 export type TermSession = { id: number; label: string };
 
-// 主题色从 CSS 变量现读(单一 Aurora Glass 深色体系,令牌固定;xterm 需要实底
-// 色,不支持 alpha,故用专门的 --term-* 实底令牌而非半透明玻璃令牌)
+// 主题色从 CSS 变量现读（--term-* 实底令牌随 .dark 类切换，见 index.css；
+// xterm 需要实底色且自带的解析器不认 color-mix()，选区色用专门的 rgba 令牌）
 function themeFromVars(): ITheme {
     const cs = getComputedStyle(document.documentElement);
     const v = (n: string) => cs.getPropertyValue(n).trim();
     return {
         background: v("--term-bg"),
         foreground: v("--term-fg"),
-        cursor: v("--accent"),
+        cursor: v("--primary"),
         cursorAccent: v("--term-bg"),
-        selectionBackground: v("--glow"),
+        selectionBackground: v("--term-sel"),
     };
 }
 
@@ -192,6 +192,18 @@ export function TerminalZone({ sessions, activeId, monoFont, fontSize }: Props) 
             if (id !== null) fitAndSync(id);
         });
     }, [monoFont, fontSize, fitAndSync]);
+
+    // 主题切换（html 的 .dark 类变化）→ 已有会话运行期换主题色，不重建进程不清缓冲
+    useEffect(() => {
+        const root = document.documentElement;
+        const sync = () => {
+            const theme = themeFromVars();
+            for (const term of terms.current.values()) term.options.theme = theme;
+        };
+        const observer = new MutationObserver(sync);
+        observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+        return () => observer.disconnect();
+    }, []);
 
     return (
         <div ref={rootRef} className="relative h-full min-h-0 bg-[var(--term-bg)]">

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { DndContext, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Plus, Trash2 } from "lucide-react";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { ItemRow } from "./ItemRow";
 import { useDragSensors } from "@/lib/dnd";
@@ -26,8 +26,7 @@ type Props = {
     onReorderItems: (groupId: number, ordered: Item[]) => void;
 };
 
-// v2.2 起分组是左侧栏里的纵向区块（不再是网格面板）：
-// 组头可点击折叠，条目区沿用原有渲染与拖拽。
+// 左栏里的纵向分组区块：组头可点击折叠，条目区沿用原有渲染与拖拽。
 export function GroupPanel({
     group,
     items,
@@ -71,24 +70,25 @@ export function GroupPanel({
             // sortable.attributes 含 role="button"/aria-disabled，只在可拖拽时铺上，
             // 否则普通模式下整个区块会被读屏器误报成一个禁用按钮
             {...(editing ? sortable.attributes : {})}
-            className="flex flex-col pb-1.5"
+            className="mb-4 flex flex-col"
         >
-            {/* 组头(设计定稿):名称 12 半粗白 + 发丝线撑满 + 等宽小计数;点击折叠/展开;
-                右键改名/删除;编辑模式显示把手与加号 */}
+            {/* 组头:折叠箭头 + 名称(次级色小字) + 等宽计数;点击折叠/展开;
+                右键改名/删除;编辑模式显示把手与加号/删除 */}
             <ContextMenu>
                 <ContextMenuTrigger asChild>
                     <h2
                         {...(editing ? sortable.listeners : {})}
                         onClick={() => setCollapsed((v) => !v)}
-                        className="flex h-6 cursor-default touch-none select-none items-center gap-2 px-1 pb-1.5 pt-2 text-[12px] font-semibold tracking-wide text-white/88"
+                        className="flex min-h-[25px] cursor-default touch-none select-none items-center gap-1.5 px-1.5 pb-1 pt-1.5 text-[11px] font-medium text-muted-foreground"
                     >
-                        {editing && <GripVertical className="size-3.5 flex-none cursor-grab text-muted" aria-hidden />}
-                        <span className="w-2.5 flex-none text-[9px] text-muted" aria-hidden>
-                            {showItems ? "▾" : "▸"}
+                        {editing && (
+                            <GripVertical className="size-3 flex-none cursor-grab text-dim-foreground" aria-hidden />
+                        )}
+                        <span className="flex-none text-dim-foreground" aria-hidden>
+                            {showItems ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                         </span>
                         <span className="whitespace-nowrap">{group.name}</span>
-                        <span className="h-px min-w-4 flex-1 bg-white/15" aria-hidden />
-                        <span className="flex-none font-mono text-[10px] font-normal text-white/40">
+                        <span className="ml-auto flex-none font-mono text-[10px] font-normal text-dim-foreground">
                             {items.length}
                         </span>
                         {editing && (
@@ -99,9 +99,10 @@ export function GroupPanel({
                                     onAddItem(group);
                                 }}
                                 title={t("item.new")}
-                                className="flex-none text-muted hover:text-text"
+                                aria-label={t("item.new")}
+                                className="flex-none rounded-[3px] p-0.5 text-dim-foreground transition-colors hover:bg-hover hover:text-foreground"
                             >
-                                <Plus className="size-3.5" />
+                                <Plus className="size-3" />
                             </button>
                         )}
                         {editing && (
@@ -112,9 +113,10 @@ export function GroupPanel({
                                     onDelete(group);
                                 }}
                                 title={t("group.delete")}
-                                className="flex-none text-muted hover:text-destructive"
+                                aria-label={t("group.delete")}
+                                className="flex-none rounded-[3px] p-0.5 text-dim-foreground transition-colors hover:bg-hover hover:text-destructive"
                             >
-                                <Trash2 className="size-3.5" />
+                                <Trash2 className="size-3" />
                             </button>
                         )}
                     </h2>
@@ -128,7 +130,7 @@ export function GroupPanel({
             </ContextMenu>
 
             {showItems && (
-                <div className="flex flex-col gap-0.5 px-0.5 pb-2">
+                <div className="flex flex-col gap-0.5 px-1 pb-2">
                     {editing ? (
                         <DndContext sensors={dragSensors} onDragEnd={handleItemDragEnd}>
                             <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
@@ -160,15 +162,15 @@ export function GroupPanel({
                     )}
 
                     {items.length === 0 && !editing && (
-                        <span className="px-2 py-1 text-[12px] text-muted">{t("group.empty")}</span>
+                        <span className="px-2 py-1.5 text-[11px] text-dim-foreground">{t("group.empty")}</span>
                     )}
                     {editing && (
                         <button
                             type="button"
                             onClick={() => onAddItem(group)}
-                            className="flex items-center gap-2 rounded-[10px] border border-dashed border-line px-2 py-1 text-[12px] text-muted transition-colors hover:text-text"
+                            className="mt-0.5 flex min-h-[32px] items-center gap-2 rounded-[4px] border border-dashed border-border px-2 text-[11px] text-dim-foreground transition-colors hover:bg-hover hover:text-foreground"
                         >
-                            <span className="kind-badge">new</span>
+                            <Plus className="size-3.5" />
                             {t("item.new")}…
                         </button>
                     )}

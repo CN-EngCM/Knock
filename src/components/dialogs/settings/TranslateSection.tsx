@@ -113,14 +113,17 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
                     </button>
                 </span>
             </div>
-            <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.translate.hint")}</div>
+            <div className="-mt-1 px-1 text-[11.5px] text-dim-foreground">{t("settings.translate.hint")}</div>
 
             <div className={row}>
                 <Label>{t("settings.translate.test")}</Label>
-                {/* 动作行而非输入框样式：实心反色按钮 + 结果内联右侧，与上方文本输入拉开视觉差异 */}
+                {/* 动作行而非输入框样式：主操作按钮 + 结果内联右侧，与上方文本输入拉开视觉差异 */}
                 <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
                     <Button
                         type="button"
+                        appearance="standard"
+                        variant="primary"
+                        size="default"
                         className="w-fit px-4"
                         disabled={test === "testing"}
                         onClick={() => void testTranslate()}
@@ -128,7 +131,7 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
                         {test === "testing" ? t("settings.translate.testing") : t("settings.translate.testBtn")}
                     </Button>
                     {test === "ok" && (
-                        <span className="flex items-center gap-1 text-[12px] text-dim">
+                        <span className="flex items-center gap-1 text-[12px] text-dim-foreground">
                             <Check size={13} />
                             {t("settings.translate.testOk")}
                         </span>

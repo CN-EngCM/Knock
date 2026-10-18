@@ -82,14 +82,14 @@ export function GroupSidebar({
     const inbox = list.find((g) => g.inbox) ?? null;
     const userGroups = list.filter((g) => !g.inbox);
 
-    // 行样式对齐 AiTool 专家列表：左侧粗边是最强选中信号，悬浮只变字色
+    // 行样式：选中 = 选中行填充 + 强调色文字，未选中悬浮给悬停填充
     const rowCls = (on: boolean) =>
-        `flex w-full cursor-default select-none items-center gap-1.5 border-l-2 px-2 py-1.5 text-left text-[12.5px] ${
-            on ? "border-text bg-faint text-text" : "border-transparent text-muted hover:text-dim"
+        `flex w-full cursor-default select-none items-center gap-1.5 px-2 py-1.5 text-left text-[12.5px] ${
+            on ? "bg-rowsel text-primary" : "text-dim-foreground hover:bg-hover hover:text-foreground"
         }`;
     // 过滤 chip（与 FileSearchTool 的后缀 chips 同款骨架：seg-on 为选中态）
     const chipCls = (on: boolean) =>
-        `border px-1.5 py-0.5 text-[12px] ${on ? "seg-on" : "border-line text-dim hover:bg-faint"}`;
+        `border px-1.5 py-0.5 text-[12px] ${on ? "seg-on" : "border-line text-dim-foreground hover:bg-hover"}`;
 
     /** 组行的文件拖放：只对拖文件（types 含 Files）反应，避免劫持其他拖拽 */
     function dropHandlers(gid: number) {
@@ -142,7 +142,7 @@ export function GroupSidebar({
             <div
                 onClick={() => renamingId !== group.id && onSelect(group.id)}
                 className={`${rowCls(on)} ${
-                    dragging && !on ? "bg-faint outline outline-1 -outline-offset-1 outline-dim" : ""
+                    dragging && !on ? "bg-hover outline outline-1 -outline-offset-1 outline-primary" : ""
                 }`}
             >
                 {renamingId === group.id ? (
@@ -156,13 +156,13 @@ export function GroupSidebar({
                             else if (e.key === "Escape") setRenamingId(null);
                         }}
                         onBlur={commitRename}
-                        className="min-w-0 flex-1 border border-line bg-bg px-1 text-[12px] text-text outline-none"
+                        className="min-w-0 flex-1 rounded-[4px] border border-line bg-[var(--control-input-background)] px-1 text-[12px] text-foreground outline-none"
                     />
                 ) : (
                     <>
                         <span className="min-w-0 flex-1 truncate">{name}</span>
-                        {group.private && <LockOpen size={11} className="flex-none text-muted" />}
-                        <span className="flex-none text-[10.5px] tabular-nums text-muted">{group.count}</span>
+                        {group.private && <LockOpen size={11} className="flex-none text-dim-foreground" />}
+                        <span className="flex-none text-[10.5px] tabular-nums text-dim-foreground">{group.count}</span>
                     </>
                 )}
             </div>
@@ -211,7 +211,7 @@ export function GroupSidebar({
     }
 
     return (
-        <aside className="flex w-48 flex-none flex-col border-r border-line">
+        <aside className="flex w-48 flex-none flex-col border-e border-line bg-background">
             {/* 滚动区外套一层 flex 列：内容滚动，锁入口钉在滚动区底部（贴「新建分组」
                 上方分隔线），不随内容多少浮动 */}
             <div className="flex min-h-0 flex-1 flex-col">
@@ -219,16 +219,16 @@ export function GroupSidebar({
                     {/* 「全部图片」伪条目：count = 各组之和 */}
                     <div className={rowCls(active === "all")} onClick={() => onSelect("all")}>
                         <span className="min-w-0 flex-1 truncate">{t("gallery.all")}</span>
-                        <span className="flex-none text-[10.5px] tabular-nums text-muted">{allCount}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-dim-foreground">{allCount}</span>
                     </div>
                     {inbox && groupEntry(inbox)}
                     {/* 「画廊」伪条目：跨分组的放映池，count 由后端按锁定视角算好 */}
                     <div className={rowCls(active === "wall")} onClick={() => onSelect("wall")}>
                         <span className="min-w-0 flex-1 truncate">{t("gallery.wall")}</span>
-                        <span className="flex-none text-[10.5px] tabular-nums text-muted">{wallCount}</span>
+                        <span className="flex-none text-[10.5px] tabular-nums text-dim-foreground">{wallCount}</span>
                     </div>
                     {userGroups.map((g) => groupEntry(g))}
-                    {groups === null && <div className="px-2 py-1.5 text-[12px] text-muted">…</div>}
+                    {groups === null && <div className="px-2 py-1.5 text-[12px] text-dim-foreground">…</div>}
 
                     {/* 全局 tag 过滤：分组列表下方一条分隔线隔开，不占缩略图区 */}
                     {allTags.length > 0 && (
@@ -265,7 +265,7 @@ export function GroupSidebar({
                         type="button"
                         onClick={onLockClick}
                         aria-label={locked ? t("gallery.pw.unlockBtn") : t("gallery.pw.lockBtn")}
-                        className="flex w-full flex-none justify-end px-2 py-1 text-muted hover:text-dim"
+                        className="flex w-full flex-none justify-end px-2 py-1 text-dim-foreground hover:text-muted-foreground"
                     >
                         {locked ? <Lock size={12} /> : <LockOpen size={12} />}
                     </button>
@@ -283,11 +283,12 @@ export function GroupSidebar({
                         }}
                         onBlur={() => void submitCreate()}
                         placeholder={t("gallery.groupNamePlaceholder")}
-                        className="h-6 w-full border border-line bg-bg px-1.5 text-[12px] text-text outline-none placeholder:text-muted focus:border-dim"
+                        className="h-6 w-full rounded-[4px] border border-line bg-[var(--control-input-background)] px-1.5 text-[12px] text-foreground outline-none placeholder:text-dim-foreground focus:border-primary"
                     />
                 ) : (
                     <Button
                         type="button"
+                        appearance="standard"
                         variant="outline"
                         size="xs"
                         className="w-full"
@@ -299,7 +300,14 @@ export function GroupSidebar({
                         ＋ {t("gallery.newGroup")}
                     </Button>
                 )}
-                <Button type="button" variant="outline" size="xs" className="w-full" onClick={onUrlImport}>
+                <Button
+                    type="button"
+                    appearance="standard"
+                    variant="outline"
+                    size="xs"
+                    className="w-full"
+                    onClick={onUrlImport}
+                >
                     <Globe />
                     {t("gallery.urlImport")}
                 </Button>

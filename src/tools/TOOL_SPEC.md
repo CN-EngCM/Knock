@@ -19,7 +19,7 @@
 新增工具按固定顺序改三处，漏一处 `pnpm typecheck` 即报错：
 
 1. `server/schemas.ts`：`TOOL_IDS` 尾部追加 id（小写短词）。工具别名按 `toolAlias:<id>` 存库，id 词汇必须前后端共享，所以事实来源在 schemas 而非 registry。带主进程的工具把请求/配置的 zod schema 也写在这里。
-2. `src/tools/registry.ts`：`TOOLS` 数组追加一条 `ToolMeta`。
+2. `src/tools/registry.ts`：`TOOLS` 数组追加一条 `ToolMeta`（必填 `icon`：Lucide 图标组件，工具首页卡片与工具菜单共用）。
 3. `src/i18n/zh.ts` 与 `en.ts` **同时**补 `tool.<id>.name` / `tool.<id>.desc`（en 用 `Record<MessageKey, string>` 强制对齐）。
 
 `acceptsText` 只给「能吃文本素材」的工具标（见 §4）。
@@ -67,11 +67,12 @@
 - **状态机**：`"idle" | "loading" | "done" | "error"` 为基线，按需加工具特定态（`winOnly` / `noConfig`），一个 useState 字符串判别联合，渲染按态分支。
 - **异步竞态**（输入驱动请求的工具必备）：防抖 300–600ms + `seq` ref 序号，晚归旧包直接丢弃；清理函数取消定时器；输入清空时推进序号并回 idle。FileSearchTool / TranslateTool 是同款范式。
 - **操作反馈**：sonner toast；成功用具体文案，失败兜底 `toast.error`。复制走 `navigator.clipboard` + try/catch。
-- **视觉骨架**（与现有工具保持一致，具体值可微调但不要另起炉灶）：
-  - 根容器吃满 `h-full`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
-  - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；
-  - 文字按钮用 `@/components/ui/button` 的 Button 组件（2026-08 用户决策）：主操作 default 实心、次操作 outline；工具内默认 **size xs**（h-6、12px 字号，与 12–12.5px 等宽密度对齐），仅空态 CTA 等焦点动作用 sm；图标类轻量动作可继续用 tbtn。按钮文案直接写动词短语，不加方括号装饰。存量工具（files/translate/qr/json）保持 tbtn 旧样式，后续另行统一；
-  - 输入框 `border-line bg-bg text-[12.5px]` 家族（2026-08 字体改造后全站默认 sans，不再写 font-mono）。
+- **视觉骨架**（GaN.UI 中性灰体系，令牌见 `src/index.css`，与现有工具保持一致，具体值可微调但不要另起炉灶）：
+  - 根容器吃满 `h-full`；工具栏行约 46px `border-b border-line bg-panel px-3.5`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
+  - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；双栏编辑器中间用 `border-l border-line` 分隔，代码/结果区底 `bg-well`；
+  - 按钮用 `@/components/ui/button` 的 Button 组件（GaN.UI 版）：主操作 `appearance="standard" variant="primary"`（蓝实心），次操作 `appearance="standard" variant="outline"`；工具内默认 **size sm**（h-22px，紧凑工具栏密度），弹窗底部主/次按钮用 **size default**（25px）。按钮文案直接写动词短语，不加方括号装饰；
+  - 行内轻量文字动作（复制/打开/清空等）用 `.tbtn` 应用类（11px 次级色，悬停浮填充，已带 padding 与圆角，不要再叠 border/padding 工具类），危险动作加 `.tbtn-danger`；
+  - 文字档位：主 `text-foreground` / 次级 `text-muted-foreground` / 较弱 `text-dim-foreground`；悬停填充 `hover:bg-hover`、选中行 `bg-rowsel`；手写输入框用 `bg-[var(--control-input-background)]` 井底（或直接用 `@/components/ui/input` 的 Input / textarea 组件）。
 - **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。
 
 ## 8. i18n 约定

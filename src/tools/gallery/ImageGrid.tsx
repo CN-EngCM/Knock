@@ -55,9 +55,9 @@ function Thumb({ img }: { img: GalleryImage }) {
     if (failed) {
         // 图挂了不裂版：兜底块显示名字与格式
         return (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-faint px-1 text-center">
-                <span className="w-full truncate text-[10.5px] text-dim">{img.title}</span>
-                <span className="text-[10px] text-muted">{img.format}</span>
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-hover px-1 text-center">
+                <span className="w-full truncate text-[10.5px] text-muted-foreground">{img.title}</span>
+                <span className="text-[10px] text-dim-foreground">{img.format}</span>
             </div>
         );
     }
@@ -137,20 +137,20 @@ export function ImageGrid({
         <div
             ref={scrollRef}
             onClick={onClearSelection}
-            className={`min-h-0 flex-1 overflow-auto p-2 ${dropHint ? "bg-faint" : ""}`}
+            className={`min-h-0 flex-1 overflow-auto p-2 ${dropHint ? "bg-hover" : "bg-canvas"}`}
         >
             {status === "loading" && items.length === 0 && (
-                <div className="px-6 py-10 text-center text-[12px] text-muted">…</div>
+                <div className="px-6 py-10 text-center text-[12px] text-dim-foreground">…</div>
             )}
 
             {status === "done" && items.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                    <span className="text-[13px] text-dim">{t("gallery.empty")}</span>
-                    <span className="text-[11.5px] text-muted">
+                    <span className="text-[13px] text-muted-foreground">{t("gallery.empty")}</span>
+                    <span className="text-[11.5px] text-dim-foreground">
                         {t(wallView ? "gallery.wall.emptyHint" : "gallery.emptyHint")}
                     </span>
                     {!wallView && (
-                        <Button type="button" size="sm" onClick={onImportCta}>
+                        <Button type="button" appearance="standard" variant="primary" size="sm" onClick={onImportCta}>
                             {t("gallery.import")}
                         </Button>
                     )}
@@ -180,20 +180,22 @@ export function ImageGrid({
                                         onMenuIds(selectedIds.has(img.id) ? [...selectedIds] : [img.id])
                                     }
                                     title={img.title}
-                                    className={`relative aspect-square cursor-default overflow-hidden rounded border ${
+                                    className={`relative aspect-square cursor-default overflow-hidden rounded-[4px] border ${
                                         selectMode && selected
-                                            ? "border-text ring-1 ring-text"
-                                            : "border-line hover:border-dim"
+                                            ? "border-primary ring-1 ring-primary"
+                                            : "border-line hover:border-border"
                                     }`}
                                     // content-visibility：万级规模时屏外单元格跳过排版
                                     style={{ contentVisibility: "auto", containIntrinsicSize: "auto 132px" }}
                                 >
                                     <Thumb img={img} />
                                     {selectMode && (
-                                        // 左上角方框勾选标记：未勾=半透明空框（压在图上要可读），勾=反色实底打勾
+                                        // 左上角方框勾选标记：未勾=半透明空框（压在图上要可读），勾=强调色实底打勾
                                         <span
                                             className={`absolute left-1 top-1 flex size-4 items-center justify-center rounded-[3px] border ${
-                                                selected ? "border-text bg-text text-bg" : "border-white/70 bg-black/30"
+                                                selected
+                                                    ? "border-primary bg-primary text-primary-foreground"
+                                                    : "border-white/70 bg-black/30"
                                             }`}
                                         >
                                             {selected && <Check size={11} strokeWidth={3.5} />}
@@ -215,7 +217,9 @@ export function ImageGrid({
                                                 onClick={() => onMove(g.id)}
                                             >
                                                 {g.inbox ? t("gallery.inbox") : g.name}
-                                                <span className="ml-auto pl-3 text-[11px] text-muted">{g.count}</span>
+                                                <span className="ml-auto pl-3 text-[11px] text-dim-foreground">
+                                                    {g.count}
+                                                </span>
                                             </ContextMenuItem>
                                         ))}
                                     </ContextMenuSubContent>

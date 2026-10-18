@@ -1,6 +1,9 @@
 import * as React from "react";
-
 import { cn } from "@/lib/utils";
+
+// 输入面材质(GaN.UI):井底 + 内阴影 + 0.5px 内描边;Textarea 复用同一表面
+export const inputSurface =
+    "cursor-default rounded-[4px] border-0 bg-[var(--control-input-background)] text-xs text-foreground shadow-[inset_0_1px_2px_#0001,inset_0_0_0_0.5px_var(--control-input-edge),0_0.5px_0_#ffffff12] dark:shadow-[inset_0_1px_2px_#0003,inset_0_0_0_0.5px_var(--control-input-edge),0_0.5px_0_#ffffff12] transition-colors duration-100 placeholder:text-muted-foreground disabled:opacity-50 aria-invalid:[outline-style:solid] aria-invalid:outline-1 aria-invalid:outline-destructive";
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
     return (
@@ -8,14 +11,12 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
             type={type}
             data-slot="input"
             className={cn(
-                "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30",
-                "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
+                inputSurface,
+                "h-[25px] w-full min-w-0 px-2 py-1 file:me-2 file:h-[19px] file:border-0 file:rounded-sm file:bg-white/15 file:px-2 file:text-[11px] file:text-foreground disabled:cursor-default",
                 className,
             )}
             {...props}
         />
     );
 }
-
 export { Input };

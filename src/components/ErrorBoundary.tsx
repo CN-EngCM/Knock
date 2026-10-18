@@ -16,12 +16,12 @@ export class ErrorBoundary extends Component<Props, State> {
     render() {
         if (!this.state.error) return this.props.children;
         return (
-            <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
-                <p className="text-[15px] text-text">──[ 页面出错 / Something went wrong ]──</p>
-                <p className="max-w-[520px] break-all text-[12.5px] text-muted">{String(this.state.error)}</p>
+            <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+                <p className="text-[15px] text-foreground">──[ 页面出错 / Something went wrong ]──</p>
+                <p className="max-w-[520px] break-all text-xs text-dim-foreground">{String(this.state.error)}</p>
                 <button
                     type="button"
-                    className="border border-line px-4 py-2 text-[13px] text-dim hover:text-text"
+                    className="rounded-[4px] border border-border px-4 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
                     onClick={() => window.location.reload()}
                 >
                     [ 刷新 / Reload ]

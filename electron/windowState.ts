@@ -28,9 +28,10 @@ export function loadWindowState(): WinState {
         const s = JSON.parse(raw) as Partial<WinState>;
         if (!isInt(s.width) || !isInt(s.height)) return DEFAULT;
         return {
-            // 下限 900×560：老版本存下的 1000×700 可用，但再小就装不下三区布局
-            width: Math.max(s.width, 900),
-            height: Math.max(s.height, 560),
+            // 下限 = 最小窗口尺寸（main.ts 的 minWidth/minHeight）：老版本存下的
+            // 更小值装不下两区布局，统一抬到已验证最小值
+            width: Math.max(s.width, 840),
+            height: Math.max(s.height, 520),
             // 负坐标合法（多显示器左侧屏），但原屏幕可能已拔掉——交给 Electron 钳制
             x: isInt(s.x) ? s.x : undefined,
             y: isInt(s.y) ? s.y : undefined,

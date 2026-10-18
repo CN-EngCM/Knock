@@ -13,10 +13,10 @@ import {
     type ShellId,
     type TermConfig,
     type TermPatch,
+    type ThemeId,
 } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang, MessageKey } from "@/i18n";
-import { BG_PRESETS, loadBgColor, saveBgColor } from "@/lib/theme";
 import { CommitInput, row } from "./shared";
 import { FontPicker } from "./FontPicker";
 
@@ -32,10 +32,18 @@ const HOTKEY_LABEL: Record<HotkeyId, MessageKey> = {
     "ctrl-alt-space": "settings.hotkey.ctrl-alt-space",
 };
 
+const THEME_OPTIONS: ReadonlyArray<{ id: ThemeId; labelKey: "theme.dark" | "theme.light" }> = [
+    { id: "dark", labelKey: "theme.dark" },
+    { id: "light", labelKey: "theme.light" },
+];
+
 type Props = {
     lang: Lang;
     onChangeLang: (lang: Lang) => void;
     platform: string;
+    /** 界面主题（App 状态）：提交走 onTheme（App 负责落库、切换 <html> 类与窗口外观） */
+    theme: ThemeId;
+    onTheme: (theme: ThemeId) => void;
     /** 从设置里打开书签导入 */
     onOpenImport: () => void;
     /** 终端设置：shell 候选与当前值；提交走 onTermPatch（App 负责落库与回填） */
@@ -47,13 +55,17 @@ type Props = {
     /** 剪贴板素材时限（秒，0 = 关闭） */
     clipSec: number | null;
     onClipSec: (seconds: number) => Promise<boolean>;
+    /** 呼出热键保存成功回填（App 同步左栏脚提示） */
+    onHotkeySaved: (hotkey: HotkeyId) => void;
 };
 
-/** 基础设置分节：语言 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 书签导入 / 运行环境 */
+/** 基础设置分节：语言 / 主题 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 书签导入 / 运行环境 */
 export function BasicSection({
     lang,
     onChangeLang,
     platform,
+    theme,
+    onTheme,
     onOpenImport,
     termCfg,
     onTermPatch,
@@ -61,6 +73,7 @@ export function BasicSection({
     onFontPatch,
     clipSec,
     onClipSec,
+    onHotkeySaved,
 }: Props) {
     const { t } = useI18n();
     // Radix Dialog 关闭即卸载分节内容，挂载时拉一次即可，每次打开都会重新拉取
@@ -72,8 +85,6 @@ export function BasicSection({
     const [fontSize, setFontSize] = useState("13");
     // 剪贴板时限编辑态（秒）
     const [clipSecEdit, setClipSecEdit] = useState("5");
-    // 背景色编辑态：预设/取色都即点即存（saveBgColor 写 localStorage + 应用 --bg-base）
-    const [bg, setBg] = useState(loadBgColor);
     // 数据目录（null = 尚未拉取）；迁移是「搬库 → 重启」的长流程，pending 防重复触发
     const [dataDirInfo, setDataDirInfo] = useState<{ dir: string; isDefault: boolean } | null>(null);
     const [migrating, setMigrating] = useState(false);
@@ -125,6 +136,7 @@ export function BasicSection({
             const r = await api.setHotkey(next);
             if (r.ok) {
                 toast.success(t("settings.hotkey.saved"));
+                onHotkeySaved(r.data.hotkey); // 服务端实际生效值回填 App，左栏脚提示即时更新
             } else {
                 if (prev) setHotkey(prev);
                 toast.error(r.error.kind === "conflict" ? t("settings.hotkey.conflict") : t("toast.error"));
@@ -226,49 +238,29 @@ export function BasicSection({
                 </Select>
             </div>
 
+            {/* 主题：井底分段控件，即点即换（App 落库 + 全局换装） */}
             <div className={row}>
-                <Label>{t("settings.bg")}</Label>
-                <span className="flex min-h-9 flex-wrap items-center gap-2">
-                    {BG_PRESETS.map((p) => (
+                <Label>{t("settings.theme")}</Label>
+                <div className="inline-flex w-fit items-center gap-0.5 rounded-[4px] border border-border bg-well p-0.5">
+                    {THEME_OPTIONS.map((opt) => (
                         <button
-                            key={p.value}
+                            key={opt.id}
                             type="button"
-                            title={t(p.key)}
-                            aria-pressed={bg === p.value}
-                            onClick={() => {
-                                setBg(p.value);
-                                saveBgColor(p.value);
-                            }}
-                            className={`size-6 flex-none rounded-full border border-white/25 transition-transform hover:scale-110 ${
-                                bg === p.value ? "ring-2 ring-accent" : ""
-                            }`}
-                            style={{ background: p.value }}
-                        />
+                            className={`tbtn ${theme === opt.id ? "seg-on" : ""}`}
+                            aria-pressed={theme === opt.id}
+                            onClick={() => onTheme(opt.id)}
+                        >
+                            {t(opt.labelKey)}
+                        </button>
                     ))}
-                    {/* 自定义取色:原生 color input 透明铺在当前色圆点上,点击弹系统取色器 */}
-                    <label
-                        title={t("settings.bg.custom")}
-                        className="relative size-6 flex-none cursor-pointer rounded-full border border-white/25 transition-transform hover:scale-110"
-                        style={{ background: bg }}
-                    >
-                        <input
-                            type="color"
-                            value={bg}
-                            onChange={(e) => {
-                                setBg(e.target.value);
-                                saveBgColor(e.target.value);
-                            }}
-                            aria-label={t("settings.bg.custom")}
-                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                        />
-                    </label>
-                </span>
+                </div>
             </div>
+            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.themeHint")}</div>
 
             <div className={row}>
                 <Label>{t("settings.hotkey")}</Label>
                 {hotkey === null ? (
-                    <span className="text-[13px] text-muted">…</span>
+                    <span className="text-xs text-dim-foreground">…</span>
                 ) : (
                     <Select value={hotkey} onValueChange={(v) => changeHotkey(v as HotkeyId)}>
                         <SelectTrigger className="w-full">
@@ -296,29 +288,32 @@ export function BasicSection({
                     className="w-24"
                 />
             </div>
-            <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.clipHint")}</div>
+            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.clipHint")}</div>
 
             <div className={row}>
                 <Label>{t("settings.autostart")}</Label>
                 {autostart === null ? (
-                    <span className="text-[13px] text-muted">…</span>
+                    <span className="text-xs text-dim-foreground">…</span>
                 ) : !autostart.supported ? (
-                    <span className="text-[13px] text-muted">{t("settings.autostart.unsupported")}</span>
+                    <span className="text-xs text-dim-foreground">{t("settings.autostart.unsupported")}</span>
                 ) : (
-                    <span className="flex min-h-9 items-center gap-2.5">
+                    <span className="flex min-h-[25px] items-center gap-2.5">
                         <Switch
                             id="autostart-switch"
                             checked={autostart.enabled}
                             disabled={busy}
                             onCheckedChange={() => void toggleAutostart()}
                         />
-                        <label htmlFor="autostart-switch" className="cursor-pointer text-[13px] font-normal text-dim">
+                        <label
+                            htmlFor="autostart-switch"
+                            className="cursor-pointer text-xs font-normal text-muted-foreground"
+                        >
                             {autostart.enabled ? t("settings.autostart.enabled") : t("settings.autostart.disabled")}
                         </label>
                     </span>
                 )}
             </div>
-            <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.autostart.moveHint")}</div>
+            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.autostart.moveHint")}</div>
 
             <div className={row}>
                 <Label>{t("settings.font.ui")}</Label>
@@ -333,7 +328,7 @@ export function BasicSection({
             <div className={row}>
                 <Label>{t("settings.term.shell")}</Label>
                 {shell === null || termCfg === null ? (
-                    <span className="text-[13px] text-muted">…</span>
+                    <span className="text-xs text-dim-foreground">…</span>
                 ) : (
                     <Select value={shell} onValueChange={(v) => changeShell(v as ShellId)}>
                         <SelectTrigger className="w-full">
@@ -349,7 +344,7 @@ export function BasicSection({
                     </Select>
                 )}
             </div>
-            <div className="-mt-1 px-1 text-[11.5px] text-muted">{t("settings.term.shellHint")}</div>
+            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.term.shellHint")}</div>
 
             <div className={row}>
                 <Label htmlFor="term-size">{t("settings.term.fontSize")}</Label>
@@ -367,8 +362,9 @@ export function BasicSection({
                 <Label>{t("settings.import")}</Label>
                 <Button
                     type="button"
+                    appearance="standard"
                     variant="outline"
-                    className="justify-start font-normal"
+                    size="sm"
                     // App 侧切换弹窗状态即关闭设置页，无需再显式调 onClose
                     onClick={onOpenImport}
                 >
@@ -379,19 +375,20 @@ export function BasicSection({
             <div className={row}>
                 <Label>{t("settings.dataDir")}</Label>
                 {migrating ? (
-                    <span className="text-[13px] text-muted">{t("settings.dataDir.migrating")}</span>
+                    <span className="text-xs text-dim-foreground">{t("settings.dataDir.migrating")}</span>
                 ) : dataDirInfo === null ? (
-                    <span className="text-[13px] text-muted">…</span>
+                    <span className="text-xs text-dim-foreground">…</span>
                 ) : (
-                    <span className="flex min-h-9 min-w-0 items-center gap-2">
+                    <span className="flex min-h-[25px] min-w-0 items-center gap-2">
                         {/* 长路径截断展示，悬停看全名；min-w-0 让 1fr 列允许收缩触发截断 */}
-                        <span title={dataDirInfo.dir} className="min-w-0 flex-1 truncate text-[13px] text-muted">
+                        <span title={dataDirInfo.dir} className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                             {dataDirInfo.dir}
                         </span>
                         <Button
                             type="button"
+                            appearance="standard"
                             variant="outline"
-                            className="justify-start font-normal"
+                            size="sm"
                             onClick={() => void pickAndChangeDataDir()}
                         >
                             {t("settings.dataDir.change")}
@@ -399,8 +396,9 @@ export function BasicSection({
                         {!dataDirInfo.isDefault && (
                             <Button
                                 type="button"
+                                appearance="standard"
                                 variant="outline"
-                                className="justify-start font-normal"
+                                size="sm"
                                 onClick={() => void changeDataDir(null)}
                             >
                                 {t("settings.dataDir.reset")}
@@ -412,7 +410,7 @@ export function BasicSection({
 
             <div className={row}>
                 <Label>{t("settings.info")}</Label>
-                <span className="text-[13px] text-muted">Electron · {platform}</span>
+                <span className="text-xs text-muted-foreground">Electron · {platform}</span>
             </div>
         </>
     );
