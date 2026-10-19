@@ -66,59 +66,60 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 敲敲（Knock）：个人启动器（网页收藏 / 本机应用 / 文件快捷方式 / 终端命令）。Electron 托盘常驻，**双击 Ctrl** 呼出主窗口，无 TCP 端口、无 HTTP 服务、单机单用户。同时是 TypeScript 学习项目——可读性优先，禁止过度设计与炫技，这是硬约束。
 
-界面为 GaN.UI 中性灰体系（来源仓库 `D:\MyCode\GaN.UI`，v0.1.0 源码接入，组件复制于 `src/components/ui/`，令牌与材质全在 `src/index.css`）：**深浅双主题**，深色默认、浅色为 Darwin 取色基线，强调色蓝（深 `#0a84ff` / 浅 `#2563eb`），字体 Outfit（可变）+ IBM Plex Mono（woff2 内嵌于 `src/assets/fonts/`，**不引入 Geist**）。主题唯一权威来源是 settings 表 `theme` 键（dark/light）：主进程开窗前直读定窗口 `backgroundColor` 与 DWM 系统边线颜色（`tintSystemBorder` 按主题取色，跨 hide/show 持久但随最大化切换重置，故创建/ready-to-show/maximize/主题切换各补染一次）；渲染端 `index.html` 内联脚本经 preload 的 sendSync 同步桥（`getThemeSync`）在首帧前给 `<html>` 套 `.dark` 类，切换时顶栏/设置分段控件即点即换并经 `mp:set-theme` 通知主进程更新窗口外观。窗口**无边框**（`frame:false`），窗口边缘圆角与描边全归 OS 不自画，拖拽区 = 仅顶栏左上角品牌区（`app-drag` 把手；用户决策：大范围拖拽区会在窗口层吞掉 hover/点击/滚轮，其余全窗一律可点，交互元素保留 `app-no-drag` 语义保险）。主结构：顶栏（品牌拖拽区 + 搜索 + 侧栏开关/工具菜单/新建终端/钉住/主题切换/设置常驻）+ 左侧启动列表（side-head 编辑/添加、分组平铺、脚部呼出热键提示与编辑多选操作）+ 右侧 tab 区（工具与终端会话共用一条 tab 行，行首工具首页按钮、无激活页签时显示工具首页 `ToolHome` 卡片网格）。
+界面为 GaN.UI 中性灰体系（来源仓库 `D:\MyCode\GaN.UI`，v0.1.0 源码接入，组件复制于 `src/renderer/src/components/ui/`，令牌与材质全在 `src/renderer/src/index.css`）：**深浅双主题**，深色默认、浅色为 Darwin 取色基线，强调色蓝（深 `#0a84ff` / 浅 `#2563eb`），字体 Outfit（可变）+ IBM Plex Mono（woff2 内嵌于 `src/renderer/src/assets/fonts/`，**不引入 Geist**）。主题唯一权威来源是 settings 表 `theme` 键（dark/light）：主进程开窗前直读定窗口 `backgroundColor` 与 DWM 系统边线颜色（`tintSystemBorder` 按主题取色，跨 hide/show 持久但随最大化切换重置，故创建/ready-to-show/maximize/主题切换各补染一次）；渲染端 `index.html` 内联脚本经 preload 的 sendSync 同步桥（`getThemeSync`）在首帧前给 `<html>` 套 `.dark` 类，切换时顶栏/设置分段控件即点即换并经 `mp:set-theme` 通知主进程更新窗口外观。窗口**无边框**（`frame:false`），窗口边缘圆角与描边全归 OS 不自画，拖拽区覆盖整个顶栏的品牌和空白区域，搜索框、按钮和弹出内容保留 `app-no-drag` 以正常接收输入事件。主结构：顶栏（品牌拖拽区 + 搜索 + 钉住/侧栏开关/主题切换/设置常驻）+ 左侧启动列表（固定宽度 246px，与工具区直接相邻；顶部添加菜单（新建分组/添加启动项；无分组时禁用添加启动项）、分组平铺；悬停把手排序，右键编辑与删除，无编辑模式、多选和脚部说明）+ 右侧 tab 区（工具与终端会话共用一条 tab 行，使用 GaN.UI 基础标签页（列表高 27px、标签高 21px，带工具图标和关闭按钮），标签与内容面板间距、工作区四周留白均为 6px，内容面板带细边框和小圆角；仅保留加号工具菜单，无标签时显示工具首页 `ToolHome` 卡片网格；终端与其他工具共用菜单、首页卡片和搜索入口，每次选择新建独立会话）。
 
 ## 常用命令
 
 ```bash
-pnpm dev        # Vite(127.0.0.1:5173) + Electron 窗口；改前端热更新，改主进程代码需重启
+pnpm dev        # electron-vite 三段构建；界面热更新，主进程改动自动重启，预加载改动自动刷新页面
 pnpm typecheck  # tsc --noEmit，改完代码必须先过这个
 pnpm format     # prettier --write .，改完代码必须跑（风格：双引号/分号/缩进4/行宽 120，见 .prettierrc）
-pnpm build      # vite build（dist/）+ esbuild 主进程（out/）
+pnpm build      # electron-vite build → out/main、out/preload、out/renderer
 pnpm dist:win   # build + electron-builder → Windows 目录版（release/win-unpacked/，无单文件 exe）
 pnpm dist:mac   # build + electron-builder → macOS 目录版（release/mac/，arm64，未签名）
 ```
 
 - 只用 pnpm，版本 **≥11**（`pnpm-workspace.yaml` 用了 v11 的 `allowBuilds` 供应链放行；v9 及更旧会报 packages 字段错误）。`allowBuilds` 与 `nodeLinker: hoisted`（electron-builder 需要扁平 node_modules）都是必要的，别删。
-- **`dependencies` 只放原生模块**（better-sqlite3 / uiohook-napi / node-pty），其余纯 JS 依赖一律 `devDependencies`——Vite/esbuild 会把它们打进产物，electron-builder 只按 dependencies 收 node_modules，放错位置包体积会暴涨 ~40MB。`tw-animate-css` 与 `shadcn`（只取其 `shadcn/tailwind.css` 自定义变体）是 GaN.UI 样式的必要依赖，也属此类。
-- `pnpm dev` 的主进程写死加载 5173；端口被其他 dev 服务占用时 Vite 会自动跳号，此时需 `KNOCK_DEV_URL=http://127.0.0.1:<实际端口> pnpm dev` 指过去（Vite 输出会给出实际端口）。
-- **node-pty 是 NAPI 单二进制**（`prebuilds/` 随 npm 包分发，ABI 无关），不需要 electron-deps.mjs 做 ABI 切换，但 esbuild 必须标 external、electron-builder 必须 asarUnpack（见 scripts/build-main.mjs 与 electron-builder.yml）。
+- **`dependencies` 只放原生模块**（better-sqlite3 / uiohook-napi / node-pty），其余纯 JS 依赖一律 `devDependencies`——electron-vite 会把它们打进产物，electron-builder 只按 dependencies 收 node_modules，放错位置包体积会暴涨 ~40MB。`tw-animate-css` 与 `shadcn`（只取其 `shadcn/tailwind.css` 自定义变体）是 GaN.UI 样式的必要依赖，也属此类。
+- `pnpm dev` 的渲染服务器监听 `127.0.0.1`，优先使用 5173；端口被占用时自动换端口，electron-vite 经 `ELECTRON_RENDERER_URL` 将实际地址传给主进程。没有开发服务器地址时，主进程加载 `out/renderer/index.html`。
+- 使用 electron-vite 5.x 与 Vite 7.x；`electron.vite.config.ts` 分别配置 main / preload / renderer，主进程为 ESM，预加载脚本为单文件 CommonJS，以兼容 `sandbox: true`。
+- **node-pty 是 NAPI 单二进制**（`prebuilds/` 随 npm 包分发，ABI 无关），不需要 electron-deps.mjs 做 ABI 切换；electron-vite 默认将 `dependencies` 排除在代码打包之外，electron-builder 必须 asarUnpack（见 electron-builder.yml）。
 - `postinstall` 会跑 `scripts/electron-deps.mjs`：把 better-sqlite3 的原生 binding 换成 **Electron ABI** 的预编译。pnpm 默认装的是 Node ABI，直接跑会报 NODE_MODULE_VERSION 不匹配。
 
-## 架构（标准 Electron 三层）
+## 架构（electron-vite 三段式）
 
 ```text
-electron/main.ts      主进程：窗口/托盘/热键/自启 + IPC 注册 + mpimg:// 协议（图库图片按 id 直读）；加载 server 业务逻辑
-electron/preload.ts   唯一暴露面：通用 invoke(channel, ...args) + 事件订阅（打开设置 / 呼出含剪贴板素材 / 终端输出 / AI 增量）+ filePathFor（webUtils 桥，拖拽 File 换本机路径）
-electron/clipWatch.ts 剪贴板轮询打点「最后复制时间」，供呼出时判素材时限
-server/api.ts         ★ MpApi 接口 = 前后端唯一契约；apiHandlers 处理器表逐方法实现
-server/*.ts           业务模块（db/launcher/favicon/shortcuts/bookmarks/autostart/pty/gallery/chromeLogin），纯函数风格
-src/                  渲染进程 React 界面；src/api/client.ts 按 MpApi 逐方法转发 invoke
-src/tools/            内置工具：registry.ts 注册表（acceptsText 标记；组件一律 React.lazy，关闭即卸载）+ toolInput.ts（素材注入：挂载初值 + 事件双通道）；设计规范见同目录 TOOL_SPEC.md
-src/components/       布局组件（SearchBox / GroupPanel / ToolsZone / ToolHome / TerminalZone / Splitter）
-src/components/ui/    GaN.UI 复制组件（button/input/label/textarea/select/switch/dialog/context-menu/menu/tooltip/kbd/empty/spinner/sonner；cn 用本项目 lib/utils 的 clsx+tailwind-merge，未引入 cn 包）
-src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用它（dnd-kit 默认传感器会吞掉拖拽元素内的点击）
+src/main/index.ts      主进程：窗口/托盘/热键/自启 + IPC 注册 + mpimg:// 协议（图库图片按 id 直读）；加载 server 业务逻辑
+src/preload/index.ts   唯一暴露面：通用 invoke(channel, ...args) + 事件订阅（打开设置 / 呼出含剪贴板素材 / 终端输出 / AI 增量）+ filePathFor（webUtils 桥，拖拽 File 换本机路径）
+src/main/clipWatch.ts 剪贴板轮询打点「最后复制时间」，供呼出时判素材时限
+src/main/server/api.ts         ★ MpApi 接口 = 前后端唯一契约；apiHandlers 处理器表逐方法实现
+src/main/server/*.ts           业务模块（db/launcher/favicon/shortcuts/bookmarks/autostart/pty/gallery/chromeLogin），纯函数风格
+src/renderer/         渲染进程入口 index.html；src/ 下为 React 界面，api/client.ts 按 MpApi 逐方法转发 invoke
+src/renderer/src/tools/            内置工具：registry.ts 注册表（acceptsText 标记；组件一律 React.lazy，关闭即卸载）+ toolInput.ts（素材注入：挂载初值 + 事件双通道）；设计规范见同目录 TOOL_SPEC.md
+src/renderer/src/components/       布局组件（SearchBox / GroupPanel / ToolsZone / ToolHome / TerminalZone）
+src/renderer/src/components/ui/    GaN.UI 复制组件（button/input/label/textarea/select/switch/dialog/context-menu/menu/tooltip/kbd/empty/spinner/sonner；cn 用本项目 lib/utils 的 clsx+tailwind-merge，未引入 cn 包）
+src/renderer/src/lib/dnd.ts        拖拽传感器统一配置，所有 DndContext 必须用它（dnd-kit 默认传感器会吞掉拖拽元素内的点击）
 ```
 
-**改接口的固定动作**：`MpApi`（server/api.ts）→ `apiHandlers` 同文件实现 → `src/api/client.ts` 转发。三方签名由类型串起来，漏一处 `pnpm typecheck` 即报错。
+**改接口的固定动作**：`MpApi`（src/main/server/api.ts）→ `apiHandlers` 同文件实现 → `src/renderer/src/api/client.ts` 转发。三方签名由类型串起来，漏一处 `pnpm typecheck` 即报错。
 
-错误约定：可预期错误一律返回 `ApiResult<T>` 判别联合（`{ok:false, error:{kind:...}}`），不靠抛异常、没有状态码。入参在各处理器入口做 zod 校验（schema 在 server/schemas.ts）。
+错误约定：可预期错误一律返回 `ApiResult<T>` 判别联合（`{ok:false, error:{kind:...}}`），不靠抛异常、没有状态码。入参在各处理器入口做 zod 校验（schema 在 src/main/server/schemas.ts）。
 
 ## 硬性规则
 
-1. **渲染进程（src/）禁止运行时 import server/ 或 electron/ 的代码**——渲染进程没有 Node 环境。只允许 `import type`（编译期擦除，安全）。
+1. **渲染进程（src/renderer/）禁止运行时 import src/main/ 或 src/preload/ 的代码**——渲染进程没有 Node 环境。只允许 `import type`（编译期擦除，安全）。
 2. **Electron 锁在 42.x**：better-sqlite3 的预编译通常落后最新 Electron 一个大版本。升级前先确认预编译存在，否则 electron-deps.mjs 会拉不到二进制。
-3. **UI 文案一律走 i18n 字典**（src/i18n/）：zh.ts 是 key 的事实来源，en.ts 用 `Record<MessageKey, string>` 强制对齐，两边必须同时改。界面语言与注释都用中文。
+3. **UI 文案一律走 i18n 字典**（src/renderer/src/i18n/）：zh.ts 是 key 的事实来源，en.ts 用 `Record<MessageKey, string>` 强制对齐，两边必须同时改。界面语言与注释都用中文。
 4. **注释解释「为什么」**，不复述代码；重点写类型设计意图与平台差异坑。
 5. 单仓库单 package，不引新框架/新抽象层；能十行解决不写一百行。
 6. **禁止自动 git commit / push**，除非用户明确允许；工作改完停在未提交状态由用户处置。
 7. 无测试框架。验证方式 = `pnpm typecheck` + `pnpm format` + `pnpm dev` 人工过一遍改动路径。打包（`pnpm dist:win` / `pnpm dist:mac`）由使用者手动执行，代理只保证 `pnpm build` 通过。
-8. **内置工具的新增与修改遵循 [src/tools/TOOL_SPEC.md](src/tools/TOOL_SPEC.md)**（形态判定、id 注册链、素材注入、状态分层、错误与 UI 约定），先读规范再动手。
+8. **内置工具的新增与修改遵循 [src/renderer/src/tools/TOOL_SPEC.md](src/renderer/src/tools/TOOL_SPEC.md)**（形态判定、id 注册链、素材注入、状态分层、错误与 UI 约定），先读规范再动手。
 
 ## 数据与平台
 
-- SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、界面主题（`theme`，dark 默认/light，唯一权威来源）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。图库（工具 gallery）三张 `gallery_*` 表存分组/图片元数据与图片 tag，图片**字节级复制**进数据目录 `gallery/<组文件夹>/` 子目录（组名清洗而来，`file` 列存「组文件夹/文件名」相对路径；sha256 全库去重、缩略图按需生成于 `.thumbs/`，按 id 寻址不分目录），渲染端经 `mpimg://orig|thumb/<id>` 协议直读；`gallery/` 与 favicons 同在 dataLocation 的具名迁移/清理清单里，改数据目录会整体跟随。
-- 界面语言、布局偏好（启动列表宽/显隐）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。终端会话在右列 tab 区里与工具并列为一等 tab（非 ToolId）：会话清单与激活页签在 App（`activeTab: ToolId | number | null`，null 即工具首页），× 关会话即结束 pty；TerminalZone 只是 xterm 宿主，随会话清单挂载/卸载，主题切换经 html 类监听热更新 xterm 配色（不重建进程不清缓冲）。
-- 开发平台 Windows 与 macOS；平台相关代码集中在：server/shortcuts.ts（win 扫开始菜单/桌面 .lnk，mac 扫 /Applications 等处 .app）、server/everything.ts 与 server/spotlight.ts（文件搜索双后端：win 走 Everything/es.exe，mac 走 mdfind）、server/launcher.ts（mac 的 .app 带参走 open -a）、server/autostart.ts 与 server/pty.ts（默认 shell 探测）、server/api.ts 的 revealPath（explorer /select vs open -R）、electron/tray.ts（mac 托盘模板图），其余保持跨平台写法。
-- 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 electron/hotkey.ts；**macOS 需「辅助功能」授权**（启动时检测，未授权弹原生引导并报 `unauthorized`，授权后重启生效），mac 默认预设为双击 Command（libuiohook 键名 Meta）。预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
+- SQLite（WAL）数据目录默认与 Electron userData 同目录（Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`）；实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移（首次启动弹原生引导选位置；旧目录名 MyPage 的一次性升级迁移在 src/main/server/util/dataLocation.ts）。`settings` 表存：热键、自启、终端程序/字体/字号、工具别名（`toolAlias:<id>`）、剪贴板素材时限（`clipPasteWindow`，秒，0=关）、有道密钥（`youdaoAppKey` / `youdaoAppSecret`）、AI 模型配置 JSON（`aiModels`）、界面主题（`theme`，dark 默认/light，唯一权威来源）、出厂专家播种标记（`aiExpertsSeeded`）。另有 `experts` 表存 AI 专家（提示词预设）。图库（工具 gallery）三张 `gallery_*` 表存分组/图片元数据与图片 tag，图片**字节级复制**进数据目录 `gallery/<组文件夹>/` 子目录（组名清洗而来，`file` 列存「组文件夹/文件名」相对路径；sha256 全库去重、缩略图按需生成于 `.thumbs/`，按 id 寻址不分目录），渲染端经 `mpimg://orig|thumb/<id>` 协议直读；`gallery/` 与 favicons 同在 dataLocation 的具名迁移/清理清单里，改数据目录会整体跟随。
+- 界面语言、布局偏好（启动列表显隐）存渲染进程 localStorage（换 origin 会重置，已知）。已打开工具与终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。终端工具入口 id 为 `terminal`（属于 ToolId），每个终端会话使用独立数字 id，在右列 tab 区与其他工具并列：会话清单与激活页签在 App（`activeTab: ToolId | number | null`，null 即工具首页），× 关会话即结束 pty；新建会话将 `TERM` 设为 `xterm-256color`、`COLORTERM` 设为 `truecolor`，并清除继承的 `NO_COLOR`，避免启动环境禁用彩色输出；TerminalZone 只是 xterm 宿主，随会话清单挂载/卸载，主题切换经 html 类监听热更新 xterm 配色（不重建进程不清缓冲）。
+- 开发平台 Windows 与 macOS；平台相关代码集中在：src/main/server/shortcuts.ts（win 扫开始菜单/桌面 .lnk，mac 扫 /Applications 等处 .app）、src/main/server/everything.ts 与 src/main/server/spotlight.ts（文件搜索双后端：win 走 Everything/es.exe，mac 走 mdfind）、src/main/server/launcher.ts（mac 的 .app 带参走 open -a）、src/main/server/autostart.ts 与 src/main/server/pty.ts（默认 shell 探测）、src/main/server/api.ts 的 revealPath（explorer /select vs open -R）、src/main/tray.ts（mac 托盘模板图），其余保持跨平台写法。
+- 热键双击检测依赖 uiohook-napi（NAPI 接口，ABI 无关），隔离在 src/main/hotkey.ts；**macOS 需「辅助功能」授权**（启动时检测，未授权弹原生引导并报 `unauthorized`，授权后重启生效），mac 默认预设为双击 Command（libuiohook 键名 Meta）。预设 id 唯一来源在 schemas.`HOTKEY_IDS`，工具 id 同理（schemas.`TOOL_IDS`，registry 的 ToolId 以它为约束）。
 

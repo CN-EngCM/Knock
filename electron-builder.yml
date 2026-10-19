@@ -1,5 +1,5 @@
 # electron-builder 配置：目录版（需求 §3.7 / §10.5，v2.1 起不再出单文件 exe）
-# 打包命令：pnpm dist:win / pnpm dist:mac（各自 = vite build + esbuild 主进程 + 对应平台 dir 目标）
+# 打包命令：pnpm dist:win / pnpm dist:mac（electron-vite 三段构建 + 对应平台目录产物）
 appId: com.knock.app
 productName: Knock
 directories:
@@ -11,8 +11,9 @@ afterPack: ./scripts/afterPack.cjs
 #   会误走源码编译（本机无 VS Build Tools 必失败）。
 npmRebuild: false
 files:
-    - out/** # 主进程 + preload（esbuild 产物）
-    - dist/** # 渲染页面（vite 产物）
+    - out/main/**
+    - out/preload/**
+    - out/renderer/**
     - assets/** # 托盘图标
     # es.exe 不进 asar：它经 extraResources 单独放到 resources/（exe 无法从 asar 内 spawn）
     - "!assets/es.exe"
@@ -43,7 +44,7 @@ asarUnpack:
     - node_modules/uiohook-napi/**
     - node_modules/node-pty/**
 # es.exe（Everything CLI，MIT，见 assets/es-LICENSE.txt）→ resources/es.exe，
-# 运行时位置见 server/everything.ts 的 esExePath()
+# 运行时位置见 src/main/server/everything.ts 的 esExePath()
 extraResources:
     - from: assets/es.exe
       to: es.exe

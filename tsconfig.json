@@ -14,7 +14,7 @@
         "isolatedModules": true,
         "noEmit": true,
         "types": ["node"],
-        "paths": { "@/*": ["./src/*"] }
+        "paths": { "@/*": ["./src/renderer/src/*"] }
     },
-    "include": ["src", "server", "electron", "vite.config.ts"]
+    "include": ["src", "electron.vite.config.ts"]
 }

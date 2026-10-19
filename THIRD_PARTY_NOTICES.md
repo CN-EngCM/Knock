@@ -4,7 +4,7 @@
 
 ## shadcn/ui
 
-`src/components/ui/` 下的界面组件（button / input / label / textarea / select / switch / dialog / context-menu / menu / tooltip / kbd / empty / spinner / sonner）改自 shadcn/ui 的 Radix Nova 注册表源码。来源：https://github.com/shadcn-ui/ui
+`src/renderer/src/components/ui/` 下的界面组件（button / input / label / textarea / select / switch / dialog / context-menu / menu / tooltip / kbd / empty / spinner / sonner）改自 shadcn/ui 的 Radix Nova 注册表源码。来源：https://github.com/shadcn-ui/ui
 
 MIT License
 
@@ -30,7 +30,7 @@ SOFTWARE.
 
 ## Darwin UI
 
-`src/index.css` 中浅色主题的色值（表面、文字、边框、强调与按钮色阶）参考 Darwin UI 样式表在固定提交 `17777097f271f779cca380da851ee8f45f559665` 处的取色。仅参考色值；未包含 Darwin UI 的组件、圆角、阴影结构、动画或全局样式。来源：https://github.com/surajmandalcell/darwin-ui
+`src/renderer/src/index.css` 中浅色主题的色值（表面、文字、边框、强调与按钮色阶）参考 Darwin UI 样式表在固定提交 `17777097f271f779cca380da851ee8f45f559665` 处的取色。仅参考色值；未包含 Darwin UI 的组件、圆角、阴影结构、动画或全局样式。来源：https://github.com/surajmandalcell/darwin-ui
 
 MIT License
 
