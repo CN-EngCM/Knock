@@ -383,7 +383,7 @@ export default function AiTool({
                     appearance="standard"
                     variant="outline"
                     size="sm"
-                    className="mx-2 mb-2.5 mt-1 w-full"
+                    className="mx-2 mb-2.5 mt-1"
                     onClick={() => setEditing("new")}
                 >
                     ＋ {t("ai.newExpert")}

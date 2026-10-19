@@ -73,7 +73,7 @@ export default function JsonTool({ initialInput }: { initialInput?: string | nul
                     onChange={(e) => setInput(e.target.value)}
                     spellCheck={false}
                     placeholder={t("json.input")}
-                    className="min-w-0 flex-1 resize-none rounded-none p-3 font-mono text-[12.5px] shadow-none"
+                    className="min-w-0 flex-1 resize-none rounded-none p-3 font-mono text-[12.5px] shadow-none focus:bg-[var(--control-input-focus-background)] focus-visible:outline-none! dark:shadow-none"
                 />
                 <div className="min-w-0 flex-1 overflow-auto border-l border-line bg-well p-3 font-mono text-[12.5px]">
                     <pre className="whitespace-pre text-foreground">{output}</pre>

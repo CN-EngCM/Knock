@@ -195,7 +195,7 @@ export default function TranslateTool({
                     onKeyDown={onKeyDown}
                     spellCheck={false}
                     placeholder={t("translate.placeholder")}
-                    className="min-w-0 flex-1 resize-none rounded-none px-4 py-3.5 text-sm leading-relaxed shadow-none"
+                    className="min-w-0 flex-1 resize-none rounded-none px-4 py-3.5 text-sm leading-relaxed shadow-none focus:bg-[var(--control-input-focus-background)] focus-visible:outline-none! dark:shadow-none"
                 />
 
                 <div className="min-w-0 flex-1 overflow-auto border-l border-line px-4 py-3.5">

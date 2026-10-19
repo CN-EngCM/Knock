@@ -76,8 +76,9 @@
   - 行内轻量文字动作（复制/打开/清空等）用 `.tbtn` 应用类（11px 次级色，悬停浮填充，已带 padding 与圆角，不要再叠 border/padding 工具类），危险动作加 `.tbtn-danger`；
   - 图标动作（工具栏图标按钮、行内小图标操作）用 `.icon-btn` 应用类（28px 悬停浮填充，`aria-pressed` 选中态由全局 CSS 给出）；该类定义在层外会压过普通尺寸工具类，紧凑场景覆盖尺寸须用 `size-*!`；
   - 文字档位：主 `text-foreground` / 次级 `text-muted-foreground` / 较弱 `text-dim-foreground`；悬停填充 `hover:bg-hover`、选中行 `bg-rowsel`；
-  - 表单控件一律复用 GaN.UI 公共组件：普通单行输入用 `@/components/ui/input` 的 `Input`，固定选项选择用 `@/components/ui/select` 的 `Select`，普通多行输入用 `@/components/ui/textarea` 的 `Textarea`——输入面材质、焦点背景与错误态由组件提供，调用处只保留宽度/高度/布局类。多控件组合的复合输入（输入区内嵌按钮等）用 `@/components/ui/input-group` 的 `InputGroup` 系列，焦点与错误只由容器表达。占满整栏的编辑区 `Textarea` 覆盖 `rounded-none shadow-none`，避免内嵌卡片观感；隐藏文件入口 `input type="file"` 保留原生写法（另有可见按钮触发）。
+  - 表单控件一律复用 GaN.UI 公共组件：普通单行输入用 `@/components/ui/input` 的 `Input`，固定选项选择用 `@/components/ui/select` 的 `Select`，普通多行输入用 `@/components/ui/textarea` 的 `Textarea`——输入面材质、焦点背景与错误态由组件提供，调用处只保留宽度/高度/布局类。多控件组合的复合输入（输入区内嵌按钮等）用 `@/components/ui/input-group` 的 `InputGroup` 系列，焦点与错误只由容器表达。占满整栏的编辑区 `Textarea` 覆盖 `rounded-none shadow-none dark:shadow-none`，避免内嵌卡片观感；隐藏文件入口 `input type="file"` 保留原生写法（另有可见按钮触发）。
 - **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。
+- JSON 与翻译的整栏输入区使用聚焦背景色提示，局部覆盖全局键盘焦点轮廓，避免面板内部出现蓝框；普通表单的 `Textarea` 保留公共组件的焦点提示。
 
 ## 8. i18n 约定
 
