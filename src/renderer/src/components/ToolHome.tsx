@@ -1,4 +1,6 @@
 import { TOOLS, type ToolId } from "@/tools/registry";
+import { Button } from "@/components/ui/button";
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -11,7 +13,7 @@ type Props = {
 export function ToolHome({ onOpen }: Props) {
     const { t } = useI18n();
     return (
-        // h-full 把高度锚到 ToolsZone 的定位父容器（flex-1 已给出确定高度）：
+        // h-full 把高度锚到定位父容器（flex-1 已给出确定高度）：
         // 没有 h-full 时根节点按内容展开、溢出工作区且无法滚动
         <section className="flex h-full justify-center overflow-y-auto" aria-label={t("tools.home")}>
             <div className="w-full max-w-[760px] px-8 pb-6 pt-9">
@@ -24,20 +26,23 @@ export function ToolHome({ onOpen }: Props) {
                     {TOOLS.map((tool) => {
                         const Icon = tool.icon;
                         return (
-                            <button
-                                key={tool.id}
-                                type="button"
-                                onClick={() => onOpen(tool.id)}
-                                className="group flex min-h-[74px] items-center gap-3 border-b border-line px-2 py-3 text-left transition-colors hover:rounded-[5px] hover:bg-hover"
-                            >
-                                <span className="grid size-8 flex-none place-items-center rounded-md border border-border bg-background text-muted-foreground transition-colors group-hover:text-primary">
-                                    <Icon className="size-4" />
-                                </span>
-                                <span className="flex min-w-0 flex-col gap-0.5">
-                                    <span className="text-xs font-medium">{t(tool.nameKey)}</span>
-                                    <span className="truncate text-[11px] text-dim-foreground">{t(tool.descKey)}</span>
-                                </span>
-                            </button>
+                            <Item key={tool.id} asChild size="sm" className="min-h-[74px] border-0 p-0">
+                                <Button
+                                    variant="ghost"
+                                    className="h-auto min-h-[74px] w-full justify-start gap-3 rounded-md border-b border-line px-2 py-3 text-left"
+                                    onClick={() => onOpen(tool.id)}
+                                >
+                                    <ItemMedia variant="icon">
+                                        <Icon />
+                                    </ItemMedia>
+                                    <ItemContent className="gap-0.5">
+                                        <ItemTitle>{t(tool.nameKey)}</ItemTitle>
+                                        <ItemDescription className="line-clamp-1 text-[11px] text-dim-foreground">
+                                            {t(tool.descKey)}
+                                        </ItemDescription>
+                                    </ItemContent>
+                                </Button>
+                            </Item>
                         );
                     })}
                 </div>

@@ -1,8 +1,6 @@
-import { Suspense, lazy, useCallback, Dispatch, useEffect, useMemo, useRef, SetStateAction, useState } from "react";
+import { Suspense, lazy, useCallback, Dispatch, useEffect, useRef, SetStateAction, useState } from "react";
 import { toast } from "sonner";
-import { Moon, PanelLeft, Pin, PinOff, Plus, Settings2, Sun } from "lucide-react";
-import { DndContext, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, arrayMove, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { ArrowUpDown, Moon, PanelLeft, Pin, PinOff, Plus, Settings2, Sun } from "lucide-react";
 import {
     api,
     onPtyEvent,
@@ -18,27 +16,33 @@ import {
     type TranslateConfigPatch,
 } from "./api/client";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Marker } from "@/components/ui/marker";
 import { MenuTrigger, MenuContent, MenuItem } from "@/components/ui/menu";
+import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
-import { GroupPanel } from "./components/GroupPanel";
+import { Titlebar, TitlebarWell } from "@/components/ui/titlebar";
+import { Toggle } from "@/components/ui/toggle";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { LauncherTree, type ItemMove } from "./components/LauncherTree";
 import { SearchBox } from "./components/SearchBox";
 import { ToolHome } from "./components/ToolHome";
-import { ToolsZone } from "./components/ToolsZone";
-import type { ToolId } from "./tools/registry";
+import { disposeTerm, setTermFont } from "./components/termStore";
+import type { DockviewApi } from "@/components/ui/dock-layout";
+import { toolMeta, type ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
-import type { TermSession } from "./components/TerminalZone";
 import { GroupDialog } from "./components/dialogs/GroupDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { ImportDialog } from "./components/dialogs/ImportDialog";
 import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
-import { useDragSensors } from "./lib/dnd";
 import { applyFonts } from "./lib/fonts";
 import { applyTheme, currentTheme } from "./lib/theme";
 import { useI18n } from "./i18n/useI18n";
 
-// 终端会话宿主懒加载：xterm 体积不小，首屏用不到就不进主 chunk（拆分由 Vite 自动完成）
-const TerminalZone = lazy(() => import("./components/TerminalZone").then((m) => ({ default: m.TerminalZone })));
+// 工具区停靠容器懒加载：dockview 与面板组件都不进首屏 chunk；
+// 空态（从未开过面板）直接渲染 ToolHome，不挂 dock
+const DockZone = lazy(() => import("./components/DockZone").then((m) => ({ default: m.DockZone })));
 
 // 工具内「打开设置」引导要直达的分节：工具有缺配置态就登记一行；
 // 未收录的 ToolId 保持旧行为落回翻译分节
@@ -103,21 +107,22 @@ export default function App() {
     const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
     const [platform, setPlatform] = useState("");
     const [layout, setLayout] = useState<Layout>(loadLayout);
+    // 排序模式：开启才显示启动列表的拖拽把手（运行时状态，不持久化，默认关）
+    const [sortMode, setSortMode] = useState(false);
     // 界面主题：初始值来自 main.tsx 首帧前套好的 <html> 类；切换经 settings 表持久化
     const [theme, setTheme] = useState<ThemeId>(currentTheme);
-    // 已打开工具是纯运行时状态：每次启动强制从空开始，不落盘不还原（用户决策）
-    const [openTools, setOpenTools] = useState<ToolId[]>([]);
-    // 激活页签：工具 id（字符串）或终端会话 id（数字），null = 工具首页。
-    // 单一状态源避免「工具与会话各自记激活」的不可能态
-    const [activeTab, setActiveTab] = useState<ToolId | number | null>(null);
-    // 终端会话清单（tab 行里的一等 tab）：spawn 成功进、关 tab / shell 自退出；
-    // TerminalZone 随清单挂载/卸载，xterm 实例归它管
-    const [termSessions, setTermSessions] = useState<TermSession[]>([]);
-    // 终端设置（shell/字号）：字号喂 TerminalZone，设置页改这里再落库
+    // 工具区停靠容器：首次打开面板时挂载（懒加载 dockview），此后常驻——面板清空
+    // 由 dock 空态水印（ToolHome）兜底。已开面板与布局是纯运行时状态，不落盘不还原（用户决策）
+    const [dockWanted, setDockWanted] = useState(false);
+    // dock 命令桥：面板开/关/激活都走 dockview api；DockZone 懒加载就绪前的调用排队，onReady 冲刷
+    const dockCtl = useRef<{ api: DockviewApi | null; queue: Array<(api: DockviewApi) => void> }>({
+        api: null,
+        queue: [],
+    });
+    // 终端设置（shell/字号）：字号喂 termStore（xterm 实例表），设置页改这里再落库
     const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
-    // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈再以 props 流给终端
+    // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈同步喂 termStore
     const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
-    const dragSensors = useDragSensors();
 
     // 启动列表显隐变化后保存，下次启动沿用。
     useEffect(() => {
@@ -227,7 +232,7 @@ export default function App() {
         );
     }
 
-    // 设置页提交终端设置：成功回填配置（字号由 props 流到 TerminalZone 即时生效）
+    // 设置页提交终端设置：成功回填配置（字号经 termFont 即时作用到终端实例）
     function patchTerm(p: TermPatch): Promise<boolean> {
         return patchSetting(() => api.setTermConfig(p), setTermCfg);
     }
@@ -287,26 +292,23 @@ export default function App() {
         });
     }
 
-    function reorderItems(groupId: number, next: Item[]) {
+    // 条目拖拽落库：跨组移动一次牵动两个组，affected 按组给全序列
+    function reorderItemGroups(affected: ItemMove) {
+        const touched = new Set(affected.map((a) => a.groupId));
         setItems((prev) => [
-            ...prev.filter((i) => i.group_id !== groupId),
-            ...next.map((item, index) => ({ ...item, position: index })),
+            ...prev.filter((i) => !touched.has(i.group_id)),
+            ...affected.flatMap((a) =>
+                a.items.map((item, index) => ({ ...item, group_id: a.groupId, position: index })),
+            ),
         ]);
-        api.reorder({ items: next.map((i) => ({ id: i.id, group_id: groupId })) }).then((r) => {
-            if (!r.ok) {
-                toast.error(t("toast.error"));
-                refresh();
-            }
-        });
-    }
-
-    function handleGroupDragEnd(e: DragEndEvent) {
-        const { active, over } = e;
-        if (!over || active.id === over.id) return;
-        const oldIndex = groups.findIndex((g) => g.id === active.id);
-        const newIndex = groups.findIndex((g) => g.id === over.id);
-        if (oldIndex < 0 || newIndex < 0) return;
-        reorderGroups(arrayMove(groups, oldIndex, newIndex));
+        api.reorder({ items: affected.flatMap((a) => a.items.map((i) => ({ id: i.id, group_id: a.groupId }))) }).then(
+            (r) => {
+                if (!r.ok) {
+                    toast.error(t("toast.error"));
+                    refresh();
+                }
+            },
+        );
     }
 
     // 断线自动重试：主进程与渲染进程同生命周期，此态基本只在启动瞬间出现；
@@ -376,17 +378,6 @@ export default function App() {
         }
     }
 
-    // ── 分组视图数据：组内按 position 排序 ──
-    // （搜索已改为顶栏下拉候选，侧栏不再实时过滤）
-    const grouped = useMemo(
-        () =>
-            groups.map((group) => ({
-                group,
-                items: items.filter((i) => i.group_id === group.id).sort((a, b) => a.position - b.position),
-            })),
-        [groups, items],
-    );
-
     // 「/」随时聚焦搜索框
     useEffect(() => {
         function onWindowKeyDown(e: KeyboardEvent) {
@@ -400,33 +391,43 @@ export default function App() {
         return () => window.removeEventListener("keydown", onWindowKeyDown);
     }, []);
 
-    // ── 工具生命周期：菜单/首页卡片/搜索候选打开 / 点 tab 切换 / 点 × 关闭（卸载释放）──
+    // ── 工具生命周期：激活权威是 dockview——已开的面板 setActive，未开 addPanel ──
+    //（默认进当前激活组）；关闭走面板 × / 右键菜单，App 只订阅面板移除做善后。
     // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
-    // 已开的 tab（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
+    // 已开的面板（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
     // expertId 仅 ai 工具有意义（进入指定专家）；它与 input 相互独立，
     // 「只有专家、没有素材」同样要过注入通道，让组件收到新注入的边沿信号
+    function whenDockApi(fn: (dock: DockviewApi) => void) {
+        const ctl = dockCtl.current;
+        if (ctl.api) fn(ctl.api);
+        else ctl.queue.push(fn);
+    }
+
     function openTool(id: ToolId, input?: string | null, expertId?: number) {
         if (id === "terminal") {
             void spawnSession();
             return;
         }
-        setOpenTools((cur) => (cur.includes(id) ? cur : [...cur, id]));
-        setActiveTab(id);
+        setDockWanted(true);
+        whenDockApi((dock) => {
+            const panel = dock.getPanel(`tool:${id}`);
+            if (panel) panel.api.setActive();
+            else
+                dock.addPanel({
+                    id: `tool:${id}`,
+                    component: "tool",
+                    title: t(toolMeta(id).nameKey),
+                    params: { toolId: id },
+                });
+        });
         if (input != null || expertId != null) dispatchToolInput({ tool: id, text: input ?? "", expertId });
         else clearToolInput(id);
     }
 
-    function closeTool(id: ToolId) {
-        const next = openTools.filter((x) => x !== id);
-        setOpenTools(next);
-        // 关掉活动工具 tab：回落最后剩余工具，其次最后一枚会话 tab，最终回工具首页
-        setActiveTab((cur) => (cur === id ? (next.at(-1) ?? termSessions.at(-1)?.id ?? null) : cur));
-    }
+    // ── 终端会话生命周期：每个会话一块 dock 面板（term:<会话号>）──
 
-    // ── 终端会话生命周期：会话是 tab 行的一等 tab，清单与激活都在这里 ──
-
-    // 开新会话（tab 行 ＋ / 终端命令条目共用）：成功即入清单并激活；
-    // 命令条目带 cwd/label/整行命令，会话建好后整行写入回车执行
+    // 开新会话（工具菜单 / 终端命令条目共用）：命令条目带 cwd/label/整行命令，
+    // 会话建好即写入执行——首屏输出由 termStore 的缓冲兜住，面板挂载后回放
     async function spawnSession(req?: { cwd?: string; label?: string; command?: string }) {
         const r = await api.ptySpawn(req ? { cwd: req.cwd, label: req.label } : undefined);
         if (!r.ok) {
@@ -435,313 +436,376 @@ export default function App() {
             else toast.error(t("toast.error"));
             return;
         }
-        setTermSessions((prev) => [...prev, { id: r.data.id, label: r.data.label }]);
-        setActiveTab(r.data.id);
+        setDockWanted(true);
+        whenDockApi((dock) => {
+            dock.addPanel({
+                id: `term:${r.data.id}`,
+                component: "term",
+                title: r.data.label,
+                params: { sessionId: r.data.id },
+            });
+        });
         if (req?.command) void api.ptyWrite(r.data.id, `${req.command}\r`);
     }
 
-    // 关会话 tab：移出清单（TerminalZone 随之 dispose 该 xterm）+ 结束 pty；
-    // 若它正持有活动权，由下方兜底 effect 回落
-    function closeSession(id: number) {
-        setTermSessions((prev) => prev.filter((s) => s.id !== id));
-        void api.ptyKill(id);
-    }
+    // dock 就绪：冲刷排队命令；面板移除善后（终端面板 = 结束 pty + 释放 xterm 实例，
+    // 工具面板组件自卸载无需善后）
+    const handleDockReady = useCallback((dock: DockviewApi) => {
+        const ctl = dockCtl.current;
+        ctl.api = dock;
+        ctl.queue.splice(0).forEach((fn) => fn(dock));
+        dock.onDidRemovePanel((panel) => {
+            if (!panel.id.startsWith("term:")) return;
+            const id = Number(panel.id.slice(5));
+            void api.ptyKill(id);
+            disposeTerm(id);
+        });
+    }, []);
 
-    // shell 自己退出（exit / 进程崩溃）：从清单移除；xterm 实例由 TerminalZone
-    // 的清单收缩 effect dispose（preload 的 onPtyEvent 支持多订阅者）
+    // shell 自己退出（exit / 进程崩溃）：先释放 xterm 实例再关面板（触发上面的
+    // 移除善后；ptyKill 对已退会话是空操作）
     useEffect(() => {
         const off = onPtyEvent((e) => {
-            if (e.type === "exit") setTermSessions((prev) => prev.filter((s) => s.id !== e.id));
+            if (e.type !== "exit") return;
+            disposeTerm(e.id);
+            whenDockApi((dock) => dock.getPanel(`term:${e.id}`)?.api.close());
         });
         return off;
     }, []);
 
-    // 活动页签指向已不存在的会话（关 tab / shell 自退）时回落：
-    // 最后一枚会话 → 最后一个工具 → 工具首页
+    // 界面语言切换：工具面板标题跟着换（终端标题是会话标签，非本地化文案）
     useEffect(() => {
-        if (typeof activeTab === "number" && !termSessions.some((s) => s.id === activeTab)) {
-            setActiveTab(termSessions.at(-1)?.id ?? openTools.at(-1) ?? null);
-        }
-    }, [activeTab, termSessions, openTools]);
+        whenDockApi((dock) => {
+            for (const panel of dock.panels) {
+                if (!panel.id.startsWith("tool:")) continue;
+                panel.api.setTitle(t(toolMeta(panel.id.slice(5) as ToolId).nameKey));
+            }
+        });
+        // whenDockApi 读 ref，无需进依赖
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lang, t]);
 
-    // 终端 chunk 预取：spawn 现在先于 TerminalZone 挂载（App 直接调 ptySpawn），
-    // 首个会话的 shell 横幅若落在 lazy chunk 的加载窗口会被丢掉，闲时预载规避
+    // 终端字体/字号：termStore 直改实例并重排，不经过面板 props
     useEffect(() => {
-        const id = requestIdleCallback(() => void import("./components/TerminalZone"));
+        setTermFont(fontCfg?.monoFont ?? "", termCfg?.fontSize ?? 13);
+    }, [fontCfg, termCfg]);
+
+    // dock chunk 闲时预取：首个面板打开不用现等 dockview 下载
+    useEffect(() => {
+        const id = requestIdleCallback(() => void import("./components/DockZone"));
         return () => cancelIdleCallback(id);
     }, []);
 
-    const sidebarGroups = grouped.map(({ group, items: groupItems }) => (
-        <GroupPanel
-            key={group.id}
-            group={group}
-            items={groupItems}
-            onRename={(g) => setDialog({ kind: "group-rename", group: g })}
-            onDelete={(g) => setDialog({ kind: "group-delete", group: g })}
-            onOpen={openItem}
-            onEdit={(item) => setDialog({ kind: "item-edit", item })}
-            onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
-            onReorderItems={reorderItems}
-        />
-    ));
+    // 工具内「打开设置」引导：分节跟随当前激活的工具面板（translate/ai 有缺配置态）
+    function openSettingsForActiveTool() {
+        const active = dockCtl.current.api?.activePanel?.id;
+        const toolId = active?.startsWith("tool:") ? (active.slice(5) as ToolId) : undefined;
+        setDialog({ kind: "settings", section: (toolId && TOOL_SETTINGS_SECTION[toolId]) || "translate" });
+    }
 
     return (
-        <div className="flex h-screen flex-col overflow-hidden font-sans text-foreground">
-            <Toaster position="bottom-center" />
+        <TooltipProvider>
+            <div className="flex h-screen flex-col overflow-hidden font-sans text-foreground">
+                <Toaster position="bottom-center" />
 
-            {/* 搜索与按钮排除窗口拖动，标题栏其余区域均可拖动。 */}
-            <header className="app-drag relative z-20 flex h-[61px] flex-none items-center gap-3.5 border-b border-well bg-[linear-gradient(var(--bar-top),var(--bar-bottom))] pl-4 pr-3">
-                <span className="app-drag flex h-full w-[178px] flex-none select-none items-center gap-2.5 pr-2">
-                    <span
-                        className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
-                        aria-hidden
-                    >
-                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                        <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
-                    </span>
-                    <strong className="text-base font-medium tracking-wider">敲敲</strong>
-                    <span className="text-[11px] tracking-wide text-dim-foreground">Knock</span>
-                </span>
-                <div className="app-no-drag relative flex min-w-0 flex-1 items-center">
-                    <SearchBox
-                        groups={groups}
-                        items={items}
-                        // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
-                        toolAliases={toolAliases ?? {}}
-                        onOpenItem={openItem}
-                        onOpenTool={openTool}
-                        onOpenPath={openLocalPath}
-                    />
-                </div>
-                <div className="app-no-drag flex flex-none items-center gap-1">
-                    <button
-                        type="button"
-                        className="icon-btn"
-                        aria-pressed={pinned}
-                        onClick={togglePin}
-                        title={t(pinned ? "btn.unpin" : "btn.pin")}
-                        aria-label={t(pinned ? "btn.unpin" : "btn.pin")}
-                    >
-                        {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-                    </button>
-                    <button
-                        type="button"
-                        className="icon-btn"
-                        aria-pressed={layout.sidebarVisible}
-                        onClick={() => setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))}
-                        title={t("btn.sidebar")}
-                        aria-label={t("btn.sidebar")}
-                    >
-                        <PanelLeft className="size-4" />
-                    </button>
-                    <button
-                        type="button"
-                        className="icon-btn"
-                        onClick={() => void switchTheme(theme === "dark" ? "light" : "dark")}
-                        title={t("btn.theme")}
-                        aria-label={t("btn.theme")}
-                    >
-                        {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-                    </button>
-                    <button
-                        type="button"
-                        className="icon-btn"
-                        onClick={() => setDialog({ kind: "settings" })}
-                        title={t("btn.settings")}
-                        aria-label={t("btn.settings")}
-                    >
-                        <Settings2 className="size-4" />
-                    </button>
-                </div>
-            </header>
-
-            {/* 两区工作区 */}
-            <div className="relative z-10 flex min-h-0 flex-1">
-                {layout.sidebarVisible && (
-                    <aside className="app-no-drag flex min-h-0 w-[246px] flex-none flex-col border-r border-well bg-background">
-                        <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
-                            <span className="text-xs font-medium">{t("side.title")}</span>
-                            <MenuTrigger align="end">
-                                <button
-                                    type="button"
-                                    className="icon-btn size-7"
-                                    title={t("side.add")}
-                                    aria-label={t("side.add")}
-                                >
-                                    <Plus className="size-3.5" />
-                                </button>
-                                <MenuContent>
-                                    <MenuItem onSelect={() => setDialog({ kind: "group-create" })}>
-                                        {t("group.new")}
-                                    </MenuItem>
-                                    <MenuItem
-                                        disabled={groups.length === 0}
-                                        onSelect={() => setDialog({ kind: "item-create", groupId: groups[0].id })}
-                                    >
-                                        {t("side.addItem")}
-                                    </MenuItem>
-                                    {groups.length === 0 && (
-                                        <p className="px-2 py-1 text-[11px] text-dim-foreground">
-                                            {t("side.createGroupFirst")}
-                                        </p>
-                                    )}
-                                </MenuContent>
-                            </MenuTrigger>
-                        </div>
-
-                        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3">
-                            {groups.length === 0 ? (
-                                /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
-                                <div className="flex flex-col items-center gap-3 px-3 py-8 text-center">
-                                    <span className="text-xs text-muted-foreground">{t("group.none")}</span>
-                                    <span className="text-[11px] leading-relaxed text-dim-foreground">
-                                        {t("group.noneHint")}
-                                    </span>
-                                </div>
-                            ) : (
-                                <DndContext sensors={dragSensors} onDragEnd={handleGroupDragEnd}>
-                                    <SortableContext
-                                        items={groups.map((g) => g.id)}
-                                        strategy={verticalListSortingStrategy}
-                                    >
-                                        {sidebarGroups}
-                                    </SortableContext>
-                                </DndContext>
-                            )}
-                        </div>
-                    </aside>
-                )}
-
-                <main className="relative flex min-w-0 flex-1 flex-col bg-canvas">
-                    {serverOk === false ? (
-                        /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
-                        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-                            <span className="text-[13px] tracking-wide text-muted-foreground">
-                                ── {t("offline.title")} ──
+                {/* Titlebar 根节点即 gan-drag 拖拽区；搜索井、右侧按钮在 no-drag 插槽内。
+                    左槽单独改回 drag 并拉满行高，保住原「品牌区可拖窗」的手感；
+                    overflow-visible 让搜索下拉能悬出 61px 顶栏。 */}
+                <Titlebar
+                    role="banner"
+                    windowControls="none"
+                    trafficLights={false}
+                    className="z-20 h-[61px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:flex-none [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:flex-1"
+                    left={
+                        <span className="gan-drag flex h-full w-[178px] flex-none select-none items-center gap-2.5 pr-2">
+                            <span
+                                className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
+                                aria-hidden
+                            >
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
                             </span>
-                            <span className="max-w-[460px] text-center text-xs text-dim-foreground">
-                                {t("offline.hint")}
-                            </span>
-                            <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
-                                {t("offline.retry")}
-                            </Button>
-                        </div>
-                    ) : (
-                        <ToolsZone
-                            open={openTools}
-                            active={activeTab}
-                            onActivate={setActiveTab}
-                            onOpenTool={openTool}
-                            onClose={closeTool}
-                            home={<ToolHome onOpen={openTool} />}
-                            onOpenSettings={() =>
-                                setDialog({
-                                    kind: "settings",
-                                    // 引导分节跟随当前激活工具（translate/ai 有缺配置态）
-                                    section:
-                                        (typeof activeTab === "string" && TOOL_SETTINGS_SECTION[activeTab]) ||
-                                        "translate",
-                                })
-                            }
-                            sessions={termSessions}
-                            onActivateSession={setActiveTab}
-                            onCloseSession={closeSession}
-                        >
-                            {/* 会话 xterm 宿主：随首个会话挂载、末个会话结束卸载；
-                                激活的是工具时仅 display:none（切回不丢屏幕与回滚缓冲） */}
-                            {termSessions.length > 0 && (
-                                <Suspense fallback={null}>
-                                    <TerminalZone
-                                        sessions={termSessions}
-                                        activeId={typeof activeTab === "number" ? activeTab : null}
-                                        monoFont={fontCfg?.monoFont ?? ""}
-                                        fontSize={termCfg?.fontSize ?? 13}
-                                    />
-                                </Suspense>
-                            )}
-                        </ToolsZone>
-                    )}
-                </main>
-            </div>
-
-            {/* ── 弹窗区 ── */}
-            <GroupDialog
-                open={dialog.kind === "group-create" || dialog.kind === "group-rename"}
-                initialName={dialog.kind === "group-rename" ? dialog.group.name : null}
-                onClose={() => setDialog({ kind: "none" })}
-                onSubmit={
-                    dialog.kind === "group-rename"
-                        ? (name) => mutate(() => api.renameGroup(dialog.group.id, name), t("toast.saved"))
-                        : (name) => mutate(() => api.createGroup(name), t("toast.saved"))
-                }
-            />
-
-            <ItemDialog
-                open={dialog.kind === "item-create" || dialog.kind === "item-edit"}
-                groups={groups}
-                item={dialog.kind === "item-edit" ? dialog.item : null}
-                defaultGroupId={dialog.kind === "item-create" ? dialog.groupId : undefined}
-                platform={platform}
-                onClose={() => setDialog({ kind: "none" })}
-                onSubmit={
-                    dialog.kind === "item-edit"
-                        ? (values: ItemFormValues) =>
-                              mutate(() => api.updateItem(dialog.item.id, values), t("toast.saved"))
-                        : (values: ItemFormValues) => mutate(() => api.createItem(values), t("toast.saved"))
-                }
-            />
-
-            <ImportDialog
-                open={dialog.kind === "import"}
-                onClose={() => setDialog({ kind: "none" })}
-                onImported={refresh}
-            />
-
-            <SettingsDialog
-                open={dialog.kind === "settings"}
-                initialSection={dialog.kind === "settings" ? dialog.section : undefined}
-                onClose={() => setDialog({ kind: "none" })}
-                lang={lang}
-                onChangeLang={setLang}
-                platform={platform}
-                theme={theme}
-                onTheme={switchTheme}
-                onOpenImport={() => setDialog({ kind: "import" })}
-                termCfg={termCfg}
-                onTermPatch={patchTerm}
-                fontCfg={fontCfg}
-                onFontPatch={patchFont}
-                toolAliases={toolAliases}
-                onToolAlias={patchToolAlias}
-                clipSec={clipSec}
-                onClipSec={patchClipSec}
-                translateCfg={translateCfg}
-                onTranslateCfg={patchTranslate}
-                aiModels={aiModels}
-                onAiModels={patchAiModels}
-            />
-
-            <ConfirmDialog
-                open={dialog.kind === "group-delete" || dialog.kind === "item-delete"}
-                title={
-                    dialog.kind === "group-delete"
-                        ? `${t("group.delete")}：${dialog.group.name}`
-                        : dialog.kind === "item-delete"
-                          ? `${t("menu.delete")}:${dialog.item.title}`
-                          : ""
-                }
-                description={dialog.kind === "group-delete" ? t("group.deleteHint") : undefined}
-                onClose={() => setDialog({ kind: "none" })}
-                onConfirm={async () => {
-                    if (dialog.kind === "group-delete") {
-                        await mutate(() => api.deleteGroup(dialog.group.id), t("toast.deleted"));
-                    } else if (dialog.kind === "item-delete") {
-                        await mutate(() => api.deleteItem(dialog.item.id), t("toast.deleted"));
+                            <strong className="text-base font-medium tracking-wider">敲敲</strong>
+                            <span className="text-[11px] tracking-wide text-dim-foreground">Knock</span>
+                        </span>
                     }
-                }}
-            />
-        </div>
+                    center={
+                        /* 34px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px） */
+                        <TitlebarWell className="relative h-[34px] flex-row px-2.5 overflow-visible">
+                            <SearchBox
+                                groups={groups}
+                                items={items}
+                                // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
+                                toolAliases={toolAliases ?? {}}
+                                onOpenItem={openItem}
+                                onOpenTool={openTool}
+                                onOpenPath={openLocalPath}
+                            />
+                        </TitlebarWell>
+                    }
+                    right={
+                        <div className="flex flex-none items-center gap-1">
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-7"
+                                        active={pinned}
+                                        onClick={togglePin}
+                                        aria-label={t(pinned ? "btn.unpin" : "btn.pin")}
+                                    >
+                                        {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t(pinned ? "btn.unpin" : "btn.pin")}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-7"
+                                        active={layout.sidebarVisible}
+                                        onClick={() => setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))}
+                                        aria-label={t("btn.sidebar")}
+                                    >
+                                        <PanelLeft className="size-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("btn.sidebar")}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-7"
+                                        onClick={() => void switchTheme(theme === "dark" ? "light" : "dark")}
+                                        aria-label={t("btn.theme")}
+                                    >
+                                        {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("btn.theme")}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-7"
+                                        onClick={() => setDialog({ kind: "settings" })}
+                                        aria-label={t("btn.settings")}
+                                    >
+                                        <Settings2 className="size-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{t("btn.settings")}</TooltipContent>
+                            </Tooltip>
+                        </div>
+                    }
+                />
+
+                {/* 两区工作区 */}
+                <div className="relative z-10 flex min-h-0 flex-1">
+                    {layout.sidebarVisible && (
+                        <aside className="app-no-drag flex min-h-0 w-[246px] flex-none flex-col border-r border-well bg-background">
+                            <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
+                                <span className="text-xs font-medium">{t("side.title")}</span>
+                                <div className="flex items-center gap-1">
+                                    <Toggle
+                                        variant="outline"
+                                        className="size-7"
+                                        pressed={sortMode}
+                                        onPressedChange={setSortMode}
+                                        disabled={groups.length === 0}
+                                        title={t("side.sort")}
+                                        aria-label={t("side.sort")}
+                                    >
+                                        <ArrowUpDown className="size-3.5" />
+                                    </Toggle>
+                                    <MenuTrigger align="end">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-7"
+                                            title={t("side.add")}
+                                            aria-label={t("side.add")}
+                                        >
+                                            <Plus className="size-3.5" />
+                                        </Button>
+                                        <MenuContent>
+                                            <MenuItem onSelect={() => setDialog({ kind: "group-create" })}>
+                                                {t("group.new")}
+                                            </MenuItem>
+                                            <MenuItem
+                                                disabled={groups.length === 0}
+                                                onSelect={() =>
+                                                    setDialog({ kind: "item-create", groupId: groups[0].id })
+                                                }
+                                            >
+                                                {t("side.addItem")}
+                                            </MenuItem>
+                                            {groups.length === 0 && (
+                                                <p className="px-2 py-1 text-[11px] text-dim-foreground">
+                                                    {t("side.createGroupFirst")}
+                                                </p>
+                                            )}
+                                        </MenuContent>
+                                    </MenuTrigger>
+                                </div>
+                            </div>
+
+                            {/* 滚动与内边距都归 Tree 自管（行高 26 与放置线需要整行统一的滚动容器） */}
+                            <div className="min-h-0 flex-1">
+                                {groups.length === 0 ? (
+                                    /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
+                                    <Empty className="px-3 py-8">
+                                        <EmptyHeader>
+                                            <EmptyTitle>{t("group.none")}</EmptyTitle>
+                                            <EmptyDescription>{t("group.noneHint")}</EmptyDescription>
+                                        </EmptyHeader>
+                                    </Empty>
+                                ) : (
+                                    <LauncherTree
+                                        groups={groups}
+                                        items={items}
+                                        sortable={sortMode}
+                                        onOpen={openItem}
+                                        onEditItem={(item) => setDialog({ kind: "item-edit", item })}
+                                        onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
+                                        onRenameGroup={(g) => setDialog({ kind: "group-rename", group: g })}
+                                        onDeleteGroup={(g) => setDialog({ kind: "group-delete", group: g })}
+                                        onReorderGroups={reorderGroups}
+                                        onMoveItem={reorderItemGroups}
+                                    />
+                                )}
+                            </div>
+                        </aside>
+                    )}
+
+                    <main className="relative flex min-w-0 flex-1 flex-col bg-canvas">
+                        {serverOk === false ? (
+                            /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
+                            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+                                <Marker structure="separator" variant="muted" className="max-w-[460px]">
+                                    {t("offline.title")}
+                                </Marker>
+                                <span className="max-w-[460px] text-center text-xs text-dim-foreground">
+                                    {t("offline.hint")}
+                                </span>
+                                <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
+                                    {t("offline.retry")}
+                                </Button>
+                            </div>
+                        ) : dockWanted ? (
+                            <Suspense
+                                fallback={
+                                    <div className="flex h-full items-center justify-center">
+                                        <Spinner decorative className="text-muted-foreground" />
+                                    </div>
+                                }
+                            >
+                                <DockZone
+                                    onReady={handleDockReady}
+                                    onOpenTool={openTool}
+                                    onOpenSettings={openSettingsForActiveTool}
+                                />
+                            </Suspense>
+                        ) : (
+                            /* 冷启动空态：dock 未挂载不加载 dockview，首页卡片与搜索即入口 */
+                            <div className="h-full min-h-0 p-1.5">
+                                <ToolHome onOpen={openTool} />
+                            </div>
+                        )}
+                    </main>
+                </div>
+
+                {/* ── 弹窗区 ── */}
+                <GroupDialog
+                    open={dialog.kind === "group-create" || dialog.kind === "group-rename"}
+                    initialName={dialog.kind === "group-rename" ? dialog.group.name : null}
+                    onClose={() => setDialog({ kind: "none" })}
+                    onSubmit={
+                        dialog.kind === "group-rename"
+                            ? (name) => mutate(() => api.renameGroup(dialog.group.id, name), t("toast.saved"))
+                            : (name) => mutate(() => api.createGroup(name), t("toast.saved"))
+                    }
+                />
+
+                <ItemDialog
+                    open={dialog.kind === "item-create" || dialog.kind === "item-edit"}
+                    groups={groups}
+                    item={dialog.kind === "item-edit" ? dialog.item : null}
+                    defaultGroupId={dialog.kind === "item-create" ? dialog.groupId : undefined}
+                    platform={platform}
+                    onClose={() => setDialog({ kind: "none" })}
+                    onSubmit={
+                        dialog.kind === "item-edit"
+                            ? (values: ItemFormValues) =>
+                                  mutate(() => api.updateItem(dialog.item.id, values), t("toast.saved"))
+                            : (values: ItemFormValues) => mutate(() => api.createItem(values), t("toast.saved"))
+                    }
+                />
+
+                <ImportDialog
+                    open={dialog.kind === "import"}
+                    onClose={() => setDialog({ kind: "none" })}
+                    onImported={refresh}
+                />
+
+                <SettingsDialog
+                    open={dialog.kind === "settings"}
+                    initialSection={dialog.kind === "settings" ? dialog.section : undefined}
+                    onClose={() => setDialog({ kind: "none" })}
+                    lang={lang}
+                    onChangeLang={setLang}
+                    platform={platform}
+                    theme={theme}
+                    onTheme={switchTheme}
+                    onOpenImport={() => setDialog({ kind: "import" })}
+                    termCfg={termCfg}
+                    onTermPatch={patchTerm}
+                    fontCfg={fontCfg}
+                    onFontPatch={patchFont}
+                    toolAliases={toolAliases}
+                    onToolAlias={patchToolAlias}
+                    clipSec={clipSec}
+                    onClipSec={patchClipSec}
+                    translateCfg={translateCfg}
+                    onTranslateCfg={patchTranslate}
+                    aiModels={aiModels}
+                    onAiModels={patchAiModels}
+                />
+
+                <ConfirmDialog
+                    open={dialog.kind === "group-delete" || dialog.kind === "item-delete"}
+                    title={
+                        dialog.kind === "group-delete"
+                            ? `${t("group.delete")}：${dialog.group.name}`
+                            : dialog.kind === "item-delete"
+                              ? `${t("menu.delete")}:${dialog.item.title}`
+                              : ""
+                    }
+                    description={dialog.kind === "group-delete" ? t("group.deleteHint") : undefined}
+                    onClose={() => setDialog({ kind: "none" })}
+                    onConfirm={async () => {
+                        if (dialog.kind === "group-delete") {
+                            await mutate(() => api.deleteGroup(dialog.group.id), t("toast.deleted"));
+                        } else if (dialog.kind === "item-delete") {
+                            await mutate(() => api.deleteItem(dialog.item.id), t("toast.deleted"));
+                        }
+                    }}
+                />
+            </div>
+        </TooltipProvider>
     );
 }

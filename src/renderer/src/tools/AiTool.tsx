@@ -1,10 +1,19 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Copy } from "lucide-react";
 import Markdown from "react-markdown";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Disclosure, DisclosureGroup } from "@/components/ui/disclosure-group";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { InputGroup, InputGroupTextarea } from "@/components/ui/input-group";
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import { MessageScroller, type MessageScrollerHandle } from "@/components/ui/message-scroller";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Toolbar, ToolbarGroup, ToolbarSeparator } from "@/components/ui/toolbar";
 import { api, type AiEffortId, type AiModelConfig, type AiProviderId, type Expert } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
@@ -22,7 +31,9 @@ import {
     useAiSessions,
 } from "./aiSessions";
 import type { Msg } from "./aiSessions";
+import { buildTurns } from "./aiMessageModel";
 import { EditExpertDialog } from "@/components/dialogs/EditExpertDialog";
+import { TipButton } from "./TipButton";
 import { useToolInput } from "./toolInput";
 import { aiErrKey } from "./aiErr";
 
@@ -53,17 +64,8 @@ const EFFORT_LABEL: Record<AiEffortId, MessageKey> = {
 /** select 的哨兵 value：模型未绑定时让下拉显示出「未绑定」又不可再选回空值 */
 const NO_MODEL = ":unbound";
 
-/** 单轮消息按对分组成卡（一问一答一张）。发送路径保证 user+assistant 成对 push，
- *  但错误回滚可能留下奇数尾巴——落单的按单条收尾渲染 */
-function pairUp(msgs: Msg[]): Msg[][] {
-    const groups: Msg[][] = [];
-    for (const m of msgs) {
-        const last = groups[groups.length - 1];
-        if (!last || last.length >= 2) groups.push([m]);
-        else last.push(m);
-    }
-    return groups;
-}
+/** 空会话用固定引用，避免每次渲染换新数组把 buildTurns 的 memo 打穿 */
+const EMPTY_MSGS: Msg[] = [];
 
 export default function AiTool({
     initialInput,
@@ -80,7 +82,7 @@ export default function AiTool({
     const { text, expertId, seq } = useToolInput("ai", initialInput);
 
     // 会话与选中来自模块级 store；convs 变化经订阅触发本组件重渲染
-    const { convs, activeId, lastEid } = useAiSessions();
+    const { convs, activeId } = useAiSessions();
 
     // 输入草稿与注入管道分离：toolInput.text 只承载「新到的素材」，
     // 处理完立即搬进 draft 或直接发送，text 本身不落回输入框
@@ -94,20 +96,12 @@ export default function AiTool({
     const sendingRef = useRef(false); // startChat 在途标志：挡住 await 窗口内的连击发送
     const handledSeq = useRef(0); // 已消费的注入序号（StrictMode 双跑 + 重复注入防重放）
     const activeRef = useRef<number | null>(null); // 事件处理器里的活跃 id 快照
-    const scrollRef = useRef<HTMLDivElement>(null);
+    const scrollerRef = useRef<MessageScrollerHandle | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
         activeRef.current = activeId;
     }, [activeId]);
-
-    // 消息区自动滚底。只在本组件看得到的前台会话有更新（或切人）时才拉到底——
-    // 后台专家在关 tab 期间仍往 store 里追加增量，无脑滚底会让前台滚动位置被顶乱
-    useEffect(() => {
-        if (lastEid !== activeId) return;
-        const el = scrollRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-    }, [lastEid, activeId, convs]);
 
     useEffect(() => {
         api.getAiModels().then((r) => {
@@ -214,6 +208,25 @@ export default function AiTool({
     // 「停止」态看的是当前活跃会话末条 assistant 是否仍在流式（后台专家的流不影响按钮语义）
     const streaming = activeId != null && convStreaming(activeId);
 
+    // 会话消息流折叠成 turn；单轮/多轮共用。memo 依赖 msgs 引用，后台专家的增量不重算
+    const activeEid = activeExpert?.id ?? null;
+    const activeMsgs = activeExpert ? (convs[activeExpert.id]?.msgs ?? EMPTY_MSGS) : EMPTY_MSGS;
+    const turns = useMemo(() => buildTurns(activeMsgs), [activeMsgs]);
+    const lastTurnRef = useRef<{ eid: number; count: number } | null>(null);
+
+    // 只有「新增 turn」才主动回到底部：流式增量不改 turns.length，用户上翻后不会被拽回。
+    // 切专家时交给 MessageScroller 重新挂载后的 initialPosition="end"，这里不重复命令。
+    useEffect(() => {
+        if (activeEid === null) {
+            lastTurnRef.current = null;
+            return;
+        }
+        const previous = lastTurnRef.current;
+        lastTurnRef.current = { eid: activeEid, count: turns.length };
+        if (previous === null || previous.eid !== activeEid) return;
+        if (turns.length > previous.count) void scrollerRef.current?.scrollToEnd();
+    }, [activeEid, turns.length]);
+
     // ── 加载窗口期的自愈：注入/发送可能在 aiModels 尚未拉完时放行，把「还没加载」误判成
     // unbound；这里在模型表就位后发现生效模型其实存在，就把陈旧红条自动撤掉
     useEffect(() => {
@@ -231,85 +244,103 @@ export default function AiTool({
         }
     }
 
-    // 消息行渲染:用户=右侧次级气泡;AI=强调色 AI 头像 + 井底气泡。
-    // 单轮把一对问答包进一张卡片(问题行右对齐、回答紧随其下)
+    // 消息行渲染：用户侧 Bubble(side="end")；AI 侧 MessageAvatar + MessageContent + 气泡。
+    // 思考过程换 DisclosureGroup 折叠；markdown 仍沿用 react-markdown 与现有 pre/code 覆写。
     function renderUserMsg(m: Msg) {
         return (
-            <div className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-md bg-[var(--bubble-secondary)] px-3.5 py-2 text-[12.5px] whitespace-pre-wrap break-words text-[var(--bubble-secondary-foreground)]">
-                    {m.content}
-                </div>
-            </div>
+            <Message side="end">
+                <MessageContent>
+                    <Bubble side="end" variant="secondary" className="max-w-[80%]">
+                        <BubbleContent className="rounded-2xl rounded-br-md px-3.5 py-2 text-xs whitespace-pre-wrap">
+                            {m.content}
+                        </BubbleContent>
+                    </Bubble>
+                </MessageContent>
+            </Message>
         );
     }
 
-    function renderAssistantMsg(m: Msg, _separated: boolean) {
+    function renderAssistantMsg(m: Msg) {
+        const isStreaming = m.status === "streaming";
         return (
-            <div className="group flex gap-2.5">
-                {/* 流式中头像轻呼吸,回答落定即静止 */}
-                <span
-                    className={`mt-0.5 flex size-[22px] flex-none select-none items-center justify-center rounded-full bg-primary/15 text-[9px] font-semibold text-primary ${
-                        !m.status ? "animate-pulse" : ""
+            <Message>
+                {/* 流式中头像轻呼吸，回答落定即静止 */}
+                <MessageAvatar
+                    aria-hidden="true"
+                    className={`mt-0.5 size-(--size-control-sm) min-w-(--size-control-sm) rounded-full bg-primary/15 text-micro font-semibold text-primary ${
+                        isStreaming ? "animate-pulse" : ""
                     }`}
                 >
                     AI
-                </span>
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                </MessageAvatar>
+                <MessageContent className="gap-1">
                     {!!m.reasoning && (
-                        <details className="rounded-lg border border-dashed border-line px-2 py-1">
-                            <summary className="cursor-pointer select-none text-[11.5px] text-dim-foreground">
-                                {t("ai.thinking")}
-                            </summary>
-                            <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-dim-foreground">
+                        <DisclosureGroup className="rounded-lg border-line">
+                            <Disclosure
+                                title={t("ai.thinking")}
+                                defaultOpen={false}
+                                contentClassName="p-2 text-xs leading-relaxed whitespace-pre-wrap break-words text-dim-foreground"
+                            >
                                 {m.reasoning}
-                            </div>
-                        </details>
+                            </Disclosure>
+                        </DisclosureGroup>
                     )}
-                    <div className="rounded-2xl rounded-tl-md bg-well px-3.5 py-2 text-[13px] leading-relaxed break-words text-foreground [&_a]:underline [&_li]:ml-4 [&_ul]:list-disc">
-                        {/* react-markdown v10 无顶层 className，样式挂在包裹层 */}
-                        <Markdown
-                            components={{
-                                pre: ({ node: _node, ...rest }) => (
-                                    <pre
-                                        {...rest}
-                                        className="overflow-auto rounded-lg bg-[var(--control-input-background)] p-2 font-mono text-[12.5px]"
-                                    />
-                                ),
-                                code: ({ node: _node, ...rest }) => (
-                                    <code {...rest} className="font-mono text-[12.5px]" />
-                                ),
-                            }}
-                        >
-                            {m.content}
-                        </Markdown>
-                    </div>
+                    <Bubble variant="ghost">
+                        <BubbleContent className="rounded-2xl rounded-tl-md bg-well px-3.5 py-2 text-control leading-relaxed [&_li]:ml-4 [&_ul]:list-disc">
+                            {/* 流式占位（尚无正文）用 Spinner；正文到达后交回 markdown 容器 */}
+                            {isStreaming && !m.content ? (
+                                <Spinner decorative className="size-3.5 text-muted-foreground" />
+                            ) : (
+                                // react-markdown v10 无顶层 className，样式挂在包裹层
+                                <Markdown
+                                    components={{
+                                        pre: ({ node: _node, ...rest }) => (
+                                            <pre
+                                                {...rest}
+                                                className="overflow-auto rounded-lg bg-[var(--control-input-background)] p-2 font-mono text-[12.5px]"
+                                            />
+                                        ),
+                                        code: ({ node: _node, ...rest }) => (
+                                            <code {...rest} className="font-mono text-[12.5px]" />
+                                        ),
+                                    }}
+                                >
+                                    {m.content}
+                                </Markdown>
+                            )}
+                        </BubbleContent>
+                    </Bubble>
                     <div className="flex items-center gap-2">
                         {m.status === "stopped" && (
-                            <span className="text-[11px] text-dim-foreground">〔{t("ai.stopped")}〕</span>
+                            <span className="text-small text-dim-foreground">〔{t("ai.stopped")}〕</span>
                         )}
                         {m.status === "error" &&
                             (() => {
                                 const k = aiErrKey(m.errStatus);
                                 return (
-                                    <span className="text-[12px] text-destructive">
+                                    <span className="text-xs text-destructive">
                                         {k ? t(k) : `${t("ai.err.other")}: ${m.errStatus}`}
                                     </span>
                                 );
                             })()}
                         {/* 完成或已停止的回答都可复制（流式中不显示） */}
                         {(!m.status || m.status === "stopped") && m.content && (
-                            <button
+                            <TipButton
                                 type="button"
-                                className="icon-btn size-[22px]!"
-                                title={t("ai.copy")}
+                                label={t("ai.copy")}
+                                aria-label={t("ai.copy")}
+                                appearance="standard"
+                                variant="ghost"
+                                size="icon"
+                                className="size-(--size-control-sm) flex-none text-muted-foreground enabled:hover:text-foreground"
                                 onClick={() => void copyMsg(m.content)}
                             >
-                                <Copy size={13} />
-                            </button>
+                                <Copy className="size-[13px]" />
+                            </TipButton>
                         )}
                     </div>
-                </div>
-            </div>
+                </MessageContent>
+            </Message>
         );
     }
 
@@ -322,13 +353,15 @@ export default function AiTool({
                 </span>
                 <div className="min-h-0 flex-1 overflow-y-auto px-1.5">
                     {experts.length === 0 ? (
-                        <div className="flex flex-col items-center gap-2 px-3 py-6 text-center">
-                            <span className="text-[12px] text-dim-foreground">{t("ai.noExperts")}</span>
-                        </div>
+                        <Empty className="px-3 py-6">
+                            <EmptyDescription className="text-[12px] text-dim-foreground">
+                                {t("ai.noExperts")}
+                            </EmptyDescription>
+                        </Empty>
                     ) : (
                         experts.map((e) => (
                             // 行本体用 div 承载点击（里面还要放编辑小按钮，button 不能嵌套
-                            // button——与 ToolsZone/TerminalZone 的行结构同一取舍）
+                            // button——与工具面板的行结构同一取舍）
                             <div
                                 key={e.id}
                                 role="button"
@@ -346,8 +379,8 @@ export default function AiTool({
                                 }}
                                 className={`group flex w-full cursor-default items-center gap-2 rounded-[4px] px-2 py-[7px] text-left text-[12px] transition-colors ${
                                     e.id === activeId
-                                        ? "bg-rowsel font-semibold text-primary"
-                                        : "text-muted-foreground hover:bg-hover hover:text-foreground"
+                                        ? "bg-(--state-selected) font-semibold text-primary"
+                                        : "text-muted-foreground hover:bg-(--state-hover) hover:text-foreground"
                                 }`}
                             >
                                 {/* 该专家正在流式：克制的呼吸圆点，颜色随当前行文字（选中行即强调色） */}
@@ -356,24 +389,29 @@ export default function AiTool({
                                 )}
                                 <span className="min-w-0 flex-1 truncate">{e.name}</span>
                                 {/* 模式 chip:选中行强调色,普通行井底 */}
-                                <span
+                                <Badge
+                                    variant="ghost"
                                     className={`flex-none rounded-md px-1.5 py-[3px] font-mono text-[9.5px] font-normal leading-none ${
                                         e.id === activeId ? "bg-primary/15 text-primary" : "bg-well text-dim-foreground"
                                     }`}
                                 >
                                     {t(e.multi ? "ai.modeMulti" : "ai.modeSingle")}
-                                </span>
-                                <button
+                                </Badge>
+                                <TipButton
                                     type="button"
-                                    className="icon-btn size-[18px]! flex-none px-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                    title={t("ai.editExpert")}
+                                    label={t("ai.editExpert")}
+                                    aria-label={t("ai.editExpert")}
+                                    appearance="standard"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-[18px] flex-none px-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                     onClick={(ev) => {
                                         ev.stopPropagation();
                                         setEditing(e.id);
                                     }}
                                 >
                                     ✎
-                                </button>
+                                </TipButton>
                             </div>
                         ))
                     )}
@@ -393,46 +431,48 @@ export default function AiTool({
             {/* ── 右栏:头部 + 会话 + 输入 ── */}
             <section className="flex min-w-0 flex-1 flex-col gap-2.5 p-3">
                 {!noModelsConfigured && activeExpert && (
-                    <header className="flex flex-none items-center gap-2 border-b border-line px-1 pb-2.5">
+                    <Toolbar className="gan-no-drag h-auto flex-none gap-2 px-1 pb-2.5">
                         <span className="min-w-0 truncate text-[13px] font-semibold text-foreground">
                             {activeExpert.name}
                         </span>
                         <span className="flex-1" />
-                        {/* 会话内模型临时切换：只改 conv.override 不写回专家；换模型历史照常携带 */}
-                        <Select
-                            value={effectiveModel(activeExpert) || NO_MODEL}
-                            onValueChange={(v) => setOverride(activeExpert.id, v)}
-                        >
-                            <SelectTrigger size="sm" className="min-w-0 max-w-56" aria-label={t("ai.bindModel")}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={NO_MODEL} disabled>
-                                    {t("ai.unbound")}
-                                </SelectItem>
-                                {(aiModels ?? []).map((m) => (
-                                    <SelectItem key={m.id} value={m.id}>
-                                        {PROVIDER_LABEL[m.provider]} · {m.model}
+                        {/* 会话内模型/强度临时切换：只改 conv.override 不写回专家；换模型历史照常携带 */}
+                        <ToolbarGroup className="min-w-0 shrink">
+                            <Select
+                                value={effectiveModel(activeExpert) || NO_MODEL}
+                                onValueChange={(v) => setOverride(activeExpert.id, v)}
+                            >
+                                <SelectTrigger size="sm" className="min-w-0 max-w-56" aria-label={t("ai.bindModel")}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={NO_MODEL} disabled>
+                                        {t("ai.unbound")}
                                     </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        {/* 会话内思考强度临时切换：语义与模型切换一致，不写回专家配置 */}
-                        <Select
-                            value={effectiveEffort(activeExpert)}
-                            onValueChange={(v) => setEffortOverride(activeExpert.id, v as AiEffortId)}
-                        >
-                            <SelectTrigger size="sm" aria-label={t("ai.effort")}>
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {EFFORT_IDS.map((id) => (
-                                    <SelectItem key={id} value={id}>
-                                        {t(EFFORT_LABEL[id])}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                                    {(aiModels ?? []).map((m) => (
+                                        <SelectItem key={m.id} value={m.id}>
+                                            {PROVIDER_LABEL[m.provider]} · {m.model}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <Select
+                                value={effectiveEffort(activeExpert)}
+                                onValueChange={(v) => setEffortOverride(activeExpert.id, v as AiEffortId)}
+                            >
+                                <SelectTrigger size="sm" aria-label={t("ai.effort")}>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {EFFORT_IDS.map((id) => (
+                                        <SelectItem key={id} value={id}>
+                                            {t(EFFORT_LABEL[id])}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </ToolbarGroup>
+                        <ToolbarSeparator />
                         {/* 单轮/多轮都给清空：单轮的历史同样需要一键重来 */}
                         <Button
                             type="button"
@@ -444,52 +484,76 @@ export default function AiTool({
                         >
                             {t("ai.clear")}
                         </Button>
-                    </header>
+                    </Toolbar>
                 )}
 
                 {noModelsConfigured ? (
                     /* 无任何模型配置：TranslateTool 式引导直达设置页（实心 CTA） */
-                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-                        <span className="text-[13px] text-foreground">{t("ai.errNoModels")}</span>
-                        <Button
-                            type="button"
-                            appearance="standard"
-                            variant="primary"
-                            size="sm"
-                            className="px-4"
-                            onClick={() => openSettings?.()}
-                        >
-                            {t("translate.openSettings")}
-                        </Button>
-                    </div>
+                    <Empty className="min-h-0 flex-1">
+                        <EmptyHeader>
+                            <EmptyTitle className="text-[13px]">{t("ai.errNoModels")}</EmptyTitle>
+                        </EmptyHeader>
+                        <EmptyContent>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="primary"
+                                size="sm"
+                                className="px-4"
+                                onClick={() => openSettings?.()}
+                            >
+                                {t("translate.openSettings")}
+                            </Button>
+                        </EmptyContent>
+                    </Empty>
                 ) : !activeExpert ? (
-                    <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-dim-foreground">
-                        {experts.length === 0 ? t("ai.noExperts") : ""}
-                    </div>
+                    <Empty className="min-h-0 flex-1">
+                        <EmptyDescription className="text-[12px] text-dim-foreground">
+                            {experts.length === 0 ? t("ai.noExperts") : ""}
+                        </EmptyDescription>
+                    </Empty>
                 ) : (
-                    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pr-1">
-                        <div className="flex flex-col gap-3 pb-1">
-                            {activeExpert.multi
-                                ? (convs[activeExpert.id]?.msgs ?? []).map((msg, i) =>
-                                      msg.role === "user" ? (
-                                          <Fragment key={i}>{renderUserMsg(msg)}</Fragment>
-                                      ) : (
-                                          <Fragment key={i}>{renderAssistantMsg(msg, true)}</Fragment>
-                                      ),
-                                  )
-                                : pairUp(convs[activeExpert.id]?.msgs ?? []).map((pair, gi) => (
-                                      /* 单轮：一问一答一张卡片，卡间用外层 gap 分隔 */
-                                      <div key={gi} className="flex flex-col gap-2 rounded-2xl bg-background p-2.5">
-                                          {pair.map((msg, mi) => (
-                                              <Fragment key={mi}>
-                                                  {msg.role === "user"
-                                                      ? renderUserMsg(msg)
-                                                      : renderAssistantMsg(msg, false)}
-                                              </Fragment>
-                                          ))}
-                                      </div>
-                                  ))}
-                        </div>
+                    /* 滚动、底部吸附与「回到最新」按钮全部交给 MessageScroller：turn 是它的
+                       直接子节点，data-turn-anchor 让每个问答轮可定位；流式增高由库跟随，
+                       用户上翻后库自己暂停吸附，回到阈值内再恢复。 */
+                    <div className="min-h-0 flex-1">
+                        <MessageScroller
+                            key={activeExpert.id}
+                            commandRef={scrollerRef}
+                            aria-label={t("ai.messages")}
+                            scrollButtonLabel={t("ai.scrollToLatest")}
+                            className="h-full"
+                            contentClassName="gap-3 p-0 pb-1"
+                        >
+                            {turns.map((turn) => {
+                                const first = turn.messages[0];
+                                const anchorProps = {
+                                    "data-turn-anchor": "true",
+                                    "data-turn-id": turn.key,
+                                    "data-message-id": turn.key,
+                                    "data-message-role": first.role,
+                                };
+                                const rows = turn.messages.map((msg, index) => (
+                                    <Fragment key={`${turn.key}:${index}`}>
+                                        {msg.role === "user" ? renderUserMsg(msg) : renderAssistantMsg(msg)}
+                                    </Fragment>
+                                ));
+                                return activeExpert.multi ? (
+                                    <div key={turn.key} {...anchorProps} className="flex flex-col gap-3">
+                                        {rows}
+                                    </div>
+                                ) : (
+                                    /* 单轮：一问一答一张卡；卡片换库件 Card，只覆写圆角/底色/间距 */
+                                    <Card
+                                        key={turn.key}
+                                        {...anchorProps}
+                                        className="gap-2 rounded-2xl border-0 bg-background p-2.5 shadow-none"
+                                    >
+                                        {rows}
+                                    </Card>
+                                );
+                            })}
+                        </MessageScroller>
                     </div>
                 )}
 

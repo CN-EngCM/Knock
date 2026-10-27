@@ -1,10 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { Bot, FileText, FolderOpen, Search } from "lucide-react";
 import { TOOLS, type ToolId } from "@/tools/registry";
 import { api, type Expert, type Group, type Item, type ToolAliases } from "@/api/client";
-import { KIND_TAG } from "@/lib/kindTag";
+import { KindIcon } from "@/lib/kindIcon";
 import { useExperts } from "@/lib/experts";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { Kbd } from "@/components/ui/kbd";
+import { Marker } from "@/components/ui/marker";
 import type { MessageKey } from "@/i18n";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -30,6 +33,21 @@ type Candidate =
     | { kind: "expert"; expert: Expert }
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
     | { kind: "path"; label: "open" | "goto"; target: string };
+
+/** 候选行首图标：条目按类型（书签走 favicon），工具用注册表图标，专家与路径动作各配 Lucide 图标 */
+function candidateIcon(c: Candidate): React.ReactNode {
+    if (c.kind === "item") return <KindIcon item={c.item} />;
+    if (c.kind === "tool") {
+        const Icon = TOOLS.find((x) => x.id === c.id)?.icon;
+        return Icon ? <Icon className="size-4 text-muted-foreground" aria-hidden /> : null;
+    }
+    if (c.kind === "expert") return <Bot className="size-4 text-muted-foreground" aria-hidden />;
+    return c.label === "open" ? (
+        <FileText className="size-4 text-muted-foreground" aria-hidden />
+    ) : (
+        <FolderOpen className="size-4 text-muted-foreground" aria-hidden />
+    );
+}
 
 type Props = {
     groups: Group[];
@@ -230,25 +248,26 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
     }
 
     return (
-        /* 顶栏搜索框：34px 高的输入井(搜索保留宽松点击区域),尾端 / 键提示 */
-        <div
-            data-slot="titlebar-well"
-            className="relative flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[5px] border border-well bg-[var(--control-input-background)] px-2.5 shadow-[0_1px_0_#ffffff0b] transition-colors duration-100 has-[input:focus]:bg-[var(--control-input-focus-background)]"
-        >
+        /* 搜索行：井体（34px、内边距、聚焦底色）由外层 TitlebarWell 提供，
+           这里只保留布局；下拉用 absolute 锚定到 TitlebarWell（App 的 center 槽）。 */
+        <div className="flex min-w-0 flex-1 items-center gap-2">
             <Search className="flex-none text-muted-foreground" size={15} aria-hidden />
             {/* 素材 chip：只读，键入即弃（见 onChange），× 手动移除 */}
             {clip !== null && (
                 <span className="flex max-w-[70%] min-w-0 flex-none items-center gap-1.5 truncate rounded-full border border-border bg-well px-2.5 py-0.5 text-[11px] text-muted-foreground">
                     <span aria-hidden>❐</span>
                     <span className="truncate">{chipLabel(clip)}</span>
-                    <button
+                    <Button
                         type="button"
-                        className="flex-none px-0.5 text-dim-foreground transition-colors hover:text-foreground"
+                        appearance="standard"
+                        variant="ghost"
+                        size="xs"
+                        className="h-auto flex-none px-0.5 text-[11px] text-dim-foreground hover:text-foreground"
                         aria-label={t("common.delete")}
                         onClick={() => setClip(null)}
                     >
                         ×
-                    </button>
+                    </Button>
                 </span>
             )}
             <input
@@ -268,28 +287,20 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                 aria-label={t("search.placeholder")}
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-xs text-foreground outline-none placeholder:text-muted-foreground"
+                className="min-w-0 flex-1 select-text border-0 bg-transparent p-0 text-xs text-foreground outline-none placeholder:text-muted-foreground"
             />
             <Kbd className="flex-none">/</Kbd>
             {open && (
                 <div className="drop-anim absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[0_12px_30px_rgb(0_0_0/40%)]">
                     {/* 只剩推荐工具或路径动作行时不算「无匹配」——指的是没有条目/工具命中 */}
                     {hits.length === 0 && pathRows.length === 0 && (
-                        <span className="block px-2.5 py-2 text-xs text-muted-foreground">{t("search.noHit")}</span>
+                        <Empty className="px-2.5 py-2">
+                            <EmptyDescription>{t("search.noHit")}</EmptyDescription>
+                        </Empty>
                     )}
                     {/* 推荐区分隔标签的位置随布局：置顶在第 0 行前，沉底在命中区之后 */}
                     {candidates.map((c, i) => {
                         const sel = hi === i;
-                        const tag =
-                            c.kind === "item"
-                                ? KIND_TAG[c.item.kind]
-                                : c.kind === "tool"
-                                  ? t("tools.menu")
-                                  : c.kind === "expert"
-                                    ? t("search.expert")
-                                    : c.label === "open"
-                                      ? "file"
-                                      : "dir";
                         const title =
                             c.kind === "item"
                                 ? c.item.title
@@ -319,33 +330,42 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                 }
                             >
                                 {i === pathStart && (
-                                    <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] text-dim-foreground">
-                                        ── {t("search.pathGroup")} ──
-                                    </div>
+                                    <Marker
+                                        structure="separator"
+                                        variant="muted"
+                                        className="px-2.5 pt-1.5 pb-0.5 text-caption"
+                                    >
+                                        {t("search.pathGroup")}
+                                    </Marker>
                                 )}
                                 {i === recStart && (
-                                    <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] text-dim-foreground">
-                                        ── {t("search.recommended")} ──
-                                    </div>
+                                    <Marker
+                                        structure="separator"
+                                        variant="muted"
+                                        className="px-2.5 pt-1.5 pb-0.5 text-caption"
+                                    >
+                                        {t("search.recommended")}
+                                    </Marker>
                                 )}
-                                <button
+                                <Button
                                     type="button"
+                                    variant="ghost"
                                     // 阻止 mousedown 默认行为保住输入框焦点，避免点击候选前下拉先因失焦消失
                                     onMouseDown={(e) => e.preventDefault()}
                                     onMouseEnter={() => setHi(i)}
                                     onClick={() => select(c)}
-                                    className={`flex w-full items-center gap-2.5 rounded-[4px] px-2 py-1.5 text-left text-xs transition-colors ${
-                                        sel ? "bg-rowsel text-foreground" : "text-muted-foreground"
+                                    className={`h-auto w-full justify-start gap-2.5 rounded-[4px] px-2 py-1.5 text-left text-xs ${
+                                        sel ? "bg-(--state-selected) text-foreground" : "text-muted-foreground"
                                     }`}
                                 >
-                                    <span className="kind-badge flex-none">{tag}</span>
+                                    <span className="grid w-4 flex-none place-items-center">{candidateIcon(c)}</span>
                                     <span className="min-w-0 flex-1 truncate">{title}</span>
                                     <span
                                         className={`max-w-[40%] flex-none truncate text-[10.5px] ${sel ? "text-muted-foreground" : "text-dim-foreground"}`}
                                     >
                                         {tail}
                                     </span>
-                                </button>
+                                </Button>
                             </Fragment>
                         );
                     })}

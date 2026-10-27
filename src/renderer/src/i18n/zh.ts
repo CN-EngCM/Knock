@@ -117,6 +117,8 @@ export const zh = {
     "ai.placeholder": "问点什么…（Enter 发送，Shift+Enter 换行）",
     "ai.copy": "复制回答",
     "ai.copied": "已复制到剪贴板",
+    "ai.scrollToLatest": "回到最新消息",
+    "ai.messages": "消息记录",
     "ai.thinking": "思考过程",
     "ai.noExperts": "还没有专家",
     "ai.errNoModels": "尚未配置 AI 模型，请先到设置中添加并保存",
@@ -147,11 +149,9 @@ export const zh = {
     "group.delete": "删除分组",
     "group.deleteHint": "组内条目将一并删除，且不可恢复。",
     "group.name": "分组名称",
-    "group.reorder": "拖动分组排序",
 
     "item.new": "添加条目",
     "item.edit": "编辑条目",
-    "item.reorder": "拖动启动项排序",
     "item.kind": "类型",
     "item.kind.bookmark": "网页",
     "item.kind.app": "应用",
@@ -184,6 +184,7 @@ export const zh = {
     "common.close": "关闭",
     "common.delete": "删除",
     "common.name": "名称",
+    "common.loading": "加载中…",
 
     "search.noHit": "（无匹配条目）",
     "search.recommended": "推荐",
@@ -450,8 +451,14 @@ export const zh = {
     // ── 左侧启动列表 / 工具首页 ──
     "side.title": "启动列表",
     "side.add": "添加",
+    "side.sort": "排序模式",
     "side.addItem": "添加启动项",
     "side.createGroupFirst": "请先添加分组",
+
+    // ── 启动列表树（GaN.UI Tree）──
+    "tree.collapse": "折叠",
+    "tree.expand": "展开",
+    "tree.dragHandle": "拖动 {label} 以移动",
     "tools.home": "工具首页",
     "home.title": "常用工具，随手打开",
     "home.sub": "本机运行 · 随用随开",

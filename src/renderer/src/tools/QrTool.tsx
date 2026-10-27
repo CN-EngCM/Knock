@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useI18n } from "@/i18n/useI18n";
 import { useToolInput } from "./toolInput";
 
 // 二维码生成：qrcode 库（纯 JS）在本 chunk 内静态引入——chunk 本身
-// 就是被 ToolsZone 懒加载的，关闭工具即整体卸载。
+// 就是被 dock 面板懒加载的，关闭面板即整体卸载。
 // 模块颜色固定黑白：扫码器对深底浅码的识别远差于白底黑码，不随主题翻转。
 // initialInput = 搜索框素材注入（如呼出时限内复制的 URL）。
 export default function QrTool({ initialInput }: { initialInput?: string | null }) {
@@ -60,18 +62,26 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
     return (
         <div className="flex h-full gap-4 p-4">
             <div className="flex min-w-0 flex-1 flex-col gap-3 text-[12.5px]">
-                <label className="flex items-center gap-2.5">
-                    <span className="w-12 flex-none text-dim-foreground">{t("qr.content")}</span>
+                <Field orientation="horizontal" className="gap-2.5">
+                    <FieldLabel
+                        htmlFor="qr-content"
+                        className="w-12 flex-none! justify-start text-[12.5px] font-normal text-dim-foreground"
+                    >
+                        {t("qr.content")}
+                    </FieldLabel>
                     <Input
+                        id="qr-content"
                         type="text"
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         className="min-w-0 flex-1"
                     />
-                </label>
+                </Field>
                 <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="flex items-center gap-2.5">
-                        <span className="w-12 flex-none text-dim-foreground">{t("qr.size")}</span>
+                    <Field orientation="horizontal" className="w-auto gap-2.5">
+                        <FieldLabel className="w-12 flex-none! justify-start text-[12.5px] font-normal text-dim-foreground">
+                            {t("qr.size")}
+                        </FieldLabel>
                         <Select value={String(size)} onValueChange={(v) => setSize(Number(v))}>
                             <SelectTrigger size="sm" aria-label={t("qr.size")}>
                                 <SelectValue />
@@ -84,9 +94,11 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
                                 ))}
                             </SelectContent>
                         </Select>
-                    </span>
-                    <span className="flex items-center gap-2.5">
-                        <span className="flex-none text-dim-foreground">{t("qr.ec")}</span>
+                    </Field>
+                    <Field orientation="horizontal" className="w-auto gap-2.5">
+                        <FieldLabel className="flex-none! justify-start text-[12.5px] font-normal text-dim-foreground">
+                            {t("qr.ec")}
+                        </FieldLabel>
                         <Select value={ec} onValueChange={(v) => setEc(v as typeof ec)}>
                             <SelectTrigger size="sm" aria-label={t("qr.ec")}>
                                 <SelectValue />
@@ -99,7 +111,7 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
                                 ))}
                             </SelectContent>
                         </Select>
-                    </span>
+                    </Field>
                 </div>
                 <div className="flex gap-2 text-[12px]">
                     <Button appearance="standard" variant="outline" size="sm" onClick={copyImage}>
@@ -120,12 +132,11 @@ export default function QrTool({ initialInput }: { initialInput?: string | null 
                         className="max-w-full rounded-md border border-border bg-white p-1"
                     />
                 ) : (
-                    <div
-                        className="flex items-center justify-center rounded-md border border-dashed border-line text-[11.5px] text-dim-foreground"
-                        style={{ width: size, height: size }}
-                    >
-                        {t("qr.empty")}
-                    </div>
+                    <Empty className="justify-center border-line" style={{ width: size, height: size }}>
+                        <EmptyDescription className="text-[11.5px] text-dim-foreground">
+                            {t("qr.empty")}
+                        </EmptyDescription>
+                    </Empty>
                 )}
             </div>
         </div>

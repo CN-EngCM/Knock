@@ -1,6 +1,6 @@
 // ── 内置工具注册表（v2.2）──
 // 单个标签的工具组件使用 React.lazy，终端宿主由 App 懒加载；
-// tab 关闭即卸载组件（ToolsZone 不再渲染它），重库随引用释放——
+// 面板关闭即卸载组件（dock 不再渲染它），重库随引用释放——
 // 这是「工具多了也不卡」的两个前提：懒加载 + 关闭即卸载。
 // 新增工具 = 这里加一行 + i18n 补 nameKey/descKey + tools/ 下实现组件。
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";

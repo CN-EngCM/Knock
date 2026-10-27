@@ -28,10 +28,10 @@
 
 - 文件放 `src/renderer/src/tools/<Name>Tool.tsx`：语义名 + Tool 后缀（先例：id 是 `files`，文件叫 `FileSearchTool.tsx`），**默认导出**组件（React.lazy 的要求）。
 - props 签名固定为 `{ initialInput?: string | null; openSettings?: () => void }`——registry 的 `ToolMeta.Component` 类型就是它，多传的 props 没人给你传进去。
-  - `openSettings` 由 App → ToolsZone 透传，供「缺配置」类状态直达设置页；用不上的工具不接。
+  - `openSettings` 由 App → DockZone 透传，供「缺配置」类状态直达设置页；用不上的工具不接。
 - 组件在 registry 里一律 `lazy(() => import(...))`；工具的重依赖在组件文件里**静态 import** 即可——chunk 本身就是懒加载的，关闭即整体卸载。
 - 生命周期铁律：**关闭 tab = 卸载组件**，状态与代码库一起释放，重开回初始态；切换 tab 是 `display:none` 保活，草稿不丢。禁止做「重开还原上次内容」——每次启动从空开始是用户决策。
-- 终端是可多开的工具：注册表只提供入口信息，`Component` 为 `null`，由 App 每次新建独立会话，交给懒加载的 TerminalZone 管理。工具菜单、首页卡片和工具搜索共用该入口；关闭标签结束对应会话。
+- 终端是可多开的工具：注册表只提供入口信息，`Component` 为 `null`，由 App 每次新建独立会话，开成独立 dock 面板（xterm 实例归 termStore，见 components/DockTerm.tsx）。工具菜单、首页卡片和工具搜索共用该入口；关闭面板结束对应会话。
 - 唯一例外（同为用户决策，2026-08）：AI 助手的会话经模块级内存 store（`src/renderer/src/tools/aiSessions.ts`）在关 tab 后保留、流继续推进、重开恢复；应用重启仍从空开始（不落盘）。
 
 ## 4. 素材注入（acceptsText）
@@ -69,13 +69,15 @@
 - **异步竞态**（输入驱动请求的工具必备）：防抖 300–600ms + `seq` ref 序号，晚归旧包直接丢弃；清理函数取消定时器；输入清空时推进序号并回 idle。FileSearchTool / TranslateTool 是同款范式。
 - **操作反馈**：sonner toast；成功用具体文案，失败兜底 `toast.error`。复制走 `navigator.clipboard` + try/catch。
 - **视觉骨架**（GaN.UI 中性灰体系，令牌见 `src/renderer/src/index.css`，与现有工具保持一致，具体值可微调但不要另起炉灶）：
-  - 公共工具区由 ToolsZone 统一提供四周 6px 留白，标签与内容面板间距同为 6px；内容面板使用细边框与小圆角。各工具仅负责面板内部布局，不自行追加外侧留白；
-  - 根容器吃满 `h-full`；工具栏行约 46px `border-b border-line bg-panel px-3.5`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
+  - 工具区是 GaN.UI DockLayout 停靠区（components/DockZone.tsx），四周 6px 留白由 DockZone 提供，组边框与标签规格归 dock 皮肤。各工具仅负责面板内部布局，不自行追加外侧留白；
+  - 根容器吃满 `h-full`；工具栏一律用 `@/components/ui/toolbar` 的 `Toolbar`（高度取 `--size-toolbar`，regular 43px）+ `ToolbarGroup` / `ToolbarSeparator`，搜索框用 `ToolbarSearch`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
   - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；双栏编辑器中间用 `border-l border-line` 分隔，代码/结果区底 `bg-well`；
-  - 按钮用 `@/components/ui/button` 的 Button 组件（GaN.UI 版）：主操作 `appearance="standard" variant="primary"`（蓝实心），次操作 `appearance="standard" variant="outline"`；工具内默认 **size sm**（h-22px，紧凑工具栏密度），弹窗底部主/次按钮用 **size default**（25px）。按钮文案直接写动词短语，不加方括号装饰；
-  - 行内轻量文字动作（复制/打开/清空等）用 `.tbtn` 应用类（11px 次级色，悬停浮填充，已带 padding 与圆角，不要再叠 border/padding 工具类），危险动作加 `.tbtn-danger`；
-  - 图标动作（工具栏图标按钮、行内小图标操作）用 `.icon-btn` 应用类（28px 悬停浮填充，`aria-pressed` 选中态由全局 CSS 给出）；该类定义在层外会压过普通尺寸工具类，紧凑场景覆盖尺寸须用 `size-*!`；
-  - 文字档位：主 `text-foreground` / 次级 `text-muted-foreground` / 较弱 `text-dim-foreground`；悬停填充 `hover:bg-hover`、选中行 `bg-rowsel`；
+  - 按钮用 `@/components/ui/button` 的 Button 组件（GaN.UI v1.0.0 版）：主操作 `appearance="standard" variant="primary"`（蓝实心），次操作 `appearance="standard" variant="outline"`；工具内默认 **size sm**（h-22px，紧凑工具栏密度），弹窗底部主/次按钮用 **size default**（25px）。按钮文案直接写动词短语，不加方括号装饰；
+  - 行内轻量文字动作（复制/打开/清空等）用 `Button appearance="standard" variant="ghost" size="xs"`，11px 与零内边距用 `className` 覆写（`h-auto px-0 text-[11px]`）；危险动作用 `text-destructive`，不再有 `.tbtn` / `.tbtn-danger` 应用类；
+  - 图标动作（工具栏图标按钮、行内小图标操作）用 `Button size="icon"`（25px）或紧凑场景 `className="size-7"`（28px）；用 `active` 表达选中（自动写 `data-active` 与 `aria-pressed`）；悬停文案用 `Tooltip`，不要退回原生 `title`；
+  - 文字档位：主 `text-foreground` / 次级 `text-muted-foreground` / 较弱 `text-dim-foreground`；悬停填充 `bg-(--state-hover)`、选中行 `bg-(--state-selected)`（库令牌，不要再引入应用层填充令牌）；
+  - 空态用 `Empty` 族，加载用 `Spinner` / `Skeleton`，计数用 `Badge`，章节分隔用 `Marker structure="separator"` 或 `Separator`，底部固定信息条用 `StatusBar` + `StatusBarItem`，长任务进度用 `Progress`；
+  - 表单行用 `Field` + `FieldLabel`（定宽标签列由 `shared.tsx` 的 `FormRow` 提供），`htmlFor`/`id` 必须成对，点标签要能聚焦控件；
   - 表单控件一律复用 GaN.UI 公共组件：普通单行输入用 `@/components/ui/input` 的 `Input`，固定选项选择用 `@/components/ui/select` 的 `Select`，普通多行输入用 `@/components/ui/textarea` 的 `Textarea`——输入面材质、焦点背景与错误态由组件提供，调用处只保留宽度/高度/布局类。多控件组合的复合输入（输入区内嵌按钮等）用 `@/components/ui/input-group` 的 `InputGroup` 系列，焦点与错误只由容器表达。占满整栏的编辑区 `Textarea` 覆盖 `rounded-none shadow-none dark:shadow-none`，避免内嵌卡片观感；隐藏文件入口 `input type="file"` 保留原生写法（另有可见按钮触发）。
 - **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。
 - JSON 与翻译的整栏输入区使用聚焦背景色提示，局部覆盖全局键盘焦点轮廓，避免面板内部出现蓝框；普通表单的 `Textarea` 保留公共组件的焦点提示。

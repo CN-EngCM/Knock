@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { ImagePlus, Play } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { StatusBar, StatusBarItem } from "@/components/ui/statusbar";
 import { Switch } from "@/components/ui/switch";
+import { Toolbar, ToolbarGroup, ToolbarSearch, ToolbarSeparator } from "@/components/ui/toolbar";
 import { ConfirmDialog } from "@/components/dialogs/ConfirmDialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, type GalleryGroup, type GalleryImage } from "@/api/client";
@@ -255,7 +257,7 @@ export default function GalleryTool() {
             return !!n && (n.tagName === "INPUT" || n.tagName === "TEXTAREA" || n.isContentEditable);
         }
         function usable(): boolean {
-            // ToolsZone 用 display:none 保活非活动 tab：offsetParent 为 null 时按键不归我们管
+            // dock 对非活动面板隐藏保活：offsetParent 为 null 时按键不归我们管
             if (rootRef.current?.offsetParent == null) return false;
             if (viewerIndex != null) return false; // 查看器自己吃按键
             if (slideshow) return false; // 放映层同理
@@ -715,66 +717,78 @@ export default function GalleryTool() {
 
             <section className="flex min-w-0 flex-1 flex-col">
                 {/* 工具条 */}
-                <div className="flex flex-none flex-wrap items-center gap-1.5 border-b border-line bg-panel px-2 py-1.5">
-                    <Button
-                        type="button"
-                        appearance="standard"
-                        variant="outline"
-                        size="xs"
-                        onClick={() => void importFiles()}
-                    >
-                        <ImagePlus />
-                        {t("gallery.import")}
-                    </Button>
-                    {/* 选择模式用开关而非按钮：状态一目了然，也免去「选择/退出选择」两态文案切换 */}
-                    <span className="flex items-center gap-1.5">
-                        <Switch
-                            id="gallery-select-mode"
-                            checked={selectMode}
-                            onCheckedChange={(v) => (v ? setSelectMode(true) : exitSelectMode())}
-                        />
-                        <label
-                            htmlFor="gallery-select-mode"
-                            className="cursor-pointer text-[12px] text-muted-foreground"
-                        >
-                            {t("gallery.select.mode")}
-                        </label>
-                    </span>
-                    <Input
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        spellCheck={false}
-                        placeholder={t("gallery.searchPlaceholder")}
-                        className="h-6 w-44 flex-none text-[12px]"
-                    />
-                    <Select value={query.sort} onValueChange={(v) => setQuery((q) => ({ ...q, sort: v as SortId }))}>
-                        {/* h-6 必须 !：SelectTrigger 内部 data-[size=sm]:h-8 带属性选择器，普通 h-6 压不过 */}
-                        <SelectTrigger size="sm" className="h-6! w-28 px-2 text-[12px]">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {SORTS.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                    {t(s.key)}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    {/* 画廊视图专属：放映（空画廊置灰；放映层自取画廊快照，不受当前搜索/排序影响） */}
-                    {query.group === "wall" && (
+                <Toolbar className="gan-no-drag h-auto min-h-(--size-toolbar) flex-none flex-wrap gap-1.5 px-2 py-1.5">
+                    <ToolbarGroup>
                         <Button
                             type="button"
                             appearance="standard"
                             variant="outline"
                             size="xs"
-                            disabled={wallCount === 0}
-                            onClick={() => setSlideshow(true)}
+                            onClick={() => void importFiles()}
                         >
-                            <Play />
-                            {t("gallery.wall.play")}
+                            <ImagePlus />
+                            {t("gallery.import")}
                         </Button>
+                        {/* 选择模式用开关而非按钮：状态一目了然，也免去「选择/退出选择」两态文案切换 */}
+                        <span className="flex items-center gap-1.5">
+                            <Switch
+                                id="gallery-select-mode"
+                                checked={selectMode}
+                                onCheckedChange={(v) => (v ? setSelectMode(true) : exitSelectMode())}
+                            />
+                            <label
+                                htmlFor="gallery-select-mode"
+                                className="cursor-pointer text-[12px] text-muted-foreground"
+                            >
+                                {t("gallery.select.mode")}
+                            </label>
+                        </span>
+                    </ToolbarGroup>
+                    <ToolbarSeparator />
+                    <ToolbarSearch
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        spellCheck={false}
+                        placeholder={t("gallery.searchPlaceholder")}
+                        aria-label={t("gallery.searchPlaceholder")}
+                        className="w-44"
+                    />
+                    <ToolbarGroup>
+                        <Select
+                            value={query.sort}
+                            onValueChange={(v) => setQuery((q) => ({ ...q, sort: v as SortId }))}
+                        >
+                            {/* h-6 必须 !：SelectTrigger 内部 data-[size=sm]:h-8 带属性选择器，普通 h-6 压不过 */}
+                            <SelectTrigger size="sm" className="h-6! w-28 px-2 text-[12px]">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {SORTS.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                        {t(s.key)}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </ToolbarGroup>
+                    {/* 画廊视图专属：放映（空画廊置灰；放映层自取画廊快照，不受当前搜索/排序影响） */}
+                    {query.group === "wall" && (
+                        <ToolbarGroup>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="outline"
+                                size="xs"
+                                disabled={wallCount === 0}
+                                onClick={() => setSlideshow(true)}
+                            >
+                                <Play />
+                                {t("gallery.wall.play")}
+                            </Button>
+                        </ToolbarGroup>
                     )}
-                </div>
+                </Toolbar>
 
                 {/* 导入进度 */}
                 {importing && (
@@ -782,12 +796,10 @@ export default function GalleryTool() {
                         <span className="flex-none text-[11px] text-dim-foreground">
                             {fmt(t("gallery.importing"), { done: importing.done, total: importing.total })}
                         </span>
-                        <div className="h-0.5 min-w-8 flex-1 rounded-full bg-well">
-                            <div
-                                className="h-full rounded-full bg-primary"
-                                style={{ width: `${importing.total ? (importing.done / importing.total) * 100 : 0}%` }}
-                            />
-                        </div>
+                        <Progress
+                            value={importing.total ? (importing.done / importing.total) * 100 : 0}
+                            className="h-0.5 min-w-8 flex-1"
+                        />
                         <Button
                             type="button"
                             appearance="standard"
@@ -850,10 +862,16 @@ export default function GalleryTool() {
                 />
 
                 {/* 底部统计 */}
-                <div className="flex flex-none items-center gap-3 border-t border-line px-2.5 py-1 text-[11px] text-dim-foreground">
-                    <span>{fmt(t("gallery.total"), { n: total })}</span>
-                    {selectedIds.size > 0 && <span>{fmt(t("gallery.selectedCount"), { m: selectedIds.size })}</span>}
-                </div>
+                <StatusBar className="gap-3 px-2.5">
+                    <StatusBarItem className="text-[11px] text-dim-foreground">
+                        {fmt(t("gallery.total"), { n: total })}
+                    </StatusBarItem>
+                    {selectedIds.size > 0 && (
+                        <StatusBarItem className="text-[11px] text-dim-foreground">
+                            {fmt(t("gallery.selectedCount"), { m: selectedIds.size })}
+                        </StatusBarItem>
+                    )}
+                </StatusBar>
             </section>
 
             {viewerIndex != null && items[viewerIndex] && (

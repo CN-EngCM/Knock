@@ -121,6 +121,8 @@ export const en: Record<MessageKey, string> = {
     "ai.placeholder": "Ask something… (Enter to send, Shift+Enter for newline)",
     "ai.copy": "Copy answer",
     "ai.copied": "Copied to clipboard",
+    "ai.scrollToLatest": "Scroll to latest message",
+    "ai.messages": "Messages",
     "ai.thinking": "Reasoning",
     "ai.noExperts": "No experts yet",
     "ai.errNoModels": "No AI model is configured yet — add and save one in Settings first",
@@ -152,11 +154,9 @@ export const en: Record<MessageKey, string> = {
     "group.delete": "Delete group",
     "group.deleteHint": "All items in this group will be deleted too.",
     "group.name": "Group name",
-    "group.reorder": "Drag to reorder groups",
 
     "item.new": "Add item",
     "item.edit": "Edit item",
-    "item.reorder": "Drag to reorder launch items",
     "item.kind": "Kind",
     "item.kind.bookmark": "Bookmark",
     "item.kind.app": "App",
@@ -189,6 +189,7 @@ export const en: Record<MessageKey, string> = {
     "common.close": "Close",
     "common.delete": "Delete",
     "common.name": "Name",
+    "common.loading": "Loading…",
 
     "search.noHit": "(no matches)",
     "search.recommended": "recommended",
@@ -460,8 +461,14 @@ export const en: Record<MessageKey, string> = {
     // ── launch list / tools home ──
     "side.title": "Launch list",
     "side.add": "Add",
+    "side.sort": "Sort mode",
     "side.addItem": "Add launch item",
     "side.createGroupFirst": "Create a group first",
+
+    // ── launch list tree (GaN.UI Tree) ──
+    "tree.collapse": "Collapse",
+    "tree.expand": "Expand",
+    "tree.dragHandle": "Drag {label} to move",
     "tools.home": "Tools home",
     "home.title": "Everyday tools, one click away",
     "home.sub": "Local only · open as you go",

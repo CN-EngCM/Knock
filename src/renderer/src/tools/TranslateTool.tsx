@@ -2,17 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { StatusBar, StatusBarItem } from "@/components/ui/statusbar";
 import { Textarea } from "@/components/ui/textarea";
+import { Toolbar, ToolbarGroup, ToolbarSeparator } from "@/components/ui/toolbar";
 import { api, type ApiResult, type TranslateResult, type YoudaoLangId } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import { TipButton } from "./TipButton";
 import { useToolInput } from "./toolInput";
 import { youdaoErrKey } from "./youdaoErr";
 
 // 有道翻译：请求经主进程（渲染进程直连被 CORS 拦，密钥也不进渲染包）。
 // 输入防抖自动翻译，序号丢弃晚归结果（与 files 工具同款竞态约定）；
 // 语言方向是个人偏好，存 localStorage（不属「运行时状态勿还原」范围）。
-// 密钥未配置时行内引导直达设置页（openSettings 由 App 经 ToolsZone 传入）。
+// 密钥未配置时行内引导直达设置页（openSettings 由 App 经 DockZone 传入）。
 
 const DEBOUNCE_MS = 600;
 const LS_FROM = "mypage-translate-from";
@@ -155,36 +160,51 @@ export default function TranslateTool({
     return (
         <div className="flex h-full flex-col">
             {/* 语言栏：源/目标选择 + 交换方向，工具条吃满宽度 */}
-            <div className="flex min-h-[46px] flex-none items-center gap-2 border-b border-line bg-panel px-3.5">
-                <Select value={from} onValueChange={(v) => pickFrom(v as FromId)}>
-                    <SelectTrigger className="w-36">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="auto">{t("translate.lang.auto")}</SelectItem>
-                        {LANGS.map((l) => (
-                            <SelectItem key={l} value={l}>
-                                {t(`translate.lang.${l}`)}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <button type="button" className="icon-btn" title={t("translate.swap")} onClick={swap}>
-                    <ArrowLeftRight className="size-4" />
-                </button>
-                <Select value={to} onValueChange={(v) => pickTo(v as YoudaoLangId)}>
-                    <SelectTrigger className="w-36">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {LANGS.map((l) => (
-                            <SelectItem key={l} value={l}>
-                                {t(`translate.lang.${l}`)}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
+            <Toolbar className="gan-no-drag gap-2 px-3.5">
+                <ToolbarGroup>
+                    <Select value={from} onValueChange={(v) => pickFrom(v as FromId)}>
+                        <SelectTrigger className="w-36">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="auto">{t("translate.lang.auto")}</SelectItem>
+                            {LANGS.map((l) => (
+                                <SelectItem key={l} value={l}>
+                                    {t(`translate.lang.${l}`)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </ToolbarGroup>
+                <ToolbarSeparator />
+                <TipButton
+                    type="button"
+                    label={t("translate.swap")}
+                    aria-label={t("translate.swap")}
+                    appearance="standard"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 flex-none text-muted-foreground enabled:hover:text-foreground"
+                    onClick={swap}
+                >
+                    <ArrowLeftRight />
+                </TipButton>
+                <ToolbarSeparator />
+                <ToolbarGroup>
+                    <Select value={to} onValueChange={(v) => pickTo(v as YoudaoLangId)}>
+                        <SelectTrigger className="w-36">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {LANGS.map((l) => (
+                                <SelectItem key={l} value={l}>
+                                    {t(`translate.lang.${l}`)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </ToolbarGroup>
+            </Toolbar>
 
             {/* 双栏编辑：左原文右译文，弱分隔线隔开。整栏 Textarea 覆盖圆角与内阴影，
                 避免编辑区看起来像内嵌卡片 */}
@@ -200,39 +220,48 @@ export default function TranslateTool({
 
                 <div className="min-w-0 flex-1 overflow-auto border-l border-line px-4 py-3.5">
                     {status === "idle" && (
-                        <div className="px-1 py-6 text-center text-[12px] text-dim-foreground">
-                            {t("translate.hint")}
-                        </div>
+                        <Empty className="px-1 py-6">
+                            <EmptyDescription className="text-[12px] text-dim-foreground">
+                                {t("translate.hint")}
+                            </EmptyDescription>
+                        </Empty>
                     )}
 
                     {status === "loading" && (
-                        <div className="px-1 py-6 text-center text-[12px] text-dim-foreground">
+                        <div className="flex items-center justify-center gap-2 px-1 py-6 text-[12px] text-dim-foreground">
+                            <Spinner decorative />
                             {t("translate.loading")}
                         </div>
                     )}
 
                     {status === "noConfig" && (
-                        <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-                            <span className="text-[13px] text-foreground">{t("translate.noConfig")}</span>
-                            <Button
-                                appearance="standard"
-                                variant="primary"
-                                size="sm"
-                                className="px-4"
-                                onClick={() => openSettings?.()}
-                            >
-                                {t("translate.openSettings")}
-                            </Button>
-                        </div>
+                        <Empty className="px-6 py-10">
+                            <EmptyHeader>
+                                <EmptyTitle className="text-[13px]">{t("translate.noConfig")}</EmptyTitle>
+                            </EmptyHeader>
+                            <EmptyContent>
+                                <Button
+                                    appearance="standard"
+                                    variant="primary"
+                                    size="sm"
+                                    className="px-4"
+                                    onClick={() => openSettings?.()}
+                                >
+                                    {t("translate.openSettings")}
+                                </Button>
+                            </EmptyContent>
+                        </Empty>
                     )}
 
                     {status === "error" && (
-                        <div className="px-1 py-6 text-center text-[12.5px] text-muted-foreground">
-                            {(() => {
-                                const k = youdaoErrKey(errCode);
-                                return k ? t(k) : `${t("translate.errFallback")}: ${errCode}`;
-                            })()}
-                        </div>
+                        <Empty className="px-1 py-6">
+                            <EmptyDescription className="text-[12.5px]">
+                                {(() => {
+                                    const k = youdaoErrKey(errCode);
+                                    return k ? t(k) : `${t("translate.errFallback")}: ${errCode}`;
+                                })()}
+                            </EmptyDescription>
+                        </Empty>
                     )}
 
                     {status === "done" && result && (
@@ -256,8 +285,8 @@ export default function TranslateTool({
             </div>
 
             {/* 状态条：检测语言 + 轻量动作 */}
-            <div className="flex flex-none items-center justify-between gap-2 border-t border-line px-3.5 py-1.5">
-                <span className="min-w-0 truncate text-[11px] text-dim-foreground">
+            <StatusBar className="gap-2 px-3.5">
+                <StatusBarItem className="min-w-0 flex-1 text-[11px] text-dim-foreground">
                     {status === "done" && result
                         ? `${t("translate.detected")}: ${
                               (LANGS as readonly string[]).includes(result.detected)
@@ -265,16 +294,30 @@ export default function TranslateTool({
                                   : result.detected
                           }`
                         : ""}
-                </span>
-                <span className="flex flex-none items-center gap-2">
-                    <button type="button" className="tbtn" onClick={clearInput}>
+                </StatusBarItem>
+                <div className="flex flex-none items-center gap-2">
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="ghost"
+                        size="xs"
+                        className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                        onClick={clearInput}
+                    >
                         {t("translate.clear")}
-                    </button>
-                    <button type="button" className="tbtn" onClick={() => void copyResult()}>
+                    </Button>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="ghost"
+                        size="xs"
+                        className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                        onClick={() => void copyResult()}
+                    >
                         {t("translate.copy")}
-                    </button>
-                </span>
-            </div>
+                    </Button>
+                </div>
+            </StatusBar>
         </div>
     );
 }

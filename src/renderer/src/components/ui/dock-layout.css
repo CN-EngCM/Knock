@@ -1,0 +1,651 @@
+/* Dockview 停靠工作区的 GaN.UI 皮肤。
+   颜色取自 src/index.css 的全局令牌与 --dock-* 停靠表面令牌，
+   深浅主题随应用或 gan-surface 局部作用域切换；结构尺寸在本文件内统一。 */
+.gan-dockview {
+  --dv-group-view-background-color: var(--canvas);
+  --dv-tabs-and-actions-container-background-color: var(--dock-tabs);
+  --dv-tabs-and-actions-container-height: var(--size-dock-tabs);
+  --dv-tabs-and-actions-container-font-size: var(--text-xs);
+  --dv-tab-font-size: var(--text-xs);
+  --dv-tab-margin: 0;
+  --dv-border-radius: 0px;
+  --dv-spacing-padding: 0px;
+
+  /* 当前组的当前标签：活动页签即面板表面层次，底部方角与内容衔接 */
+  --dv-activegroup-visiblepanel-tab-background-color: var(--dock-tab-active);
+  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
+  /* 当前组的其他标签保留独立表面，与标签栏区分 */
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--dock-tab-inactive);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
+  /* 非当前组的当前标签：保留页签形状、降低强调 */
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--dock-tab-active);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted-foreground);
+  /* 非当前组的其他标签 */
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--dock-tab-inactive);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
+
+  --dv-tab-divider-color: var(--line);
+  --dv-separator-border: var(--window-border);
+  --dv-icon-hover-background-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--primary) 22%, transparent);
+  --dv-drag-over-border-color: transparent;
+  --dv-drag-over-border: none;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  --dv-active-sash-transition-duration: var(--motion-quick-in);
+  --dv-active-sash-transition-delay: 0.3s;
+  --dv-tabs-container-scrollbar-color: var(--scrollbar-thumb-hover);
+  --dv-overlay-z-index: 100;
+  /* 浮动组用于计算自身层级的基准值；官方 .dv-resize-container 与 .dv-render-overlay
+     都把同名变量自引用（var(--dv-overlay-z-index, 999)），会丢弃主题值并回退 999。
+     这里给两者同一个可解析的显式值，保持官方按 aria-level 递增的顺序。
+     基准必须高于网格分割线 .dv-sash（z-index 99，本库在上面画 1px 分隔线），
+     否则分割线会画在浮动窗之上并截走指针；同时低于菜单锚点与拖放提示（1000）。 */
+  --gan-dock-overlay-base: 100;
+  /* 浮动窗口属于 modal 层级；溢出列表与右键菜单是 overlay 层级（见各自规则）。 */
+  --dv-floating-box-shadow: var(--elevation-modal);
+  --dv-floating-border: 1px solid var(--dock-float-border);
+  --dv-floating-group-border: 1px solid var(--dock-float-border);
+  --dv-floating-group-dragging-opacity: 0.85;
+  --dv-floating-titlebar-height: var(--size-dock-tabs);
+  --dv-floating-titlebar-background-color: var(--dock-tabs);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--window-border);
+  --dv-paneview-active-outline-color: var(--primary);
+  --dv-edge-dock-indicator-color: var(--primary);
+
+  /* 浮动组的动态前后顺序与拖动提示都在停靠区内部解析：
+     isolation 建立局部层叠范围，官方按点击顺序写入的内联 z-index 继续生效，
+     应用级菜单与模态弹层（body 挂载，z-50）始终位于工作区之上。 */
+  isolation: isolate;
+}
+
+/* 右键菜单与溢出列表挂在停靠区根节点的 popover 锚点上：抬高锚点自身的
+   层级，菜单始终显示在所有浮动组之上（浮动组使用 --gan-dock-overlay-base
+   起的递增层级）。 */
+.gan-dockview .dv-popover-anchor {
+  z-index: 1000;
+}
+/* renderer: "always" 的面板内容画在独立的 .dv-render-overlay 层，浮动时层级为
+   基准 + aria-level * 2 + 1，只比所属浮动窗高一级。若这里仍回退 999，下层浮动窗的
+   内容（含边框）会盖住上层浮动窗的标题栏、标签栏与内容，并截走点击。 */
+.gan-dockview .dv-resize-container,
+.gan-dockview .dv-render-overlay {
+  --dv-overlay-z-index: var(--gan-dock-overlay-base);
+}
+
+/* 页签材质：渐变高光、细边缘与外阴影在非活动状态仍保留。
+   统一光源：四个标签栏方向都是顶边高光、向下投影、渐变自上而下；只有圆角和主色选中标记按标签栏所在方向切换
+   （主色标记是位置标记，留在朝外的边，不是高光）。 */
+.gan-dockview .dv-tabs-container .dv-tab {
+  padding: 0;
+}
+.gan-dockview .dv-groupview-header-top .dv-tabs-container .dv-tab {
+  border-radius: 3px 3px 0 0;
+}
+.gan-dockview .dv-groupview-header-bottom .dv-tabs-container .dv-tab {
+  border-radius: 0 0 3px 3px;
+}
+.gan-dockview .dv-groupview-header-left .dv-tabs-container .dv-tab {
+  border-radius: 3px 0 0 3px;
+}
+.gan-dockview .dv-groupview-header-right .dv-tabs-container .dv-tab {
+  border-radius: 0 3px 3px 0;
+}
+.gan-dockview :is(.dv-groupview-header-top, .dv-groupview-header-bottom) .dv-tabs-container .dv-tab {
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 45%, var(--dock-tab-shade));
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 1px 0 0 var(--dock-tab-edge), inset -1px 0 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+.gan-dockview :is(.dv-groupview-header-left, .dv-groupview-header-right) .dv-tabs-container .dv-tab {
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 45%, var(--dock-tab-shade));
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 0 -1px 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+
+/* 上下标签栏约束横向尺寸；左右标签栏沿官方纵向排布，标签厚度固定、
+   沿标签栏方向保留可读长度，不把横向最小宽度变成侧栏厚度。 */
+.gan-dockview .dv-groupview-header-top .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab {
+  min-width: 144px;
+  max-width: 240px;
+  height: var(--size-dock-tabs);
+  align-self: flex-end;
+}
+.gan-dockview .dv-groupview-header-bottom .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab {
+  min-width: 144px;
+  max-width: 240px;
+  height: var(--size-dock-tabs);
+  align-self: flex-start;
+}
+.gan-dockview .dv-groupview-header-left .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab,
+.gan-dockview .dv-groupview-header-right .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab {
+  width: var(--size-dock-item);
+  min-width: var(--size-dock-item);
+  max-width: var(--size-dock-item);
+  min-height: 128px;
+  max-height: 240px;
+  align-self: center;
+}
+.gan-dockview .dv-single-tab.dv-groupview-header-vertical .dv-tabs-container .dv-tab {
+  width: 100%;
+}
+.gan-dockview .dv-single-tab.dv-full-width-single-tab .dv-tabs-container-vertical {
+  height: 100%;
+}
+
+/* 当前工作组的活动页签：仅此处增加主色边缘标记，其他组不加蓝框 */
+.gan-dockview .dv-groupview.dv-active-group.dv-groupview-header-top .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab {
+  box-shadow: inset 0 1px 0 var(--primary), inset 1px 0 0 var(--dock-tab-edge), inset -1px 0 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+.gan-dockview .dv-groupview.dv-active-group.dv-groupview-header-bottom .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab {
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 0 -1px 0 var(--primary), inset 1px 0 0 var(--dock-tab-edge), inset -1px 0 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+.gan-dockview .dv-groupview.dv-active-group.dv-groupview-header-left .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab {
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 1px 0 0 var(--primary), inset 0 -1px 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+.gan-dockview .dv-groupview.dv-active-group.dv-groupview-header-right .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab {
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset -1px 0 0 var(--primary), inset 0 -1px 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+
+/* 标签内统一留白，关闭按钮距标签末端 6px；长标题先截断、按钮不被挤压。
+   纵向标签栏的 inline 方向随 writing-mode 转为上下，末端间距自然落在下方。 */
+.gan-dockview .dv-tab .dv-default-tab {
+  width: 100%;
+  box-sizing: border-box;
+  padding-inline: var(--space-xl) var(--space-sm);
+  gap: var(--space-sm);
+}
+.gan-dockview .dv-tab .dv-default-tab .dv-default-tab-content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-inline-end: var(--space-sm);
+}
+.gan-dockview .dv-tabs-container-vertical .dv-tab .dv-default-tab .dv-default-tab-content {
+  min-height: 0;
+  margin-right: 0;
+}
+
+/* 单标签组：标签铺满整行，关闭入口只在组标题栏右端，中间留白连续可拖动 */
+.gan-dockview .dv-tabs-and-actions-container.dv-single-tab {
+  --gan-single-tab-background: var(--dock-tab-active);
+  --gan-single-tab-highlight: var(--dock-tab-highlight);
+  background-color: var(--gan-single-tab-background);
+}
+.gan-dockview .dv-groupview-header-top > .dv-tabs-and-actions-container.dv-single-tab {
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 45%, var(--dock-tab-shade));
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 0 -1px 0 var(--dock-tab-edge);
+}
+.gan-dockview .dv-groupview-header-bottom > .dv-tabs-and-actions-container.dv-single-tab {
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 45%, var(--dock-tab-shade));
+  box-shadow: inset 0 1px 0 var(--dock-tab-edge), inset 0 2px 0 var(--dock-tab-highlight);
+}
+.gan-dockview .dv-groupview-header-left > .dv-tabs-and-actions-container.dv-single-tab {
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 45%, var(--dock-tab-shade));
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset -1px 0 0 var(--dock-tab-edge);
+}
+.gan-dockview .dv-groupview-header-right > .dv-tabs-and-actions-container.dv-single-tab {
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 45%, var(--dock-tab-shade));
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 1px 0 0 var(--dock-tab-edge);
+}
+.gan-dockview .dv-active-group > .dv-tabs-and-actions-container.dv-single-tab {
+  --gan-single-tab-background: var(--dock-tab-active);
+  --gan-single-tab-highlight: var(--primary);
+}
+.gan-dockview .dv-groupview-header-top.dv-active-group > .dv-tabs-and-actions-container.dv-single-tab {
+  box-shadow: inset 0 1px 0 var(--primary), inset 0 -1px 0 var(--dock-tab-edge);
+}
+.gan-dockview .dv-groupview-header-bottom.dv-active-group > .dv-tabs-and-actions-container.dv-single-tab {
+  box-shadow: inset 0 -1px 0 var(--primary), inset 0 1px 0 var(--dock-tab-edge), inset 0 2px 0 var(--dock-tab-highlight);
+}
+.gan-dockview .dv-groupview-header-left.dv-active-group > .dv-tabs-and-actions-container.dv-single-tab {
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 1px 0 0 var(--primary), inset -1px 0 0 var(--dock-tab-edge);
+}
+.gan-dockview .dv-groupview-header-right.dv-active-group > .dv-tabs-and-actions-container.dv-single-tab {
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset -1px 0 0 var(--primary), inset 1px 0 0 var(--dock-tab-edge);
+}
+.gan-dockview .dv-single-tab .dv-tabs-container .dv-tab {
+  background-color: var(--gan-single-tab-background);
+  border-start-end-radius: 0;
+}
+.gan-dockview .dv-groupview-header-top .dv-single-tab .dv-tabs-container .dv-tab {
+  box-shadow: none;
+}
+.gan-dockview .dv-groupview-header-bottom .dv-single-tab .dv-tabs-container .dv-tab {
+  box-shadow: none;
+}
+.gan-dockview .dv-groupview-header-left .dv-single-tab .dv-tabs-container .dv-tab {
+  box-shadow: none;
+}
+.gan-dockview .dv-groupview-header-right .dv-single-tab .dv-tabs-container .dv-tab {
+  box-shadow: none;
+}
+/* 单标签组的高光线与底边线只由标题栏容器绘制，标签自身不再重复，避免标签区比按钮区深一档。
+   与 Titlebar 同材质：单标签组标题栏与多标签组的活动页签使用 --bar-top → --bar-bottom 渐变，
+   不再叠半透明高光渐变；顶部/边缘高光线与主色标记仍由上面的 box-shadow 提供。 */
+.gan-dockview .dv-single-tab .dv-tabs-container .dv-tab,
+.gan-dockview .dv-groupview .dv-single-tab .dv-tabs-container .dv-tab.dv-active-tab {
+  background-color: transparent;
+  background-image: none;
+}
+.gan-dockview .dv-groupview-header-top > .dv-tabs-and-actions-container.dv-single-tab,
+.gan-dockview .dv-groupview-header-top .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab {
+  background-image: linear-gradient(to bottom, var(--bar-top), var(--bar-bottom));
+}
+.gan-dockview .dv-groupview-header-bottom > .dv-tabs-and-actions-container.dv-single-tab,
+.gan-dockview .dv-groupview-header-bottom .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab,
+.gan-dockview .dv-groupview-header-left > .dv-tabs-and-actions-container.dv-single-tab,
+.gan-dockview .dv-groupview-header-left .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab,
+.gan-dockview .dv-groupview-header-right > .dv-tabs-and-actions-container.dv-single-tab,
+.gan-dockview .dv-groupview-header-right .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-active-tab {
+  background-image: linear-gradient(to bottom, var(--bar-top), var(--bar-bottom));
+}
+/* 未选中页签退成平面：不带顶部/边缘高光线与渐变，只保留细边与投影。 */
+.gan-dockview .dv-groupview-header-top .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab:not(.dv-active-tab) {
+  background-image: none;
+  box-shadow: inset 1px 0 0 var(--dock-tab-edge), inset -1px 0 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+.gan-dockview .dv-groupview-header-bottom .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab:not(.dv-active-tab) {
+  background-image: none;
+  box-shadow: inset 1px 0 0 var(--dock-tab-edge), inset -1px 0 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+.gan-dockview .dv-groupview-header-left .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab:not(.dv-active-tab),
+.gan-dockview .dv-groupview-header-right .dv-tabs-and-actions-container:not(.dv-single-tab) .dv-tab:not(.dv-active-tab) {
+  background-image: none;
+  box-shadow: inset 0 -1px 0 var(--dock-tab-edge), 0 1px 2px var(--dock-tab-shadow);
+}
+/* Dockview 在非首个视图的起始边画 1px 分隔线（::before，z-index 5），会盖住当前组标签栏起始边的主色线：
+   上下分栏中的顶部标签栏、左右分栏中的左侧标签栏。主色线与分隔线同位置，当前组让位给主色线。 */
+.gan-dockview .dv-split-view-container.dv-vertical > .dv-view-container > .dv-view:has(> .dv-groupview.dv-active-group.dv-groupview-header-top)::before,
+.gan-dockview .dv-split-view-container.dv-horizontal > .dv-view-container > .dv-view:has(> .dv-groupview.dv-active-group.dv-groupview-header-left)::before {
+  background-color: transparent;
+}
+.gan-dockview .dv-single-tab > .dv-right-actions-container {
+  align-items: center;
+  padding-inline: 5px;
+}
+.gan-dockview .dv-groupview-header-left > .dv-tabs-and-actions-container.dv-single-tab > .dv-right-actions-container,
+.gan-dockview .dv-groupview-header-right > .dv-tabs-and-actions-container.dv-single-tab > .dv-right-actions-container {
+  padding-inline: 0;
+  padding-block: 5px;
+}
+.gan-dockview .dv-right-actions-container > .dv-react-part:has(> .gan-group-actions) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gan-dockview .dv-tabs-and-actions-container.dv-single-tab .dv-tab :is(.dv-default-tab-action, .gan-panel-lock) {
+  display: none;
+}
+
+/* 每个面板独立固定，图钉与关闭按钮尺寸一致，固定状态持续显示。 */
+.gan-dockview .gan-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.gan-dockview .dv-groupview-header-vertical .gan-group-actions {
+  flex-direction: column;
+}
+.gan-dockview .gan-panel-lock {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+.gan-dockview .gan-panel-lock svg {
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+}
+.gan-dockview .gan-panel-lock[aria-pressed="true"] {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.gan-dockview .gan-panel-lock[aria-pressed="true"] svg {
+  transform: none;
+  fill: color-mix(in srgb, var(--primary) 25%, transparent);
+}
+.gan-dockview .gan-panel-lock:not([aria-pressed="true"]):hover {
+  color: var(--foreground);
+  background: var(--dv-icon-hover-background-color);
+}
+.gan-dockview .dv-tab:not(.dv-active-tab):not(:hover):not(:focus-within) .gan-panel-lock[aria-pressed="false"] {
+  visibility: hidden;
+}
+
+/* 关闭按钮：18×18 命中区、9×9 图形；默认弱化叉号，悬停与键盘聚焦增强 */
+.gan-dockview .dv-tab .dv-default-tab-action {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+.gan-dockview .dv-tab .dv-default-tab-action:hover {
+  color: var(--foreground);
+  border-radius: 2px;
+}
+.gan-dockview .dv-tab .dv-default-tab-action:active {
+  color: var(--foreground);
+  background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 2px;
+}
+.gan-dockview .dv-tab .dv-default-tab-action:focus-visible {
+  color: var(--foreground);
+  border-radius: 2px;
+}
+.gan-dockview .gan-tab-close-icon {
+  width: 9px;
+  height: 9px;
+}
+
+/* 组标题栏右端的单面板组关闭入口与空白分组关闭入口，视觉与标签关闭按钮同规格 */
+.gan-dockview .dv-right-actions-container .gan-group-close,
+.gan-dockview .gan-empty-group-close {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--foreground) 62%, transparent);
+}
+.gan-dockview .dv-right-actions-container .gan-group-close:hover,
+.gan-dockview .gan-empty-group-close:hover {
+  color: var(--foreground);
+  border-radius: 2px;
+  background-color: var(--dv-icon-hover-background-color);
+}
+.gan-dockview .dv-right-actions-container .gan-group-close:active,
+.gan-dockview .gan-empty-group-close:active {
+  color: var(--foreground);
+  background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+  border-radius: 2px;
+}
+
+/* 空白分组：组头隐藏，关闭入口放在标题栏关闭按钮原本的位置（28px 栏内垂直居中），提示居中 */
+.gan-dockview .gan-empty-group {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+  box-sizing: border-box;
+  text-align: center;
+  user-select: none;
+}
+.gan-dockview .gan-empty-group-close {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+}
+.gan-dockview .gan-empty-group-close:focus-visible {
+  color: var(--foreground);
+  outline: 1.5px solid var(--ring);
+  outline-offset: -2px;
+}
+.gan-dockview .gan-empty-group-title {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+.gan-dockview .gan-empty-group-hint {
+  font-size: var(--text-small);
+  color: var(--dim-foreground);
+}
+
+/* 非活动标签悬停在自身表面上提亮，保留边缘和渐变 */
+.gan-dockview .dv-tabs-container .dv-tab:not(.dv-active-tab):hover {
+  background-color: color-mix(in srgb, var(--foreground) 7%, var(--dock-tab-inactive));
+}
+
+/* 键盘焦点：标签与关闭按钮保留可见焦点环颜色 */
+.gan-dockview .dv-tab:focus-visible::after,
+.gan-dockview .dv-tab:has(:focus-visible)::after {
+  outline-color: var(--ring) !important;
+}
+.gan-dockview .dv-tabs-and-actions-container :focus-visible {
+  outline: 1.5px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* 标签溢出入口：沿用官方结构与隐藏标签计算，只补 GaN.UI 表面与可访问状态 */
+.gan-dockview .dv-tabs-overflow-dropdown-default {
+  height: calc(var(--size-dock-tabs) - 6px);
+  min-width: 24px;
+  align-self: center;
+  justify-content: center;
+  margin-inline: 2px;
+  padding: 0 4px;
+  border-radius: 2px;
+  color: var(--muted-foreground);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+.gan-dockview .dv-tabs-overflow-dropdown-default > span {
+  padding-left: 2px;
+}
+.gan-dockview .dv-tabs-overflow-dropdown-default > svg {
+  width: 12px;
+  height: 12px;
+}
+.gan-dockview .dv-tabs-overflow-dropdown-default:hover {
+  color: var(--foreground);
+  background-color: var(--dv-icon-hover-background-color);
+}
+.gan-dockview .dv-tabs-overflow-dropdown-default:active {
+  background-color: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+.gan-dockview .dv-groupview-header-left .dv-tabs-overflow-dropdown-default,
+.gan-dockview .dv-groupview-header-right .dv-tabs-overflow-dropdown-default {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  width: var(--size-dock-item);
+  min-width: var(--size-dock-item);
+  height: calc(var(--size-dock-item) + 4px);
+  min-height: calc(var(--size-dock-item) + 4px);
+  margin-inline: 0;
+  margin-block: 2px;
+  padding: 2px 0;
+}
+.gan-dockview .dv-groupview-header-left .dv-tabs-overflow-dropdown-default > svg {
+  width: 10px;
+  height: 10px;
+  transform: none;
+}
+.gan-dockview .dv-groupview-header-right .dv-tabs-overflow-dropdown-default > svg {
+  width: 10px;
+  height: 10px;
+  transform: rotate(180deg);
+}
+.gan-dockview .dv-groupview-header-left .dv-tabs-overflow-dropdown-default > span,
+.gan-dockview .dv-groupview-header-right .dv-tabs-overflow-dropdown-default > span {
+  padding-left: 0;
+  font-size: var(--text-caption);
+  line-height: 1;
+}
+
+/* 隐藏标签下拉列表：与菜单共用同一套中性色层级与紧凑字号 */
+.gan-dockview .dv-tabs-overflow-container {
+  min-width: 180px;
+  max-width: min(360px, 70vw);
+  max-height: min(50vh, 320px);
+  padding: 3px 0;
+  border: 1px solid var(--window-border);
+  border-radius: 3px;
+  background-color: var(--dock-tabs);
+  box-shadow: var(--elevation-overlay);
+}
+.gan-dockview .dv-tabs-overflow-container .dv-tab {
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  height: var(--size-dock-item);
+  box-shadow: none;
+  border-radius: 0;
+  background-image: none;
+}
+/* 行悬停取统一状态层：行自带不透明底色，把半透明状态色作为渐变层叠在上面。 */
+.gan-dockview .dv-tabs-overflow-container .dv-tab:hover {
+  background-image: linear-gradient(var(--state-hover), var(--state-hover));
+}
+.gan-dockview .dv-tabs-overflow-container .dv-tab .dv-default-tab {
+  padding-inline: var(--space-lg) var(--space-sm);
+}
+.gan-dockview .dv-tabs-overflow-container .dv-tab:not(:last-child) {
+  border-bottom-color: var(--line);
+}
+
+/* 右键菜单：中性色表面、紧凑行高与细边；长菜单在窗口可用高度内滚动 */
+.gan-dockview .dv-context-menu {
+  min-width: 184px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  padding: 4px 0;
+  border: 1px solid var(--window-border);
+  border-radius: 3px;
+  background: var(--dock-tabs);
+  color: var(--foreground);
+  box-shadow: var(--elevation-overlay);
+  font-size: var(--text-xs);
+}
+.gan-dockview .dv-context-menu-item {
+  height: var(--size-dock-item);
+  padding: 0 var(--space-lg);
+  font-size: var(--text-xs);
+}
+.gan-dockview .dv-context-menu-item:hover,
+.gan-dockview .dv-context-menu-item:focus {
+  outline: none;
+  background: var(--dv-icon-hover-background-color);
+}
+.gan-dockview .dv-context-menu-item:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -1px;
+}
+.gan-dockview .dv-context-menu-item.dv-context-menu-item--disabled {
+  opacity: 0.42;
+}
+.gan-dockview .dv-context-menu-separator {
+  background: var(--line);
+  margin: 4px 0;
+}
+
+/* 分割线：静止时显示 1px 分隔线（用渐变画出），悬停/拖动由官方
+   --dv-active-sash-color 填满命中区提示可拖 */
+.gan-dockview .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash {
+  background-image: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    var(--line) calc(50% - 0.5px),
+    var(--line) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+}
+.gan-dockview .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash {
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(50% - 0.5px),
+    var(--line) calc(50% - 0.5px),
+    var(--line) calc(50% + 0.5px),
+    transparent calc(50% + 0.5px)
+  );
+}
+
+/* 浮动窗口标题栏：整条可拖动（cursor: move），左端一组小圆点作为拖动纹理，悬停整条提亮、纹理增强；
+   窗口自身带细边框与较大投影，和停靠区明显分层。双击标题栏停靠回原位。 */
+.gan-dockview .dv-resize-container-with-titlebar > .dv-floating-titlebar {
+  position: relative;
+  font-size: var(--text-xs);
+  cursor: move;
+  background-image: linear-gradient(to bottom, var(--dock-tab-highlight), transparent 70%);
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight);
+}
+.gan-dockview .dv-resize-container-with-titlebar > .dv-floating-titlebar::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 8px;
+  height: 13px;
+  transform: translateY(-50%);
+  background-image: radial-gradient(circle at 1.5px 1.5px, var(--dock-grip) 1.2px, transparent 1.6px);
+  background-size: 5px 5px;
+  pointer-events: none;
+}
+.gan-dockview .dv-resize-container-with-titlebar > .dv-floating-titlebar:hover {
+  box-shadow: inset 0 1px 0 var(--dock-tab-highlight), inset 0 0 0 100px var(--dock-float-titlebar-hover);
+}
+.gan-dockview .dv-resize-container-with-titlebar > .dv-floating-titlebar:hover::before {
+  background-image: radial-gradient(circle at 1.5px 1.5px, var(--dock-grip-hover) 1.2px, transparent 1.6px);
+}
+
+/* 工作台空组：工作区最后一组变空时的背景，居中提示；内容由宿主传入 */
+.gan-dockview .gan-workbench-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.gan-dockview .gan-workbench-empty-title {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+/* 面板内容容器允许内部滚动收敛 */
+.gan-dockview .dv-groupview .dv-content-container,
+.gan-dockview .dv-groupview .dv-react-content-part {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 拖动幽灵标签：dockview 把被拖标签克隆后挂到 body，并把整份计算样式内联到克隆上。
+   克隆因此位于 .gan-dockview 作用域之外，下面的规则不带作用域前缀，且需要 !important 压过内联值：
+   - 多标签的 .dv-tab 带 align-self: flex-end，克隆为 position: fixed 且 inset 全为 0 时，
+     浏览器按该值把它贴到视口底部，幽灵不再跟随鼠标；单标签是 auto，所以只有单标签拖动看得到幽灵。
+   - 图钉与关闭按钮的皮肤在作用域内，克隆里只剩未设尺寸的 24px 图标，拖动时不需要它们。
+   - 单标签的标签自身是透明的（底色由标题栏提供），克隆后只剩一圈轮廓，补上与标题栏同材质的底色。 */
+.dv-tab-ghost-drag {
+  align-self: auto !important;
+  inset: 0 auto auto 0 !important;
+  background-color: var(--dock-tab-active) !important;
+  background-image: linear-gradient(to bottom, var(--bar-top), var(--bar-bottom)) !important;
+}
+.dv-tab-ghost-drag :is(.dv-default-tab-action, .gan-panel-lock) {
+  display: none !important;
+}
+
+/* 标签栏与溢出列表：dockview 自带 scrollbar-width: thin，在 Chromium 中会让 ::-webkit-scrollbar 整体失效，
+   改回 auto 后沿用 dockview 的细条尺寸（标签栏 3px、溢出列表 6px），颜色走 --dv-tabs-container-scrollbar-color。 */
+@supports selector(::-webkit-scrollbar) {
+  .dv-tabs-container,
+  .dv-tabs-overflow-container {
+    scrollbar-width: auto;
+  }
+  /* 溢出列表挂在 body 下，取不到 .gan-dockview 上的变量，这里补上令牌回退。 */
+  .dv-tabs-overflow-container::-webkit-scrollbar-thumb {
+    background: var(--dv-tabs-container-scrollbar-color, var(--scrollbar-thumb-hover));
+  }
+}

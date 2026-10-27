@@ -15,3 +15,14 @@ pnpm-lock.yaml
 
 # 字符画生成器的中间产物
 scripts/art-*.txt
+
+# GaN.UI 上游原样文件（同步自 v1.0.0，HEAD e7e52dc）：保持 2 空格无分号的上游字节，
+# 不被 prettier 重排，否则下次同步会变成整文件 diff。
+src/renderer/src/components/ui
+src/renderer/src/lib/platform.tsx
+src/renderer/src/lib/shortcut.ts
+src/renderer/src/lib/density.ts
+src/renderer/src/lib/scroll.ts
+src/renderer/src/hooks/use-overlay-density.ts
+src/renderer/src/hooks/use-size-token.ts
+src/renderer/src/hooks/use-virtual-rows.ts
