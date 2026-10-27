@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useI18n } from "@/i18n/useI18n";
 
 type Props = {
@@ -18,7 +19,9 @@ type Props = {
     onConfirm: () => Promise<void>;
 };
 
-// 通用确认弹窗：用于删除等不可逆操作的二次确认
+// 通用确认弹窗：用于删除等不可逆操作的二次确认。
+// 用 AlertDialog 表达 alertdialog 语义：遮罩点击被库拦截，关闭路径只剩 Esc、取消与确认；
+// 初始焦点由库落到 Cancel（取消在前，主操作在后）。
 export function ConfirmDialog({ open, title, description, onClose, onConfirm }: Props) {
     const { t } = useI18n();
     const [busy, setBusy] = useState(false);
@@ -34,28 +37,27 @@ export function ConfirmDialog({ open, title, description, onClose, onConfirm }: 
     }
 
     return (
-        <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>{title}</DialogTitle>
-                    {description && <DialogDescription>{description}</DialogDescription>}
-                </DialogHeader>
-                <DialogFooter>
-                    <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
-                        {t("common.cancel")}
-                    </Button>
-                    <Button
-                        type="button"
-                        appearance="standard"
+        <AlertDialog open={open} onOpenChange={(v) => !v && onClose()}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>{title}</AlertDialogTitle>
+                    {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                    {/* preventDefault：Action 默认点击即关，这里压住关闭，等异步删除完成再由 onClose 收尾（与旧行为一致） */}
+                    <AlertDialogAction
                         variant="destructive"
-                        size="default"
-                        onClick={handleConfirm}
                         disabled={busy}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            void handleConfirm();
+                        }}
                     >
                         {t("common.delete")}
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
     );
 }

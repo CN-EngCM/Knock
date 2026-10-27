@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     type AiModelConfig,
     type FontConfig,
@@ -106,27 +107,25 @@ export function SettingsDialog({
                     <DialogTitle>{t("settings.title")}</DialogTitle>
                 </DialogHeader>
 
-                {/* 两栏：左=分节导航（SECTION_DEFS 驱动），右=当前分节内容 */}
-                <div className="flex min-h-0 flex-1">
-                    <nav className="flex w-36 flex-none flex-col gap-0.5 border-e border-line bg-canvas p-2">
+                {/* 两栏：左=分节导航（SECTION_DEFS 驱动），右=当前分节内容。
+                    forceMount 让五个分节常驻，切走再切回不丢未提交的表单草稿；
+                    非激活面板由库的 data-[state=inactive]:hidden 隐藏。 */}
+                <Tabs
+                    orientation="vertical"
+                    value={sec}
+                    onValueChange={(value) => setSec(value as SectionId)}
+                    className="flex min-h-0 flex-1 gap-0"
+                >
+                    {/* 定宽 144px（沿用原导航宽度）由 w-36 保持；表面继续用侧栏的 canvas + 右分隔线 */}
+                    <TabsList className="w-36 flex-none flex-col gap-0.5 rounded-none border-e border-line bg-canvas p-2 dark:bg-canvas">
                         {SECTION_DEFS.map((s) => (
-                            <button
-                                key={s.id}
-                                type="button"
-                                onClick={() => setSec(s.id)}
-                                aria-pressed={sec === s.id}
-                                className={`min-h-8 rounded-[4px] px-2.5 text-left text-xs transition-colors ${
-                                    sec === s.id
-                                        ? "bg-rowsel text-primary"
-                                        : "text-muted-foreground hover:bg-hover hover:text-foreground"
-                                }`}
-                            >
+                            <TabsTrigger key={s.id} value={s.id}>
                                 {t(s.labelKey)}
-                            </button>
+                            </TabsTrigger>
                         ))}
-                    </nav>
-                    <div className="grid min-h-0 min-w-0 flex-1 content-start gap-3 overflow-y-auto p-5">
-                        {sec === "basic" && (
+                    </TabsList>
+                    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
+                        <TabsContent value="basic" forceMount className="grid content-start gap-3">
                             <BasicSection
                                 lang={lang}
                                 onChangeLang={onChangeLang}
@@ -141,15 +140,21 @@ export function SettingsDialog({
                                 clipSec={clipSec}
                                 onClipSec={onClipSec}
                             />
-                        )}
-                        {sec === "tools" && <ToolsSection toolAliases={toolAliases} onToolAlias={onToolAlias} />}
-                        {sec === "translate" && (
+                        </TabsContent>
+                        <TabsContent value="tools" forceMount className="grid content-start gap-3">
+                            <ToolsSection toolAliases={toolAliases} onToolAlias={onToolAlias} />
+                        </TabsContent>
+                        <TabsContent value="translate" forceMount className="grid content-start gap-3">
                             <TranslateSection translateCfg={translateCfg} onTranslateCfg={onTranslateCfg} />
-                        )}
-                        {sec === "ai" && <AiSection aiModels={aiModels} onAiModels={onAiModels} />}
-                        {sec === "gallery" && <GallerySection />}
+                        </TabsContent>
+                        <TabsContent value="ai" forceMount className="grid content-start gap-3">
+                            <AiSection aiModels={aiModels} onAiModels={onAiModels} />
+                        </TabsContent>
+                        <TabsContent value="gallery" forceMount className="grid content-start gap-3">
+                            <GallerySection />
+                        </TabsContent>
                     </div>
-                </div>
+                </Tabs>
 
                 {/* mx-0 mb-0 覆盖公共 Footer 配合默认 p-5 的 -mx-5 -mb-5（本弹窗 p-0，不覆盖会伸出弹窗边缘） */}
                 <DialogFooter className="mx-0 mb-0 px-4 py-2.5">

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BarcodeFormat, BrowserMultiFormatReader } from "@zxing/library";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Marker } from "@/components/ui/marker";
 import { useI18n } from "@/i18n/useI18n";
 
 // 条形码 / 二维码识别：@zxing/library（纯 JS）随本 chunk 懒加载。
@@ -72,7 +74,7 @@ export default function ScanTool() {
         >
             <div
                 className={`flex flex-none flex-col items-center gap-3 rounded-md border border-dashed px-6 py-8 text-center ${
-                    dragOver ? "border-border bg-rowsel" : "border-line"
+                    dragOver ? "border-border bg-(--state-selected)" : "border-line"
                 }`}
             >
                 <span className="text-[14px] text-muted-foreground">{t("scan.drop")}</span>
@@ -92,27 +94,43 @@ export default function ScanTool() {
                 />
             </div>
 
-            <h3 className="flex-none text-[11.5px] tracking-widest text-dim-foreground">
-                {t("scan.results")} ── {results.length ? "" : t("scan.none")}
-            </h3>
+            <Marker structure="separator" className="flex-none text-[11.5px] tracking-widest text-dim-foreground">
+                {t("scan.results")}
+                {results.length === 0 ? ` · ${t("scan.none")}` : ""}
+            </Marker>
             {results.map((r, i) => (
                 <div
                     key={`${i}-${r.text}`}
                     className="flex flex-none items-center gap-2.5 rounded-md border border-line bg-background px-2.5 py-1.5"
                 >
-                    <span className="kind-badge flex-none">{r.format}</span>
+                    <Badge
+                        variant="ghost"
+                        className="flex-none bg-well px-1.5 font-mono text-[9.5px] text-muted-foreground"
+                    >
+                        {r.format}
+                    </Badge>
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-foreground">{r.text}</span>
-                    <button type="button" className="tbtn" onClick={() => copyText(r.text)}>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="ghost"
+                        size="xs"
+                        className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                        onClick={() => copyText(r.text)}
+                    >
                         {t("scan.copy")}
-                    </button>
+                    </Button>
                     {/^https?:\/\//i.test(r.text) && (
-                        <button
+                        <Button
                             type="button"
-                            className="tbtn"
+                            appearance="standard"
+                            variant="ghost"
+                            size="xs"
+                            className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
                             onClick={() => window.open(r.text, "_blank", "noreferrer")}
                         >
                             {t("scan.open")}
-                        </button>
+                        </Button>
                     )}
                 </div>
             ))}

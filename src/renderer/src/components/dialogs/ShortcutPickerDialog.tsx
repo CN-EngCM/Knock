@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { api, type Shortcut } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -52,26 +55,30 @@ export function ShortcutPickerDialog({ open, onClose, onPick }: Props) {
 
                 <div className="max-h-[50vh] overflow-y-auto border border-line">
                     {shortcuts === null && (
-                        <div className="px-3 py-6 text-center text-[13px] text-dim-foreground">
+                        <div className="flex items-center justify-center gap-2 px-3 py-6 text-[13px] text-dim-foreground">
+                            <Spinner decorative className="size-4 text-dim-foreground" />
                             {t("picker.loading")}
                         </div>
                     )}
                     {shortcuts !== null && visible.length === 0 && (
-                        <div className="px-3 py-6 text-center text-[13px] text-dim-foreground">{t("picker.empty")}</div>
+                        <Empty className="px-3 py-6">
+                            <EmptyDescription>{t("picker.empty")}</EmptyDescription>
+                        </Empty>
                     )}
                     {visible.map((s) => (
-                        <button
+                        <Button
                             key={s.lnk}
                             type="button"
+                            variant="ghost"
                             onClick={() => {
                                 onPick(s);
                                 onClose();
                             }}
-                            className="flex w-full flex-col gap-0.5 border-b border-line px-3 py-2 text-left last:border-b-0 hover:bg-hover"
+                            className="h-auto w-full flex-col items-start justify-start gap-0.5 rounded-none border-b border-line px-3 py-2 text-left last:border-b-0 hover:bg-(--state-hover)"
                         >
                             <span className="truncate text-[13.5px] text-foreground">{s.name}</span>
                             {s.target && <span className="truncate text-[11.5px] text-dim-foreground">{s.target}</span>}
-                        </button>
+                        </Button>
                     ))}
                 </div>
             </DialogContent>

@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useI18n } from "@/i18n/useI18n";
+import { FormRow } from "./settings/shared";
 
 type Props = {
     open: boolean;
@@ -48,8 +49,8 @@ export function GroupDialog({ open, initialName, onClose, onSubmit }: Props) {
                     <DialogTitle>{initialName === null ? t("group.new") : t("group.rename")}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="grid gap-4">
-                    <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                        <Label htmlFor="group-name">{t("group.name")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="group-name">{t("group.name")}</FieldLabel>
                         <Input
                             id="group-name"
                             value={name}
@@ -58,7 +59,7 @@ export function GroupDialog({ open, initialName, onClose, onSubmit }: Props) {
                             required
                             maxLength={50}
                         />
-                    </div>
+                    </FormRow>
                     <DialogFooter>
                         <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
                             {t("common.cancel")}

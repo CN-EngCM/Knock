@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Globe, Lock, LockOpen } from "lucide-react";
+import { Folder, Globe, Lock, LockOpen } from "lucide-react";
 import {
     ContextMenu,
     ContextMenuContent,
@@ -7,8 +7,12 @@ import {
     ContextMenuSeparator,
     ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { Separator } from "@/components/ui/separator";
+import { Toggle } from "@/components/ui/toggle";
 import type { GalleryGroup } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -86,8 +90,13 @@ export function GroupSidebar({
     // 行样式：选中 = 选中行填充 + 强调色文字，未选中悬浮给悬停填充
     const rowCls = (on: boolean) =>
         `flex w-full cursor-default select-none items-center gap-1.5 px-2 py-1.5 text-left text-[12.5px] ${
-            on ? "bg-rowsel text-primary" : "text-dim-foreground hover:bg-hover hover:text-foreground"
+            on
+                ? "bg-(--state-selected) text-primary"
+                : "text-dim-foreground hover:bg-(--state-hover) hover:text-foreground"
         }`;
+
+    // 分组行换 Item 后覆写库的默认密度：单行不换行、无圆角/边框，让行高与上方伪条目一致
+    const itemRowCls = (on: boolean) => `${rowCls(on)} flex-nowrap rounded-none border-0`;
 
     /** 组行的文件拖放：只对拖文件（types 含 Files）反应，避免劫持其他拖拽 */
     function dropHandlers(gid: number) {
@@ -133,37 +142,51 @@ export function GroupSidebar({
         }
     }
 
-    /** 组行内容：改名中显示内联输入；私密组带开锁小图标示意（仅解锁视角可见该行） */
+    /** 组行内容：Item 薄包装（媒体槽 = 文件夹图标，私密组换开锁图标；
+     *  改名中只留内联输入，计数与图标一并让位——与原行行为一致） */
     function groupRow(group: GalleryGroup, on: boolean, dragging: boolean) {
         const name = group.inbox ? t("gallery.inbox") : group.name;
         return (
-            <div
+            <Item
                 onClick={() => renamingId !== group.id && onSelect(group.id)}
-                className={`${rowCls(on)} ${
-                    dragging && !on ? "bg-hover outline outline-1 -outline-offset-1 outline-primary" : ""
+                className={`${itemRowCls(on)} ${
+                    dragging && !on ? "bg-(--state-hover) outline outline-1 -outline-offset-1 outline-primary" : ""
                 }`}
             >
                 {renamingId === group.id ? (
-                    <Input
-                        autoFocus
-                        value={renameName}
-                        onChange={(e) => setRenameName(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter") commitRename();
-                            else if (e.key === "Escape") setRenamingId(null);
-                        }}
-                        onBlur={commitRename}
-                        className="h-6 min-w-0 flex-1 px-1"
-                    />
+                    <ItemContent>
+                        <Input
+                            autoFocus
+                            value={renameName}
+                            onChange={(e) => setRenameName(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") commitRename();
+                                else if (e.key === "Escape") setRenamingId(null);
+                            }}
+                            onBlur={commitRename}
+                            className="h-6 min-w-0 px-1"
+                        />
+                    </ItemContent>
                 ) : (
                     <>
-                        <span className="min-w-0 flex-1 truncate">{name}</span>
-                        {group.private && <LockOpen size={11} className="flex-none text-dim-foreground" />}
-                        <span className="flex-none text-[10.5px] tabular-nums text-dim-foreground">{group.count}</span>
+                        <ItemMedia>{group.private ? <LockOpen aria-hidden /> : <Folder aria-hidden />}</ItemMedia>
+                        <ItemContent>
+                            <ItemTitle className="w-full text-[12.5px] font-normal leading-normal">
+                                <span className="min-w-0 flex-1 truncate">{name}</span>
+                            </ItemTitle>
+                        </ItemContent>
+                        <ItemActions>
+                            <Badge
+                                variant="ghost"
+                                className="flex-none px-0 text-[10.5px] tabular-nums text-dim-foreground"
+                            >
+                                {group.count}
+                            </Badge>
+                        </ItemActions>
                     </>
                 )}
-            </div>
+            </Item>
         );
     }
 
@@ -217,13 +240,23 @@ export function GroupSidebar({
                     {/* 「全部图片」伪条目：count = 各组之和 */}
                     <div className={rowCls(active === "all")} onClick={() => onSelect("all")}>
                         <span className="min-w-0 flex-1 truncate">{t("gallery.all")}</span>
-                        <span className="flex-none text-[10.5px] tabular-nums text-dim-foreground">{allCount}</span>
+                        <Badge
+                            variant="ghost"
+                            className="flex-none px-0 text-[10.5px] tabular-nums text-dim-foreground"
+                        >
+                            {allCount}
+                        </Badge>
                     </div>
                     {inbox && groupEntry(inbox)}
                     {/* 「画廊」伪条目：跨分组的放映池，count 由后端按锁定视角算好 */}
                     <div className={rowCls(active === "wall")} onClick={() => onSelect("wall")}>
                         <span className="min-w-0 flex-1 truncate">{t("gallery.wall")}</span>
-                        <span className="flex-none text-[10.5px] tabular-nums text-dim-foreground">{wallCount}</span>
+                        <Badge
+                            variant="ghost"
+                            className="flex-none px-0 text-[10.5px] tabular-nums text-dim-foreground"
+                        >
+                            {wallCount}
+                        </Badge>
                     </div>
                     {userGroups.map((g) => groupEntry(g))}
                     {groups === null && <div className="px-2 py-1.5 text-[12px] text-dim-foreground">…</div>}
@@ -231,22 +264,25 @@ export function GroupSidebar({
                     {/* 全局 tag 过滤：分组列表下方一条分隔线隔开，不占缩略图区 */}
                     {allTags.length > 0 && (
                         <>
-                            <div className="mx-2 my-1.5 border-t border-line" aria-hidden />
+                            <Separator className="mx-2 my-1.5 w-auto" />
                             <div className="flex flex-wrap gap-1 px-2 pb-1">
                                 {allTags.map((tag) => (
                                     <ContextMenu key={tag}>
+                                        {/* ContextMenuTrigger 会给子元素注入 data-state=open/closed，
+                                            Toggle 的选中态也用 data-state；中间垫一层 span 隔离两者 */}
                                         <ContextMenuTrigger asChild>
-                                            <Button
-                                                type="button"
-                                                appearance="standard"
-                                                variant="outline"
-                                                size="xs"
-                                                className="px-1.5"
-                                                aria-pressed={activeTags.includes(tag)}
-                                                onClick={() => onToggleTag(tag)}
-                                            >
-                                                {tag}
-                                            </Button>
+                                            <span className="inline-flex">
+                                                <Toggle
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-(--size-control-xs) px-(--space-sm)"
+                                                    pressed={activeTags.includes(tag)}
+                                                    onPressedChange={() => onToggleTag(tag)}
+                                                >
+                                                    {tag}
+                                                </Toggle>
+                                            </span>
                                         </ContextMenuTrigger>
                                         <ContextMenuContent>
                                             <ContextMenuItem variant="destructive" onClick={() => onTagDelete(tag)}>

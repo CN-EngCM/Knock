@@ -15,8 +15,10 @@ import {
     ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ActionBar, ActionBarGroup, ActionBarSeparator } from "@/components/ui/action-bar";
 import { api, type GalleryGroup, type GalleryImage } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import { TipActionButton } from "../TipButton";
 import { fmtBytes, fmtDateTime } from "./util";
 
 type Props = {
@@ -202,13 +204,16 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
         [t("gallery.info.path"), img.sourcePath || "—"],
     ];
 
-    // 控制条按钮：项目统一 icon-btn 图标按钮（悬停浮填充、aria-pressed 选中态由全局 CSS 给出），
-    // 补按压与禁用两态；信息面板与工具条用主题面板材质，浮在黑舞台上靠底色对比
-    const vbtn = "icon-btn active:opacity-60 disabled:pointer-events-none disabled:opacity-40";
-    // 删除按钮特例：悬停变红需覆盖 icon-btn 的悬停文字色，icon-btn 定义在层外会压掉工具类，故整串内联
-    const vbtnDanger =
-        "flex size-7 flex-none items-center justify-center rounded text-muted-foreground transition-colors hover:bg-hover hover:text-destructive active:opacity-60 disabled:pointer-events-none disabled:opacity-40";
-    const sep = <span className="mx-0.5 h-4 w-px flex-none bg-border" aria-hidden />;
+    // 控制条按钮：ActionBarButton 图标态 + Tooltip，密度保持原 28px。
+    // ActionBar 自带通栏 transport 材质与 34px 控件高，用 className 覆写回药丸：
+    // 尺寸/圆角/悬停填充走工具类与令牌，选中态用库令牌，不新增颜色字面值。
+    const actionButton = {
+        plain: true,
+        activeTint: "var(--control-selection)",
+        className:
+            "size-7 min-w-0 rounded-md! text-muted-foreground enabled:hover:text-foreground enabled:hover:not-data-active:bg-(--state-hover-control)! enabled:active:not-data-active:bg-(--state-pressed)! data-active:text-(--state-selected-foreground) data-active:shadow-sunken! disabled:opacity-(--state-disabled-opacity) [&_svg]:size-4",
+    } as const;
+    const textButtonClass = `${actionButton.className} text-[10.5px] font-normal`;
 
     return (
         <div
@@ -284,114 +289,131 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                 </div>
             </div>
 
-            {/* 底部工具条 */}
+            {/* 底部工具条：ActionBar 药丸形态（className 覆写回 panel 材质、小圆角与 28px 图标按钮） */}
             <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
-                <div className="pointer-events-auto flex items-center gap-0.5 rounded-md border border-border bg-panel p-1 shadow-[var(--shadow-toast)]">
-                    <button type="button" className={vbtn} title={t("common.close")} onClick={onClose}>
-                        <X size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.prev")}
-                        disabled={index === 0}
-                        onClick={() => onNav(index - 1)}
-                    >
-                        <ChevronLeft size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.next")}
-                        disabled={index === items.length - 1}
-                        onClick={() => onNav(index + 1)}
-                    >
-                        <ChevronRight size={15} />
-                    </button>
-                    {sep}
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.zoomOut")}
-                        onClick={() => setScale((s) => clampScale(s / 1.25))}
-                    >
-                        <ZoomOut size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.zoomIn")}
-                        onClick={() => setScale((s) => clampScale(s * 1.25))}
-                    >
-                        <ZoomIn size={15} />
-                    </button>
-                    <button type="button" className={vbtn} title={t("gallery.view.fit")} onClick={fit}>
-                        <Maximize size={15} />
-                    </button>
-                    <button type="button" className={`${vbtn} text-[10.5px]`} title="1:1" onClick={oneToOne}>
-                        1:1
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.rotate")}
-                        onClick={() => setRot((r) => (r + 90) % 360)}
-                    >
-                        <RotateCw size={15} />
-                    </button>
-                    {sep}
-                    <button
-                        type="button"
-                        className={vbtn}
-                        aria-pressed={info}
-                        title={t("gallery.view.info")}
-                        onClick={() => setInfo((v) => !v)}
-                    >
-                        <Info size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.copy")}
-                        onClick={() => void copyImage()}
-                    >
-                        <Copy size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.openWith")}
-                        onClick={() => void openWith()}
-                    >
-                        <ExternalLink size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.reveal")}
-                        onClick={() => void reveal()}
-                    >
-                        <FolderOpen size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={vbtn}
-                        title={t("gallery.view.tags")}
-                        onClick={() => onEditTags(img)}
-                    >
-                        <Tag size={15} />
-                    </button>
-                    {onDelete && (
-                        <button
-                            type="button"
-                            className={vbtnDanger}
-                            title={t("gallery.view.delete")}
-                            onClick={() => onDelete(img)}
+                <ActionBar className="pointer-events-auto flex-nowrap gap-0.5! rounded-md border border-border bg-panel! bg-none! p-(--space-xs)! shadow-[var(--shadow-toast)]!">
+                    <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("common.close")}
+                            aria-label={t("common.close")}
+                            onClick={onClose}
                         >
-                            <Trash2 size={15} />
-                        </button>
-                    )}
-                </div>
+                            <X />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.prev")}
+                            aria-label={t("gallery.view.prev")}
+                            disabled={index === 0}
+                            onClick={() => onNav(index - 1)}
+                        >
+                            <ChevronLeft />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.next")}
+                            aria-label={t("gallery.view.next")}
+                            disabled={index === items.length - 1}
+                            onClick={() => onNav(index + 1)}
+                        >
+                            <ChevronRight />
+                        </TipActionButton>
+                    </ActionBarGroup>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.zoomOut")}
+                            aria-label={t("gallery.view.zoomOut")}
+                            onClick={() => setScale((s) => clampScale(s / 1.25))}
+                        >
+                            <ZoomOut />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.zoomIn")}
+                            aria-label={t("gallery.view.zoomIn")}
+                            onClick={() => setScale((s) => clampScale(s * 1.25))}
+                        >
+                            <ZoomIn />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.fit")}
+                            aria-label={t("gallery.view.fit")}
+                            onClick={fit}
+                        >
+                            <Maximize />
+                        </TipActionButton>
+                        <TipActionButton {...actionButton} label="1:1" className={textButtonClass} onClick={oneToOne}>
+                            1:1
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.rotate")}
+                            aria-label={t("gallery.view.rotate")}
+                            onClick={() => setRot((r) => (r + 90) % 360)}
+                        >
+                            <RotateCw />
+                        </TipActionButton>
+                    </ActionBarGroup>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        <TipActionButton
+                            {...actionButton}
+                            active={info}
+                            label={t("gallery.view.info")}
+                            aria-label={t("gallery.view.info")}
+                            onClick={() => setInfo((v) => !v)}
+                        >
+                            <Info />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.copy")}
+                            aria-label={t("gallery.view.copy")}
+                            onClick={() => void copyImage()}
+                        >
+                            <Copy />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.openWith")}
+                            aria-label={t("gallery.view.openWith")}
+                            onClick={() => void openWith()}
+                        >
+                            <ExternalLink />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.reveal")}
+                            aria-label={t("gallery.view.reveal")}
+                            onClick={() => void reveal()}
+                        >
+                            <FolderOpen />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.tags")}
+                            aria-label={t("gallery.view.tags")}
+                            onClick={() => onEditTags(img)}
+                        >
+                            <Tag />
+                        </TipActionButton>
+                        {onDelete && (
+                            <TipActionButton
+                                {...actionButton}
+                                label={t("gallery.view.delete")}
+                                aria-label={t("gallery.view.delete")}
+                                className={`${actionButton.className} enabled:hover:text-destructive`}
+                                onClick={() => onDelete(img)}
+                            >
+                                <Trash2 />
+                            </TipActionButton>
+                        )}
+                    </ActionBarGroup>
+                </ActionBar>
             </div>
         </div>
     );

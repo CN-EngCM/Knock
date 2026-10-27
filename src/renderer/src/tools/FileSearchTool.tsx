@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
+import { StatusBar, StatusBarItem } from "@/components/ui/statusbar";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ToolbarSearch } from "@/components/ui/toolbar";
 import { api, type FileHit } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
@@ -156,61 +162,67 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
         }
     }
 
-    function toggleExt(e: string) {
-        setExts((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]));
+    // 排序状态机（缺口 G1）：Radix 的 single ToggleGroup 在「再次点击当前项」时
+    // 不提供独立回调，只把 onValueChange 回调成空串 —— 空串即「同一项再点」，
+    // 此时只切升降序、保持 sortKey 不变（受控 value 会把它重新按回选中）。
+    function onSortChange(v: string) {
+        if (v === "") {
+            setAscending((a) => !a);
+            return;
+        }
+        setSortKey(v as SortKey);
+        setAscending(v === "name"); // 名称默认升序，其余默认新的/大的在前
     }
-
-    // 选中态用全局 .seg-on（index.css）：tbtn 是无 layer 的普通类，级联压过
-    // Tailwind utilities，直接用工具类改底色字色会被 .tbtn 的颜色声明盖掉
-    const seg = (active: boolean) => `tbtn ${active ? "seg-on" : ""}`;
     const arrow = (key: SortKey) => (sortKey === key ? (ascending ? " ↑" : " ↓") : "");
 
     return (
         <div className="flex h-full flex-col gap-2 p-3">
-            <Input
+            <ToolbarSearch
+                type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onKeyDown}
                 spellCheck={false}
                 placeholder={t(platform === "darwin" ? "files.placeholderMac" : "files.placeholder")}
-                className="flex-none"
+                aria-label={t(platform === "darwin" ? "files.placeholderMac" : "files.placeholder")}
+                className="w-full flex-none"
             />
 
             <div className="flex flex-none flex-wrap items-center gap-1.5">
-                {(["all", "file", "folder"] as const).map((o) => (
-                    <button
-                        key={o}
-                        type="button"
-                        className={seg(only === o)}
-                        aria-pressed={only === o}
-                        onClick={() => setOnly(o)}
-                    >
-                        {t(`files.filter.${o}`)}
-                    </button>
-                ))}
-                <span className="mx-1 text-line">│</span>
-                {(["name", "size", "dm"] as const).map((k) => (
-                    <button
-                        key={k}
-                        type="button"
-                        className={seg(sortKey === k)}
-                        aria-pressed={sortKey === k}
-                        onClick={() => {
-                            if (sortKey === k)
-                                setAscending((v) => !v); // 点同一个 = 切升降序
-                            else {
-                                setSortKey(k);
-                                setAscending(k === "name"); // 名称默认升序，其余默认新的/大的在前
-                            }
-                        }}
-                    >
-                        {t(`files.sort.${k}`)}
-                        {arrow(k)}
-                    </button>
-                ))}
+                <ToggleGroup
+                    type="single"
+                    size="sm"
+                    variant="outline"
+                    value={only}
+                    onValueChange={(v) => {
+                        // 空串 = 重复点击当前项；类型过滤必须始终有一项选中，忽略即可
+                        if (v) setOnly(v as Only);
+                    }}
+                >
+                    {(["all", "file", "folder"] as const).map((o) => (
+                        <ToggleGroupItem key={o} value={o}>
+                            {t(`files.filter.${o}`)}
+                        </ToggleGroupItem>
+                    ))}
+                </ToggleGroup>
+                <Separator orientation="vertical" className="mx-1 h-4" />
+                <ToggleGroup type="single" size="sm" variant="outline" value={sortKey} onValueChange={onSortChange}>
+                    {(["name", "size", "dm"] as const).map((k) => (
+                        <ToggleGroupItem key={k} value={k}>
+                            {t(`files.sort.${k}`)}
+                            {arrow(k)}
+                        </ToggleGroupItem>
+                    ))}
+                </ToggleGroup>
             </div>
 
-            <div
+            <ToggleGroup
+                type="multiple"
+                size="sm"
+                variant="outline"
+                spacing={1}
+                value={exts}
+                onValueChange={setExts}
                 className={`flex flex-none flex-wrap items-center gap-x-3 gap-y-1 ${
                     only === "folder" ? "pointer-events-none opacity-40" : ""
                 }`}
@@ -219,67 +231,79 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                     <span key={g.key} className="flex items-center gap-1">
                         <span className="text-[11px] text-dim-foreground">{t(g.key)}</span>
                         {g.exts.map((e) => (
-                            <Button
-                                key={e}
-                                type="button"
-                                appearance="standard"
-                                variant="outline"
-                                size="xs"
-                                className="px-1.5"
-                                aria-pressed={exts.includes(e)}
-                                onClick={() => toggleExt(e)}
-                            >
+                            <ToggleGroupItem key={e} value={e} className="h-(--size-control-xs) px-(--space-sm)">
                                 {e}
-                            </Button>
+                            </ToggleGroupItem>
                         ))}
                     </span>
                 ))}
-            </div>
+            </ToggleGroup>
 
             <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto">
-                {status === "winOnly" && <Center text={t("files.winOnly")} />}
+                {status === "winOnly" && (
+                    <Empty className="py-10">
+                        <EmptyDescription className="text-[12.5px]">{t("files.winOnly")}</EmptyDescription>
+                    </Empty>
+                )}
 
                 {status === "error" && (
-                    <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-                        <span className="text-[13px] text-foreground">{t("files.everything.title")}</span>
-                        <span className="max-w-md text-[12px] leading-relaxed text-muted-foreground">
-                            {t("files.everything.hint")}
-                        </span>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                appearance="standard"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => window.open("https://www.voidtools.com/", "_blank", "noreferrer")}
-                            >
-                                {t("files.everything.site")}
-                            </Button>
-                            <Button
-                                appearance="standard"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setRetryTick((v) => v + 1)}
-                            >
-                                {t("files.everything.retry")}
-                            </Button>
-                        </div>
-                    </div>
+                    <Empty className="px-6 py-10">
+                        <EmptyHeader>
+                            <EmptyTitle className="text-[13px]">{t("files.everything.title")}</EmptyTitle>
+                            <EmptyDescription className="max-w-md text-[12px] leading-relaxed">
+                                {t("files.everything.hint")}
+                            </EmptyDescription>
+                        </EmptyHeader>
+                        <EmptyContent>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    appearance="standard"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => window.open("https://www.voidtools.com/", "_blank", "noreferrer")}
+                                >
+                                    {t("files.everything.site")}
+                                </Button>
+                                <Button
+                                    appearance="standard"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setRetryTick((v) => v + 1)}
+                                >
+                                    {t("files.everything.retry")}
+                                </Button>
+                            </div>
+                        </EmptyContent>
+                    </Empty>
                 )}
 
                 {status === "idle" && (
-                    <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                        <span className="text-[12.5px] text-muted-foreground">
-                            {t(platform === "darwin" ? "files.hintMac" : "files.hint")}
-                        </span>
-                        {platform !== "darwin" && (
-                            <span className="text-[11.5px] text-dim-foreground">{t("files.hintEx")}</span>
-                        )}
+                    <Empty className="px-6 py-10">
+                        <EmptyHeader>
+                            <EmptyDescription className="text-[12.5px]">
+                                {t(platform === "darwin" ? "files.hintMac" : "files.hint")}
+                            </EmptyDescription>
+                            {platform !== "darwin" && (
+                                <EmptyDescription className="text-[11.5px] text-dim-foreground">
+                                    {t("files.hintEx")}
+                                </EmptyDescription>
+                            )}
+                        </EmptyHeader>
+                    </Empty>
+                )}
+
+                {status === "loading" && (
+                    <div className="flex items-center justify-center gap-2 py-10 text-[12.5px] text-muted-foreground">
+                        <Spinner decorative />
+                        {t("files.searching")}
                     </div>
                 )}
 
-                {status === "loading" && <Center text={t("files.searching")} />}
-
-                {status === "done" && hits.length === 0 && <Center text={t("files.none")} />}
+                {status === "done" && hits.length === 0 && (
+                    <Empty className="py-10">
+                        <EmptyDescription className="text-[12.5px]">{t("files.none")}</EmptyDescription>
+                    </Empty>
+                )}
 
                 {status === "done" &&
                     hits.map((h, i) => (
@@ -290,10 +314,17 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                             onDoubleClick={() => void openHit(h)}
                             title={h.path}
                             className={`flex flex-none cursor-default items-center gap-2.5 rounded-md border px-2.5 py-1.5 ${
-                                selected === i ? "border-border bg-rowsel" : "border-line bg-background"
+                                selected === i ? "border-border bg-(--state-selected)" : "border-line bg-background"
                             }`}
                         >
-                            {h.isDir && <span className="kind-badge flex-none">DIR</span>}
+                            {h.isDir && (
+                                <Badge
+                                    variant="ghost"
+                                    className="flex-none bg-well px-1.5 font-mono text-[9.5px] text-muted-foreground"
+                                >
+                                    DIR
+                                </Badge>
+                            )}
                             <span className="min-w-0 max-w-[45%] flex-none truncate text-[12.5px] text-foreground">
                                 {h.name}
                             </span>
@@ -308,29 +339,48 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
                             <span className="flex-none text-[11px] tabular-nums text-dim-foreground">
                                 {fmtMtime(h.mtime)}
                             </span>
-                            <button type="button" className="tbtn" onClick={() => void openHit(h)}>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="ghost"
+                                size="xs"
+                                className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                                onClick={() => void openHit(h)}
+                            >
                                 {t("files.open")}
-                            </button>
-                            <button type="button" className="tbtn" onClick={() => void revealHit(h)}>
+                            </Button>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="ghost"
+                                size="xs"
+                                className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                                onClick={() => void revealHit(h)}
+                            >
                                 {t("files.reveal")}
-                            </button>
-                            <button type="button" className="tbtn" onClick={() => copyPath(h)}>
+                            </Button>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="ghost"
+                                size="xs"
+                                className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                                onClick={() => copyPath(h)}
+                            >
                                 {t("files.copy")}
-                            </button>
+                            </Button>
                         </div>
                     ))}
+            </div>
 
-                {status === "done" && hits.length > 0 && (
-                    <div className="flex-none px-1 pt-1 text-[11px] text-dim-foreground">
+            {status === "done" && hits.length > 0 && (
+                <StatusBar className="flex-none border-t-0 bg-transparent px-0">
+                    <StatusBarItem className="text-[11px] text-dim-foreground">
                         {hits.length} {t("files.count")}
                         {hits.length === LIMIT ? ` · ${t("files.truncated")}` : ""}
-                    </div>
-                )}
-            </div>
+                    </StatusBarItem>
+                </StatusBar>
+            )}
         </div>
     );
-}
-
-function Center({ text }: { text: string }) {
-    return <div className="px-6 py-10 text-center text-[12.5px] text-muted-foreground">{text}</div>;
 }

@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import { Check, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, type AiModelConfig, type AiProviderId } from "@/api/client";
 import { aiErrKey } from "@/tools/aiErr";
 import { useI18n } from "@/i18n/useI18n";
-import { row } from "./shared";
+import { FormRow } from "./shared";
 
 type Props = {
     /** AI 模型配置整表：提交走 onAiModels（App 负责落库与回填） */
@@ -101,90 +104,96 @@ export function AiSection({ aiModels, onAiModels }: Props) {
                 ))}
             </datalist>
 
-            <div className="-mt-1 px-1 text-[11.5px] text-dim-foreground">{t("settings.ai.hint")}</div>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.ai.hint")}
+            </FieldDescription>
 
             {list.map((cfg) => {
                 const test = tests[cfg.id] ?? { state: "idle" as const };
                 return (
-                    <div key={cfg.id} className="flex flex-col gap-2 rounded-sm border border-line p-2.5">
-                        <div className={row}>
-                            <Label htmlFor={`ai-provider-${cfg.id}`}>{t("settings.ai.provider")}</Label>
-                            <Select
-                                value={cfg.provider}
-                                onValueChange={(v) => patchCard(cfg.id, { provider: v as AiProviderId })}
-                            >
-                                <SelectTrigger id={`ai-provider-${cfg.id}`} className="w-full">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {PROVIDER_IDS.map((p) => (
-                                        <SelectItem key={p} value={p}>
-                                            {PROVIDER_LABEL[p]}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                    <Card key={cfg.id} size="sm" className="gap-2">
+                        <CardContent className="flex flex-col gap-2">
+                            <FormRow>
+                                <FieldLabel htmlFor={`ai-provider-${cfg.id}`}>{t("settings.ai.provider")}</FieldLabel>
+                                <Select
+                                    value={cfg.provider}
+                                    onValueChange={(v) => patchCard(cfg.id, { provider: v as AiProviderId })}
+                                >
+                                    <SelectTrigger id={`ai-provider-${cfg.id}`} className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PROVIDER_IDS.map((p) => (
+                                            <SelectItem key={p} value={p}>
+                                                {PROVIDER_LABEL[p]}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </FormRow>
 
-                        <div className={row}>
-                            <Label htmlFor={`ai-model-${cfg.id}`}>{t("settings.ai.model")}</Label>
-                            <Input
-                                id={`ai-model-${cfg.id}`}
-                                list="mp-ai-model-suggestions"
-                                value={cfg.model}
-                                maxLength={100}
-                                placeholder={MODEL_SUGGESTIONS[0]}
-                                onChange={(e) => patchCard(cfg.id, { model: e.target.value })}
-                            />
-                        </div>
+                            <FormRow>
+                                <FieldLabel htmlFor={`ai-model-${cfg.id}`}>{t("settings.ai.model")}</FieldLabel>
+                                <Input
+                                    id={`ai-model-${cfg.id}`}
+                                    list="mp-ai-model-suggestions"
+                                    value={cfg.model}
+                                    maxLength={100}
+                                    placeholder={MODEL_SUGGESTIONS[0]}
+                                    onChange={(e) => patchCard(cfg.id, { model: e.target.value })}
+                                />
+                            </FormRow>
 
-                        <div className={row}>
-                            <Label htmlFor={`ai-key-${cfg.id}`}>{t("settings.ai.apiKey")}</Label>
-                            <ApiKeyInput
-                                id={`ai-key-${cfg.id}`}
-                                value={cfg.apiKey}
-                                onChange={(v) => patchCard(cfg.id, { apiKey: v })}
-                            />
-                        </div>
+                            <FormRow>
+                                <FieldLabel htmlFor={`ai-key-${cfg.id}`}>{t("settings.ai.apiKey")}</FieldLabel>
+                                <ApiKeyInput
+                                    id={`ai-key-${cfg.id}`}
+                                    value={cfg.apiKey}
+                                    onChange={(v) => patchCard(cfg.id, { apiKey: v })}
+                                />
+                            </FormRow>
 
-                        <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pl-[7rem]">
-                            <span className="mr-auto flex items-center gap-1 text-[12px] text-dim-foreground">
-                                {test.state === "ok" && (
-                                    <>
-                                        <Check size={13} />
-                                        {t("settings.ai.testOk")}
-                                    </>
-                                )}
-                                {test.state === "fail" && <span className="text-destructive">{test.msg}</span>}
-                            </span>
-                            <Button
-                                type="button"
-                                appearance="standard"
-                                variant="primary"
-                                size="default"
-                                className="w-fit px-4"
-                                disabled={!complete(cfg) || test.state === "testing"}
-                                onClick={() => void testCard(cfg)}
-                            >
-                                {test.state === "testing" ? t("settings.ai.testing") : t("settings.ai.test")}
-                            </Button>
-                            <Button
-                                type="button"
-                                appearance="standard"
-                                variant="outline"
-                                size="default"
-                                className="w-fit px-3"
-                                onClick={() => removeCard(cfg.id)}
-                            >
-                                {t("settings.ai.remove")}
-                            </Button>
-                        </div>
-                    </div>
+                            <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pl-[7rem]">
+                                <span className="mr-auto flex items-center gap-1 text-[12px] text-dim-foreground">
+                                    {test.state === "ok" && (
+                                        <>
+                                            <Check size={13} />
+                                            {t("settings.ai.testOk")}
+                                        </>
+                                    )}
+                                    {test.state === "fail" && <span className="text-destructive">{test.msg}</span>}
+                                </span>
+                                <Button
+                                    type="button"
+                                    appearance="standard"
+                                    variant="primary"
+                                    size="default"
+                                    className="w-fit px-4"
+                                    disabled={!complete(cfg) || test.state === "testing"}
+                                    onClick={() => void testCard(cfg)}
+                                >
+                                    {test.state === "testing" ? t("settings.ai.testing") : t("settings.ai.test")}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    appearance="standard"
+                                    variant="outline"
+                                    size="default"
+                                    className="w-fit px-3"
+                                    onClick={() => removeCard(cfg.id)}
+                                >
+                                    {t("settings.ai.remove")}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
                 );
             })}
 
             {list.length === 0 && (
-                <div className="py-6 text-center text-[12.5px] text-dim-foreground">{t("settings.ai.empty")}</div>
+                <Empty className="py-6">
+                    <EmptyDescription>{t("settings.ai.empty")}</EmptyDescription>
+                </Empty>
             )}
 
             <div className="flex justify-between">
@@ -221,15 +230,23 @@ function ApiKeyInput({ id, value, onChange }: { id: string; value: string; onCha
                 maxLength={200}
                 onChange={(e) => onChange(e.target.value)}
             />
-            <button
-                type="button"
-                className="tbtn flex-none"
-                aria-pressed={show}
-                title={t("settings.translate.toggleSecret")}
-                onClick={() => setShow((v) => !v)}
-            >
-                {show ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="ghost"
+                        size="xs"
+                        active={show}
+                        className="h-auto flex-none px-0 text-[11px]"
+                        aria-label={t("settings.translate.toggleSecret")}
+                        onClick={() => setShow((v) => !v)}
+                    >
+                        {show ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("settings.translate.toggleSecret")}</TooltipContent>
+            </Tooltip>
         </span>
     );
 }

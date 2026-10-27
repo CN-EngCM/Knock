@@ -11,6 +11,8 @@ import {
     ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import type { GalleryGroup, GalleryImage } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -55,7 +57,7 @@ function Thumb({ img }: { img: GalleryImage }) {
     if (failed) {
         // 图挂了不裂版：兜底块显示名字与格式
         return (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-hover px-1 text-center">
+            <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-(--state-hover) px-1 text-center">
                 <span className="w-full truncate text-[10.5px] text-muted-foreground">{img.title}</span>
                 <span className="text-[10px] text-dim-foreground">{img.format}</span>
             </div>
@@ -137,24 +139,36 @@ export function ImageGrid({
         <div
             ref={scrollRef}
             onClick={onClearSelection}
-            className={`min-h-0 flex-1 overflow-auto p-2 ${dropHint ? "bg-hover" : "bg-canvas"}`}
+            className={`min-h-0 flex-1 overflow-auto p-2 ${dropHint ? "bg-(--state-hover)" : "bg-canvas"}`}
         >
             {status === "loading" && items.length === 0 && (
-                <div className="px-6 py-10 text-center text-[12px] text-dim-foreground">…</div>
+                <div className="flex items-center justify-center py-10">
+                    <Spinner label={t("common.loading")} className="text-dim-foreground" />
+                </div>
             )}
 
             {status === "done" && items.length === 0 && (
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                    <span className="text-[13px] text-muted-foreground">{t("gallery.empty")}</span>
-                    <span className="text-[11.5px] text-dim-foreground">
-                        {t(wallView ? "gallery.wall.emptyHint" : "gallery.emptyHint")}
-                    </span>
+                <Empty className="h-full justify-center">
+                    <EmptyHeader>
+                        <EmptyTitle>{t("gallery.empty")}</EmptyTitle>
+                        <EmptyDescription className="text-[11.5px] text-dim-foreground">
+                            {t(wallView ? "gallery.wall.emptyHint" : "gallery.emptyHint")}
+                        </EmptyDescription>
+                    </EmptyHeader>
                     {!wallView && (
-                        <Button type="button" appearance="standard" variant="primary" size="sm" onClick={onImportCta}>
-                            {t("gallery.import")}
-                        </Button>
+                        <EmptyContent>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="primary"
+                                size="sm"
+                                onClick={onImportCta}
+                            >
+                                {t("gallery.import")}
+                            </Button>
+                        </EmptyContent>
                     )}
-                </div>
+                </Empty>
             )}
 
             <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>

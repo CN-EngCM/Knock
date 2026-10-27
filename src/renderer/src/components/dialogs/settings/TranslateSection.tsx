@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Check, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, type TranslateConfig, type TranslateConfigPatch } from "@/api/client";
 import { youdaoErrKey } from "@/tools/youdaoErr";
 import { useI18n } from "@/i18n/useI18n";
-import { CommitInput, row } from "./shared";
+import { CommitInput, FormRow } from "./shared";
 
 type Props = {
     /** 有道翻译密钥：提交走 onTranslateCfg（App 负责落库与回填） */
@@ -80,8 +81,8 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
 
     return (
         <>
-            <div className={row}>
-                <Label htmlFor="youdao-key">{t("settings.translate.appKey")}</Label>
+            <FormRow>
+                <FieldLabel htmlFor="youdao-key">{t("settings.translate.appKey")}</FieldLabel>
                 <CommitInput
                     id="youdao-key"
                     value={appKeyEdit}
@@ -89,10 +90,10 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
                     onChange={setAppKeyEdit}
                     onCommit={() => void commitTranslateKey("appKey")}
                 />
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label htmlFor="youdao-secret">{t("settings.translate.secret")}</Label>
+            <FormRow>
+                <FieldLabel htmlFor="youdao-secret">{t("settings.translate.secret")}</FieldLabel>
                 <span className="flex items-center gap-1.5">
                     <CommitInput
                         id="youdao-secret"
@@ -102,21 +103,31 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
                         onChange={setSecretEdit}
                         onCommit={() => void commitTranslateKey("secret")}
                     />
-                    <button
-                        type="button"
-                        className="tbtn flex-none"
-                        aria-pressed={showSecret}
-                        title={t("settings.translate.toggleSecret")}
-                        onClick={() => setShowSecret((v) => !v)}
-                    >
-                        {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                type="button"
+                                appearance="standard"
+                                variant="ghost"
+                                size="xs"
+                                active={showSecret}
+                                className="h-auto flex-none px-0 text-[11px]"
+                                aria-label={t("settings.translate.toggleSecret")}
+                                onClick={() => setShowSecret((v) => !v)}
+                            >
+                                {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>{t("settings.translate.toggleSecret")}</TooltipContent>
+                    </Tooltip>
                 </span>
-            </div>
-            <div className="-mt-1 px-1 text-[11.5px] text-dim-foreground">{t("settings.translate.hint")}</div>
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.translate.hint")}
+            </FieldDescription>
 
-            <div className={row}>
-                <Label>{t("settings.translate.test")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.translate.test")}</FieldLabel>
                 {/* 动作行而非输入框样式：主操作按钮 + 结果内联右侧，与上方文本输入拉开视觉差异 */}
                 <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
                     <Button
@@ -138,7 +149,7 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
                     )}
                     {test === "fail" && !!testMsg && <span className="text-[12px] text-destructive">{testMsg}</span>}
                 </div>
-            </div>
+            </FormRow>
         </>
     );
 }

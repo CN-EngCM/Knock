@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { api } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
-import { CommitInput, row } from "./shared";
+import { CommitInput, FormRow } from "./shared";
 
 // 图库分节：私密功能的图库密码（工具级一个，明文存 settings 表）。
 // 密码不回显——编辑框只写新值，空值失焦不动作；清除走专门按钮（行内二次确认，
@@ -51,10 +51,12 @@ export function GallerySection() {
 
     return (
         <>
-            <div className="px-1 text-[11.5px] text-dim-foreground">{t("settings.gallery.hint")}</div>
+            <FieldDescription className="px-1 text-small text-dim-foreground">
+                {t("settings.gallery.hint")}
+            </FieldDescription>
 
-            <div className={row}>
-                <Label htmlFor="gallery-password">{t("settings.gallery.password")}</Label>
+            <FormRow>
+                <FieldLabel htmlFor="gallery-password">{t("settings.gallery.password")}</FieldLabel>
                 <CommitInput
                     id="gallery-password"
                     type="password"
@@ -65,11 +67,11 @@ export function GallerySection() {
                     placeholder={has ? t("settings.gallery.pwSet") : t("settings.gallery.pwNone")}
                     className="w-48"
                 />
-            </div>
+            </FormRow>
 
             {has && (
-                <div className={row}>
-                    <Label>{t("settings.gallery.clear")}</Label>
+                <FormRow>
+                    <FieldLabel>{t("settings.gallery.clear")}</FieldLabel>
                     {/* 动作行样式对齐 TranslateSection 的测试连接行 */}
                     <div className="flex min-h-9 items-center">
                         {confirmClear ? (
@@ -96,7 +98,7 @@ export function GallerySection() {
                             </Button>
                         )}
                     </div>
-                </div>
+                </FormRow>
             )}
         </>
     );

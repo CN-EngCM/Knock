@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
     api,
     type ApiError,
@@ -17,7 +19,7 @@ import {
 } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang, MessageKey } from "@/i18n";
-import { CommitInput, row } from "./shared";
+import { CommitInput, FormRow } from "./shared";
 import { FontPicker } from "./FontPicker";
 
 type AutostartStatus = { supported: boolean; enabled: boolean };
@@ -222,8 +224,8 @@ export function BasicSection({
 
     return (
         <>
-            <div className={row}>
-                <Label>{t("settings.language")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.language")}</FieldLabel>
                 <Select value={lang} onValueChange={(v) => onChangeLang(v as Lang)}>
                     <SelectTrigger className="w-full">
                         <SelectValue />
@@ -233,31 +235,35 @@ export function BasicSection({
                         <SelectItem value="en">{t("settings.lang.en")}</SelectItem>
                     </SelectContent>
                 </Select>
-            </div>
+            </FormRow>
 
-            {/* 主题：井底分段控件，即点即换（App 落库 + 全局换装） */}
-            <div className={row}>
-                <Label>{t("settings.theme")}</Label>
-                <div className="inline-flex w-fit items-center gap-0.5 rounded-[4px] border border-border bg-well p-0.5">
+            {/* 主题：分段控件，即点即换（App 落库 + 全局换装）；单选取值不变，焦点改为 roving */}
+            <FormRow>
+                <FieldLabel>{t("settings.theme")}</FieldLabel>
+                <ToggleGroup
+                    type="single"
+                    value={theme}
+                    onValueChange={(value) => {
+                        if (value) onTheme(value as ThemeId);
+                    }}
+                    aria-label={t("settings.theme")}
+                    className="w-fit"
+                >
                     {THEME_OPTIONS.map((opt) => (
-                        <button
-                            key={opt.id}
-                            type="button"
-                            className={`tbtn ${theme === opt.id ? "seg-on" : ""}`}
-                            aria-pressed={theme === opt.id}
-                            onClick={() => onTheme(opt.id)}
-                        >
+                        <ToggleGroupItem key={opt.id} value={opt.id}>
                             {t(opt.labelKey)}
-                        </button>
+                        </ToggleGroupItem>
                     ))}
-                </div>
-            </div>
-            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.themeHint")}</div>
+                </ToggleGroup>
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.themeHint")}
+            </FieldDescription>
 
-            <div className={row}>
-                <Label>{t("settings.hotkey")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.hotkey")}</FieldLabel>
                 {hotkey === null ? (
-                    <span className="text-xs text-dim-foreground">…</span>
+                    <Spinner decorative className="size-3.5 text-dim-foreground" />
                 ) : (
                     <Select value={hotkey} onValueChange={(v) => changeHotkey(v as HotkeyId)}>
                         <SelectTrigger className="w-full">
@@ -272,10 +278,10 @@ export function BasicSection({
                         </SelectContent>
                     </Select>
                 )}
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label htmlFor="clip-sec">{t("settings.clip")}</Label>
+            <FormRow>
+                <FieldLabel htmlFor="clip-sec">{t("settings.clip")}</FieldLabel>
                 <CommitInput
                     id="clip-sec"
                     type="number"
@@ -284,13 +290,15 @@ export function BasicSection({
                     onCommit={() => void commitClipSec()}
                     className="w-24"
                 />
-            </div>
-            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.clipHint")}</div>
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.clipHint")}
+            </FieldDescription>
 
-            <div className={row}>
-                <Label>{t("settings.autostart")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.autostart")}</FieldLabel>
                 {autostart === null ? (
-                    <span className="text-xs text-dim-foreground">…</span>
+                    <Spinner decorative className="size-3.5 text-dim-foreground" />
                 ) : !autostart.supported ? (
                     <span className="text-xs text-dim-foreground">{t("settings.autostart.unsupported")}</span>
                 ) : (
@@ -309,23 +317,25 @@ export function BasicSection({
                         </label>
                     </span>
                 )}
-            </div>
-            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.autostart.moveHint")}</div>
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.autostart.moveHint")}
+            </FieldDescription>
 
-            <div className={row}>
-                <Label>{t("settings.font.ui")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.font.ui")}</FieldLabel>
                 <FontPicker value={fontCfg?.uiFont ?? ""} onCommit={(v) => void commitFont({ uiFont: v })} />
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label>{t("settings.font.mono")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.font.mono")}</FieldLabel>
                 <FontPicker mono value={fontCfg?.monoFont ?? ""} onCommit={(v) => void commitFont({ monoFont: v })} />
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label>{t("settings.term.shell")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.term.shell")}</FieldLabel>
                 {shell === null || termCfg === null ? (
-                    <span className="text-xs text-dim-foreground">…</span>
+                    <Spinner decorative className="size-3.5 text-dim-foreground" />
                 ) : (
                     <Select value={shell} onValueChange={(v) => changeShell(v as ShellId)}>
                         <SelectTrigger className="w-full">
@@ -340,11 +350,13 @@ export function BasicSection({
                         </SelectContent>
                     </Select>
                 )}
-            </div>
-            <div className="-mt-1 px-1 text-[11px] text-dim-foreground">{t("settings.term.shellHint")}</div>
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.term.shellHint")}
+            </FieldDescription>
 
-            <div className={row}>
-                <Label htmlFor="term-size">{t("settings.term.fontSize")}</Label>
+            <FormRow>
+                <FieldLabel htmlFor="term-size">{t("settings.term.fontSize")}</FieldLabel>
                 <CommitInput
                     id="term-size"
                     type="number"
@@ -353,10 +365,10 @@ export function BasicSection({
                     onCommit={() => void commitFontSize()}
                     className="w-24"
                 />
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label>{t("settings.import")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.import")}</FieldLabel>
                 <Button
                     type="button"
                     appearance="standard"
@@ -367,14 +379,14 @@ export function BasicSection({
                 >
                     {t("settings.importBtn")}
                 </Button>
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label>{t("settings.dataDir")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.dataDir")}</FieldLabel>
                 {migrating ? (
                     <span className="text-xs text-dim-foreground">{t("settings.dataDir.migrating")}</span>
                 ) : dataDirInfo === null ? (
-                    <span className="text-xs text-dim-foreground">…</span>
+                    <Spinner decorative className="size-3.5 text-dim-foreground" />
                 ) : (
                     <span className="flex min-h-[25px] min-w-0 items-center gap-2">
                         {/* 长路径截断展示，悬停看全名；min-w-0 让 1fr 列允许收缩触发截断 */}
@@ -403,12 +415,12 @@ export function BasicSection({
                         )}
                     </span>
                 )}
-            </div>
+            </FormRow>
 
-            <div className={row}>
-                <Label>{t("settings.info")}</Label>
+            <FormRow>
+                <FieldLabel>{t("settings.info")}</FieldLabel>
                 <span className="text-xs text-muted-foreground">Electron · {platform}</span>
-            </div>
+            </FormRow>
         </>
     );
 }

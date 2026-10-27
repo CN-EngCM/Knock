@@ -3,11 +3,15 @@
 @import "shadcn/tailwind.css";
 
 /* ─────────────────────────────────────────────────────────────
-   敲敲视觉体系：GaN.UI 中性灰（来源 D:\MyCode\GaN.UI v0.1.0，源码接入）
+   敲敲视觉体系：GaN.UI 中性灰（来源 D:\MyCode\GaN.UI v1.0.0，HEAD e7e52dc）
    深色为默认主主题，浅色为 Darwin UI 取色的 GaN.UI 浅色基线。
-   字体沿用敲敲自带体系（Outfit + IBM Plex Mono，本地 woff2 内嵌），
-   不引入 Geist。令牌值与 GaN.UI src/index.css 保持同源，仅追加
-   敲敲应用层令牌（终端实色、悬停填充、行选中）。
+   只取 v1.0.0 默认深/浅两套配色与 regular 一档密度；11 套生成配色、compact/comfortable、
+   窗口失焦块、面板焦点块、.gan-surface-* 局部皮肤均不启用（见 GaN.UI-v1.0.0-组件升级方案.md）。
+   字体沿用敲敲自带体系（Outfit + IBM Plex Mono，本地 woff2 内嵌），不引入 MiSans / Geist Mono。
+   令牌值与 GaN.UI src/index.css 同源，仅追加敲敲应用层令牌（终端实色、悬停填充、行选中）。
+   顺序固定：@theme 字体栈 → @theme static 字号档 → @theme inline 颜色/阴影映射 →
+   :root/.dark 主题令牌 → 与主题无关的动效/图标/滚动条 → regular 密度尺寸 → elevation/state →
+   应用层补充 → @layer base → 浅色材质覆盖 → @layer components。
    ───────────────────────────────────────────────────────────── */
 
 /* 字体文件本地内嵌:离线可用,latin 子集;CJK 字符不在 unicode-range 内,
@@ -64,7 +68,41 @@
     --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, "Sarasa Mono SC", ui-monospace, monospace;
 }
 
+/* 字号阶梯：界面字号只从这里取，不写 text-[Npx]。其中 xs/sm/base 即 Tailwind 默认值，在此显式写出以保证始终输出到 :root：
+   micro 9 / caption 10 / small 11 / xs 12 / control 13 / sm 14 / base 16，另有 readout 22（数码读数）与 display 30（H1）。
+   micro/caption/small/control 只定字号，行高仍由上下文继承或用 leading-* 指定（各控件的行高不同，统一会让行盒变化）；字号不随密度档变化。 */
+@theme static {
+    --text-micro: 9px;
+    --text-caption: 10px;
+    --text-small: 11px;
+    --text-xs: 0.75rem;
+    --text-xs--line-height: calc(1 / 0.75);
+    --text-control: 13px;
+    --text-sm: 0.875rem;
+    --text-sm--line-height: calc(1.25 / 0.875);
+    --text-base: 1rem;
+    --text-base--line-height: 1.5;
+    --text-readout: 22px;
+    --text-readout--line-height: 1.25;
+    --text-display: 30px;
+    --text-display--line-height: 1.2;
+}
+
 @theme inline {
+    --font-heading: var(--font-sans);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
@@ -86,151 +124,115 @@
     --color-panel: var(--panel);
     --color-window-border: var(--window-border);
     --color-window-control: var(--window-control);
+    --color-titlebar-foreground: var(--titlebar-foreground);
     --color-well: var(--well);
     --color-canvas: var(--canvas);
     --color-bar: var(--bar);
     --color-line: var(--line);
     --color-dim-foreground: var(--dim-foreground);
+    --color-sidebar-selected: var(--sidebar-selected);
+    --color-sidebar-selected-foreground: var(--sidebar-selected-foreground);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-info: var(--info);
+    --color-info-foreground: var(--info-foreground);
+    --color-drop-target: var(--drop-target);
+    --color-drop-target-border: var(--drop-target-border);
+    --color-drop-target-line: var(--drop-target-line);
+    --color-drop-target-invalid: var(--drop-target-invalid);
     --radius-sm: calc(var(--radius) - 2px);
     --radius-md: var(--radius);
     --radius-lg: calc(var(--radius) + 1px);
     --radius-xl: calc(var(--radius) + 3px);
-    /* 敲敲应用层令牌:悬停填充(列表行/图标按钮)与选中行填充(启动列表/候选行) */
-    --color-hover: var(--hover-fill);
-    --color-rowsel: var(--row-selected);
+    --radius-2xl: calc(var(--radius) * 1.4);
+    --radius-3xl: calc(var(--radius) * 1.8);
+    --radius-4xl: calc(var(--radius) * 2.2);
+    /* 层级：组件写 shadow-raised 一类工具类，取值来自下方 --elevation-* 令牌（inline 保证随主题与局部皮肤变化）。 */
+    --shadow-well: var(--elevation-well);
+    --shadow-flat: var(--elevation-flat);
+    --shadow-raised: var(--elevation-raised);
+    --shadow-sunken: var(--elevation-sunken);
+    --shadow-overlay: var(--elevation-overlay);
+    --shadow-modal: var(--elevation-modal);
 }
 
-/* 浅色:GaN.UI 的 Darwin 浅色基线 */
+/* 浅色令牌：Darwin UI 色系基础上降低整体亮度上限，中性色带极轻冷调；
+   表面阶梯为 窗口框架 < 页面 < 面板 < 卡片/画布 < 浮层 < 输入，纯白只留给聚焦的输入。 */
 :root {
     color-scheme: light;
-    --background: #f8f8f8;
-    --foreground: hsl(240 10% 3.9%);
-    --card: #ffffff;
-    --card-foreground: hsl(240 10% 3.9%);
-    --popover: #ffffff;
-    --popover-foreground: hsl(240 10% 3.9%);
+    --background: #eeeef1;
+    --foreground: #1d1d20;
+    --card: #f7f7f9;
+    --card-foreground: #1d1d20;
+    --popover: #fbfbfc;
+    --popover-foreground: #1d1d20;
     --primary: #2563eb;
     --primary-foreground: #ffffff;
-    --secondary: #e4e4e7;
+    --secondary: #dcdce1;
     --secondary-foreground: #18181b;
-    --muted: #f4f4f5;
+    --muted: #e7e7eb;
     --muted-foreground: rgb(0 0 0 / 60%);
-    --accent: #ececee;
+    --accent: #e1e1e6;
     --accent-foreground: #18181b;
     --destructive: #dc2626;
-    --border: rgb(0 0 0 / 10%);
-    --input: #f4f4f5;
+    --border: rgb(20 20 40 / 13%);
+    --input: #e7e7eb;
     --ring: color-mix(in srgb, #2563eb 60%, transparent);
+    --chart-1: #3b82f6;
+    --chart-2: #10b981;
+    --chart-3: #f97316;
+    --chart-4: #8b5cf6;
+    --chart-5: #ec4899;
     --radius: 0.3125rem;
-    --panel: #f8f8f8;
-    --bar-top: #fafafa;
-    --bar-bottom: #f0f0f1;
-    --well-top: #f0f0f2;
-    --well-bottom: #f7f7f8;
-    --window-border: rgb(0 0 0 / 10%);
+    --sidebar: #e9e9ed;
+    --sidebar-foreground: #1d1d20;
+    --sidebar-primary: #2563eb;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #dcdce2;
+    --sidebar-accent-foreground: #1d1d20;
+    --sidebar-border: rgb(20 20 40 / 12%);
+    --sidebar-ring: color-mix(in srgb, #2563eb 60%, transparent);
+    --panel: #f1f1f4;
+    --bar-top: #ececef;
+    --bar-bottom: #e2e2e6;
+    --well-top: #dfdfe4;
+    --well-bottom: #e6e6ea;
+    --window-border: rgb(20 20 40 / 15%);
     --window-control: rgb(0 0 0 / 35%);
-    --well: #f4f4f5;
-    --canvas: #ffffff;
-    --bar: #f8f8f8;
-    --line: rgb(0 0 0 / 5%);
+    --titlebar-foreground: #1d1d20;
+    --well: #e4e4e8;
+    --canvas: #f4f4f6;
+    --bar: #e6e6ea;
+    --line: rgb(20 20 40 / 8%);
     --dim-foreground: rgb(0 0 0 / 40%);
-    --motion-duration: 100ms;
-    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
     --text-selection: color-mix(in srgb, var(--primary) 20%, transparent);
-    /* 桌面控件材质 */
+    /* 桌面控件材质；浅色沿用本库结构，颜色取 Darwin 浅色基线。 */
+    --knob-rotation-top: #e8e8ea;
+    --knob-rotation-bottom: #d4d4d8;
+    --knob-audio-top: #f2f2f4;
+    --knob-audio-bottom: #dededf;
     --control-indicator: #18181b;
-    --control-arc: #bdbdbd;
+    --control-arc: #b9bac1;
     --control-arc-track: #e4e4e7;
-    --menu-border: rgb(0 0 0 / 10%);
+    --menu-border: rgb(20 20 40 / 13%);
     --menu-highlight: rgb(59 130 246 / 10%);
+    --meter-green: #047857;
     --control-chevron: rgb(0 0 0 / 45%);
-    --disclosure-body: #f4f4f5;
+    --slider-thumb-top: #ffffff;
+    --slider-thumb-bottom: #d4d4d8;
+    --slider-standard-thumb: #ffffff;
+    --slider-hue: linear-gradient(90deg, #de6262, #d9c65c, #65ba72, #56bbbb, #6388d0, #ad70cf, #de6262);
+    --slider-saturation: linear-gradient(90deg, #777777, #da6961);
+    --slider-luminance: linear-gradient(90deg, #181818, #dddddd);
+    --disclosure-body: #ececf0;
+    --inspector-tabs: #e4e4e8;
     --inspector-label: rgb(0 0 0 / 60%);
+    --inspector-value: var(--foreground);
+    --statusbar-foreground: rgb(0 0 0 / 60%);
+    --statusbar-emphasis: var(--foreground);
     --control-muted: rgb(0 0 0 / 60%);
-    --control-selection: #d4d4d8;
-    --button-standard-secondary: #e4e4e7;
-    --button-standard-destructive: #dc2626;
-    --button-standard-link: #2563eb;
-    --button-invalid: #dc2626;
-    /* 控件输入/选择/开关底(GaN.UI 阶段3公开预览材质) */
-    --control-input-background: #ffffff;
-    --control-input-focus-background: #f4f4f5;
-    --control-input-edge: rgb(0 0 0 / 20%);
-    --control-select-background: #f4f4f5;
-    --control-neutral-selected: #d4d4d8;
-    --control-toggle-background: #e4e4e7;
-    --control-toggle-selected: #d4d4d8;
-    --alert-description: rgb(0 0 0 / 60%);
-    --bubble-secondary: #f4f4f5;
-    --bubble-secondary-foreground: #09090b;
-    --bubble-tinted: color-mix(in srgb, var(--primary) 10%, var(--background));
-    --shadow-toast: 0 6px 22px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 10%);
-    /* 敲敲应用层:悬停填充 / 选中行 / 终端实色(xterm 不吃透明度,选区用 rgba) */
-    --hover-fill: rgb(0 0 0 / 4%);
-    --row-selected: rgb(37 99 235 / 10%);
-    --term-bg: #ffffff;
-    --term-fg: #1f1f23;
-    --term-sel: rgb(37 99 235 / 25%);
-}
-
-/* 深色:GaN.UI 中性灰主主题(默认) */
-.dark {
-    color-scheme: dark;
-    --background: #303030;
-    --foreground: #ededed;
-    --card: #3b3b3b;
-    --card-foreground: #ededed;
-    --popover: #353535;
-    --popover-foreground: #ededed;
-    --primary: #0a84ff;
-    --primary-foreground: #ffffff;
-    --secondary: #555555;
-    --secondary-foreground: #eeeeee;
-    --muted: #414141;
-    --muted-foreground: #aaaaaa;
-    --accent: #525252;
-    --accent-foreground: #ffffff;
-    --destructive: #ef7770;
-    --border: #4c4c4c;
-    --input: #252525;
-    --ring: color-mix(in srgb, #0a84ff 70%, transparent);
-    --radius: 0.3125rem;
-    --panel: #383838;
-    --bar-top: #4a4a4a;
-    --bar-bottom: #3e3e3e;
-    --well-top: #252525;
-    --well-bottom: #2b2b2b;
-    --window-border: #222222;
-    --window-control: #696a6c;
-    --well: #1c1c1c;
-    --canvas: #262626;
-    --bar: #474747;
-    --line: #454545;
-    --dim-foreground: #777;
-    --motion-duration: 100ms;
-    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
-    --text-selection: color-mix(in srgb, var(--primary) 35%, transparent);
-    --knob-rotation-top: #686868;
-    --knob-rotation-bottom: #535353;
-    --knob-audio-top: #a2a2a2;
-    --knob-audio-bottom: #707070;
-    --control-indicator: var(--input);
-    --control-arc: #bdbdbd;
-    --control-arc-track: #232323;
-    --menu-border: #111111;
-    --menu-highlight: var(--control-selection);
-    --meter-green: #78bc82;
-    --control-chevron: #bcbcbc;
-    --slider-thumb-top: #c5c5c5;
-    --slider-thumb-bottom: #969696;
-    --slider-standard-thumb: #aaaaaa;
-    --disclosure-body: #4f4f4f;
-    --inspector-tabs: #282828;
-    --inspector-label: #747679;
-    --inspector-value: #e2e2e1;
-    --statusbar-foreground: #8c8e90;
-    --statusbar-emphasis: #d9d9d8;
-    --control-muted: #a6a6a6;
     --action-surface: linear-gradient(#484848, #3d3d3d);
     --action-dark-surface: linear-gradient(#303030, #282828);
     --action-light-surface: linear-gradient(#b7b7b7, #ababab);
@@ -240,53 +242,451 @@
     --action-light-control: rgb(255 255 255 / 15%);
     --action-active: rgb(0 0 0 / 52%);
     --action-pressed: rgb(0 0 0 / 35%);
-    --action-well-surface: linear-gradient(var(--well-top), var(--well-bottom));
-    --bar-slider-thumb: #cccccc;
+    --action-well-surface: linear-gradient(#252525, #2b2b2b);
+    --action-timecode: #e2e5dd;
+    --action-slider-fill: #000000;
+    --action-slider-track: #333333;
+    --action-slider-well: #242424;
+    --bar-slider-thumb: #ffffff;
+    --sub-slider-fill: #3f3f46;
+    --sub-slider-well: rgb(0 0 0 / 8%);
+    --sub-slider-track: var(--control-selection);
+    --bar-bottom-line: var(--window-border);
+    --toolbar-surface: linear-gradient(#ececef, #e2e2e6);
+    --toolbar-active: #d0d0d7;
+    --toolbar-separator: rgb(0 0 0 / 10%);
+    --toolbar-search: #f7f7f9;
+    --scope-active: rgb(59 130 246 / 10%);
+    --action-record: #dc2626;
+    --action-loop: #a16207;
+    --control-selection: #d0d0d7;
+    --slider-pointer: #52525b;
+    --slider-pointer-border: rgb(255 255 255 / 70%);
+    --button-standard-secondary: #e1e1e6;
+    --button-standard-destructive: #dc2626;
+    --button-standard-link: #1d4ed8;
+    --button-primary-pressed: #1d4ed8;
+    --button-invalid: #dc2626;
+    /* ActionBar 未传 theme 时跟随应用主题：浅色为浅色栏，暗色为同调石墨材质。 */
+    --action-auto-surface: linear-gradient(#ececef, #e2e2e6);
+    --action-auto-foreground: #18181b;
+    --action-auto-control: rgb(0 0 0 / 4%);
+    /* 已弃用，等同 --elevation-overlay。 */
+    --shadow-toast: var(--elevation-overlay);
+    /* 侧栏选中态与语义状态色（主题刷新新增）。 */
+    --sidebar-selected: #d4d4db;
+    --sidebar-selected-foreground: #1d1d20;
+    --success: #15803d;
+    --success-foreground: #ffffff;
+    --warning: #b45309;
+    --warning-foreground: #ffffff;
+    --info: #2563eb;
+    --info-foreground: #ffffff;
+    /* 主题刷新第 2 步：替代组件内写死颜色的令牌。 */
+    --control-input-active: #e9e9ed;
+    --resize-grip: #b9bac1;
+    --file-button-top: #e1e1e6;
+    --file-button-bottom: #e1e1e6;
+    --file-button-edge: rgb(20 20 40 / 10%);
+}
+
+/* 暗色令牌：冷调石墨中性色，明度阶梯为 井 < 画布 < 侧栏 < 页面 < 面板 < 卡片 < 浮层 < 栏；
+   选中与高亮由主色着色；保留可见的键盘焦点环。 */
+.dark {
+    color-scheme: dark;
+    --background: #26272b;
+    --foreground: #e8e9ec;
+    --card: #303136;
+    --card-foreground: #e8e9ec;
+    --popover: #35363b;
+    --popover-foreground: #e8e9ec;
+    --primary: #0a84ff;
+    --primary-foreground: #ffffff;
+    --secondary: #46474e;
+    --secondary-foreground: #eceef1;
+    --muted: #34353a;
+    --muted-foreground: #a2a4ab;
+    --accent: #3f4047;
+    --accent-foreground: #ffffff;
+    --destructive: #ef7770;
+    --border: #3a3b41;
+    --input: #1c1d20;
+    --ring: color-mix(in srgb, #0a84ff 70%, transparent);
+    --chart-1: #4ea1ff;
+    --chart-2: #5ccf8a;
+    --chart-3: #efb359;
+    --chart-4: #a78bfa;
+    --chart-5: #f27d8b;
+    --radius: 0.3125rem;
+    --sidebar: #222327;
+    --sidebar-foreground: #d9dae0;
+    --sidebar-primary: #0a84ff;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #36373d;
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #131417;
+    --sidebar-ring: color-mix(in srgb, #0a84ff 70%, transparent);
+    --well: #17181b;
+    --canvas: #1d1e21;
+    --bar: #36373c;
+    --line: #33343a;
+    --dim-foreground: #6f717a;
+    --text-selection: color-mix(in srgb, var(--primary) 35%, transparent);
+    --panel: #2b2c31;
+    --bar-top: #3b3c42;
+    --bar-bottom: #313237;
+    --well-top: #1b1c1f;
+    --well-bottom: #212226;
+    --window-border: #131417;
+    --window-control: #696a6c;
+    --titlebar-foreground: #dcdde2;
+    /* 阶段 2：精密控件、栏、面板的共享材质与状态色。 */
+    --knob-rotation-top: #64666d;
+    --knob-rotation-bottom: #505259;
+    --knob-audio-top: #a0a2a9;
+    --knob-audio-bottom: #6d6f76;
+    --control-indicator: var(--input);
+    --control-arc: #babcc3;
+    --control-arc-track: #1f2024;
+    --menu-border: #101114;
+    --menu-highlight: color-mix(in srgb, var(--primary) 30%, transparent);
+    --meter-green: #5ccf8a;
+    --control-chevron: #b9bbc2;
+    --slider-thumb-top: #c3c5cc;
+    --slider-thumb-bottom: #93959d;
+    --slider-standard-thumb: #a7a9b0;
+    --slider-hue: linear-gradient(90deg, #de6262, #d9c65c, #65ba72, #56bbbb, #6388d0, #ad70cf, #de6262);
+    --slider-saturation: linear-gradient(90deg, #777777, #da6961);
+    --slider-luminance: linear-gradient(90deg, #181818, #dddddd);
+    --disclosure-body: #3e3f45;
+    --inspector-tabs: #1e1f22;
+    --inspector-label: #747679;
+    --inspector-value: #e0e1e6;
+    --statusbar-foreground: #8c8e90;
+    --statusbar-emphasis: #d7d8de;
+    --control-muted: #a2a4ab;
+    --action-surface: linear-gradient(#484848, #3d3d3d);
+    --action-dark-surface: linear-gradient(#303030, #282828);
+    --action-light-surface: linear-gradient(#b7b7b7, #ababab);
+    --action-foreground: #dedede;
+    --action-light-foreground: #454545;
+    --action-control: rgb(255 255 255 / 5.5%);
+    --action-light-control: rgb(255 255 255 / 15%);
+    --action-active: rgb(0 0 0 / 52%);
+    --action-pressed: rgb(0 0 0 / 35%);
+    --action-well-surface: linear-gradient(#252525, #2b2b2b);
+    --action-timecode: #e2e5dd;
+    --action-slider-fill: #000000;
+    --action-slider-track: #333333;
+    --action-slider-well: #242424;
+    --bar-slider-thumb: #c9cbd2;
     --sub-slider-fill: #000000;
     --sub-slider-well: rgb(0 0 0 / 40%);
     --sub-slider-track: var(--control-selection);
-    --toolbar-surface: linear-gradient(#494949, #414141);
-    --toolbar-active: #616161;
-    --toolbar-separator: #242527;
-    --toolbar-search: #2a2a2a;
-    --toolbar-search-line: #181818;
-    --scope-active: rgb(0 0 0 / 30%);
+    --bar-bottom-line: var(--window-border);
+    --toolbar-surface: linear-gradient(#3b3c42, #323338);
+    --toolbar-active: #52545c;
+    --toolbar-separator: #1d1e21;
+    --toolbar-search: #1e1f23;
+    --scope-active: color-mix(in srgb, var(--primary) 18%, rgb(0 0 0 / 30%));
     --action-record: #a43131;
     --action-loop: #80651c;
-    --control-selection: #626262;
-    --slider-pointer: #808080;
-    --slider-pointer-border: #181818;
-    --button-standard-secondary: #606060;
+    --control-selection: #52545c;
+    --slider-pointer: #7d7f87;
+    --slider-pointer-border: #141518;
+    --button-standard-secondary: #52545b;
     --button-standard-destructive: #a94440;
     --button-standard-link: #69b5ff;
     --button-invalid: #a96560;
-    --control-input-background: #2a2a2a;
-    --control-input-focus-background: #2f2f2f;
-    --control-input-edge: #181818;
-    --control-select-background: #505050;
-    --control-neutral-selected: #737373;
-    --control-toggle-background: #4e4e4e;
-    --control-toggle-selected: #626262;
-    --avatar-background: #555555;
-    --avatar-fallback: #5b5b5b;
-    --alert-description: #bcbcbc;
-    --bubble-secondary: #494949;
-    --bubble-secondary-foreground: #dedede;
+    /* 未传 theme 的 ActionBar 在暗色下使用与界面同调的石墨材质，明度与 charcoal 相当；显式 charcoal 不变。 */
+    --action-auto-surface: linear-gradient(#46474d, #3b3c42);
+    --action-auto-slider-track: #2c2d32;
+    --action-auto-slider-well: #1b1c1f;
+    --action-auto-foreground: var(--sidebar-foreground);
+    --action-auto-control: var(--action-control);
+    --shadow-toast: var(--elevation-overlay);
+    /* 侧栏选中态与语义状态色（主题刷新新增）。 */
+    --sidebar-selected: color-mix(in srgb, var(--primary) 22%, #26272b);
+    --sidebar-selected-foreground: #ffffff;
+    --success: #5ccf8a;
+    --success-foreground: #0f2417;
+    --warning: #efb359;
+    --warning-foreground: #2a1c05;
+    --info: #4ea1ff;
+    --info-foreground: #08182b;
+    /* 主题刷新第 2 步：替代组件内写死颜色的令牌。 */
+    --control-input-active: #2e2f34;
+    --resize-grip: #18191c;
+    --file-button-top: #5c5e66;
+    --file-button-bottom: #52545c;
+    --file-button-edge: #2a2b30;
+}
+
+/* 与主题无关的令牌：动效档位、图标线宽、滚动条占位宽度。
+   动效四档：quick 菜单类/Tooltip/chevron/Switch；standard 对话框/Popover/展开收起/进度/Toast；
+   emphasized 侧栏/Sheet/Drawer。组件用 duration-(--motion-quick-in) 这类写法。 */
+:root {
+    --motion-quick-in: 60ms;
+    --motion-quick-out: 80ms;
+    --motion-standard-in: 150ms;
+    --motion-standard-out: 100ms;
+    --motion-emphasized-in: 220ms;
+    --motion-emphasized-out: 160ms;
+    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+    /* 已弃用，等同 standard 出场；新代码用上面的档位令牌。 */
+    --motion-duration: var(--motion-standard-out);
+    /* Lucide 图标统一画成 1 个 CSS 像素的实际线宽（见 @layer base 中的规则）；局部需要更粗时在子树上覆盖。 */
+    --icon-stroke: 1px;
+    /* 滚动条占位宽度；滑块静止时可见 6px，悬停或拖动为 10px。 */
+    --scrollbar-size: 10px;
+    /* 禁用控件的透明度，所有控件统一。 */
+    --state-disabled-opacity: 0.5;
+}
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --motion-quick-in: 0ms;
+        --motion-quick-out: 0ms;
+        --motion-standard-in: 0ms;
+        --motion-standard-out: 0ms;
+        --motion-emphasized-in: 0ms;
+        --motion-emphasized-out: 0ms;
+    }
+}
+
+/* 密度只写 regular 一档（不启用 data-density 切换）：控件、行、栏高度与间距一律字面像素，
+   不引用其他变量、不用 calc 乘系数（会产生小数像素）。字号、图标、圆角、边框宽度不随密度变化。 */
+:root {
+    --size-control-xs: 20px;
+    --size-control-sm: 22px;
+    --size-control-md: 25px;
+    --size-control-lg: 32px;
+    --size-item: 25px;
+    --size-item-lg: 30px;
+    --size-command-item: 28px;
+    --size-tree-row: 22px;
+    --size-table-row: 36px;
+    --size-table-head: 29px;
+    --size-tabs-well: 27px;
+    --size-tabs-item: 21px;
+    --size-dock-tabs: 28px;
+    --size-dock-item: 26px;
+    --size-toolbar: 43px;
+    --size-statusbar: 25px;
+    --size-titlebar: 34px;
+    --size-calendar-cell: 29px;
+    --size-header: 35px;
+    --size-row: 31px;
+    --size-subbar: 34px;
+    --size-scope-row: 36px;
+    --size-scope-item: 21px;
+    --size-input-file: 28px;
+    --size-input-button: 22px;
+    --space-xs: 4px;
+    --space-sm: 6px;
+    --space-md: 8px;
+    --space-lg: 10px;
+    --space-xl: 12px;
+    --space-2xl: 16px;
+    --space-3xl: 24px;
+    --space-wide: 14px;
+    --space-button-lg: 18px;
+}
+
+/* 滚动条颜色：只用黑/白透明值，深浅主题各一套。 */
+:root {
+    --scrollbar-thumb: rgb(0 0 0 / 22%);
+    --scrollbar-thumb-hover: rgb(0 0 0 / 36%);
+    --scrollbar-thumb-active: rgb(0 0 0 / 48%);
+    --scrollbar-track-hover: rgb(0 0 0 / 4%);
+}
+.dark {
+    --scrollbar-thumb: rgb(255 255 255 / 18%);
+    --scrollbar-thumb-hover: rgb(255 255 255 / 32%);
+    --scrollbar-thumb-active: rgb(255 255 255 / 42%);
+    --scrollbar-track-hover: rgb(255 255 255 / 4%);
+}
+
+/* 层级（elevation）：每级是“内描边 + 顶部高光 + 外阴影”的完整 box-shadow，经 @theme inline 注册为 shadow-well/flat/raised/sunken/overlay/modal。
+   统一光源：光自上而下，高光只在顶边，投影只在下方，凹处的内影在上沿、亮边在下沿。
+   well 凹陷井（输入井、轨道、标签井）；flat 与所在表面同层（栏、面板、卡片）；raised 凸起控件（选中页签、滑块、触发器）；
+   sunken 选中且下沉的实色控件（开/关型的选中 Button、Toggle），比 well 深；overlay 浮出的菜单、弹层、提示；modal 对话框、抽屉、浮动窗口。
+   浅色里白色高光落在浅底上几乎看不见，所以顶边高光取 90%，阴影拆成“贴边接触影 + 柔和环境影”两层，靠投影而不是边缘高光分层。
+   overlay/modal 另提供实线边框色，由组件以 border 或 ring 引用。
+   组件材质自成一体的不归并：Button 桌面/通用外观、Knob 实体盘、ActionBar 显式材质、输入框（边缘色取逐主题令牌 --control-input-edge）。 */
+:root {
+    --elevation-well:
+        inset 0 1px 2px rgb(0 0 0 / 10%), inset 0 0 0 0.5px rgb(0 0 0 / 11%), 0 1px 0 rgb(255 255 255 / 85%);
+    --elevation-flat: inset 0 0.5px 0 rgb(255 255 255 / 90%), 0 0.5px 1px rgb(0 0 0 / 5%);
+    --elevation-raised:
+        inset 0 0.5px 0 rgb(255 255 255 / 90%), inset 0 0 0 0.5px rgb(0 0 0 / 14%), 0 0.5px 1px rgb(0 0 0 / 8%),
+        0 2px 5px rgb(0 0 0 / 7%);
+    --elevation-sunken:
+        inset 0 1px 2px rgb(0 0 0 / 28%), inset 0 0 0 0.5px rgb(0 0 0 / 25%), 0 0.5px 0 rgb(255 255 255 / 70%);
+    --elevation-overlay: inset 0 0.5px 0 rgb(255 255 255 / 90%), 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 14%);
+    --elevation-overlay-border: var(--menu-border);
+    --elevation-modal: inset 0 0.5px 0 rgb(255 255 255 / 90%), 0 2px 6px rgb(0 0 0 / 8%), 0 24px 64px rgb(0 0 0 / 18%);
+    --elevation-modal-border: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.dark {
+    --elevation-well:
+        inset 0 1px 2px rgb(0 0 0 / 27%), inset 0 0 0 0.5px rgb(0 0 0 / 40%), 0 0.5px 0 rgb(255 255 255 / 9.4%);
+    --elevation-flat: inset 0 0.5px 0 rgb(255 255 255 / 9.4%);
+    --elevation-raised:
+        inset 0 0.5px 0 rgb(255 255 255 / 13%), inset 0 0 0 0.5px rgb(0 0 0 / 31%), 0 1px 2px rgb(0 0 0 / 27%);
+    --elevation-sunken:
+        inset 0 1px 2px rgb(0 0 0 / 35%), inset 0 0 0 0.5px rgb(0 0 0 / 30%), 0 0.5px 0 rgb(255 255 255 / 10%);
+    --elevation-overlay: inset 0 1px 0 rgb(255 255 255 / 7%), 0 5px 16px rgb(0 0 0 / 40%);
+    --elevation-overlay-border: var(--menu-border);
+    --elevation-modal: 0 16px 60px rgb(0 0 0 / 40%), inset 0 0.5px 0 rgb(255 255 255 / 7%);
+    --elevation-modal-border: color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+/* 统一状态层：组件只引用这些令牌，不再各写 7%、10% 之类的散值；按下一律比悬停强。
+   hover 行与列表（Table、Tree、Item、Command）；hover-control / pressed 透明控件（ghost、outline、Scope、Titlebar 按钮、Inspector 标题）；
+   pressed-overlay 有填充的按钮按下时叠在填充上的一层（浅色另有 --control-selection 实底规则）；
+   selected 列表选中填充，用主色透明值而不是混入页面底色，放在任何表面上都一致；selected-inactive 为失焦时的中性选中。
+   --menu-highlight（菜单高亮）、--scope-active（范围选中）、--sidebar-selected（导航位置）语义不同，保留各自令牌。 */
+:root {
+    --state-hover: rgb(0 0 0 / 4%);
+    --state-hover-control: rgb(0 0 0 / 4%);
+    --state-pressed: rgb(0 0 0 / 6%);
+    --state-pressed-overlay: rgb(255 255 255 / 8%);
+    --state-selected: color-mix(in srgb, var(--primary) 14%, transparent);
+    --state-selected-foreground: var(--foreground);
+    --state-selected-inactive: rgb(0 0 0 / 7%);
+    --state-selected-inactive-foreground: var(--foreground);
+    /* 已弃用，等同 --state-selected-inactive。 */
+    --selection-inactive: var(--state-selected-inactive);
+    /* 通用外观 outline 按钮的静止填充：作为令牌才能让悬停与按下的状态层叠在它上面。 */
+    --button-standard-outline: rgb(0 0 0 / 2%);
+}
+.dark {
+    --state-hover: rgb(255 255 255 / 5%);
+    --state-hover-control: rgb(255 255 255 / 8%);
+    --state-pressed: rgb(255 255 255 / 12%);
+    --state-pressed-overlay: rgb(255 255 255 / 8%);
+    --state-selected: color-mix(in srgb, var(--primary) 22%, transparent);
+    --state-selected-foreground: #ffffff;
+    --state-selected-inactive: rgb(255 255 255 / 9%);
+    --state-selected-inactive-foreground: var(--foreground);
+    --selection-inactive: var(--state-selected-inactive);
+    --button-standard-outline: rgb(255 255 255 / 7%);
+}
+
+/* 停靠工作区皮肤的表面层次：标签栏与页签取色，供 DockLayout 使用；
+   本项目暂未引入 dock-* 组件，令牌先随默认主题带过来，避免后续同步时再补。 */
+:root {
+    --dock-tabs: #e6e6ea;
+    --dock-tab-active: #f7f7f9;
+    --dock-tab-inactive: #dedee3;
+    --dock-tab-highlight: rgb(255 255 255 / 75%);
+    --dock-tab-shade: rgb(0 0 0 / 3%);
+    --dock-tab-edge: rgb(0 0 0 / 14%);
+    --dock-tab-shadow: rgb(0 0 0 / 8%);
+    /* 浮动窗口：与停靠区分层的边框与投影，标题栏拖动纹理与悬停提亮 */
+    --dock-float-border: rgb(20 20 40 / 38%);
+    /* 已弃用，等同 --elevation-modal。 */
+    --dock-float-shadow: var(--elevation-modal);
+    --dock-grip: rgb(20 20 40 / 36%);
+    --dock-grip-hover: rgb(20 20 40 / 66%);
+    --dock-float-titlebar-hover: rgb(0 0 0 / 5%);
+}
+.dark {
+    --dock-tabs: #1f2024;
+    --dock-tab-active: #2b2c31;
+    --dock-tab-inactive: #25262a;
+    --dock-tab-highlight: rgb(255 255 255 / 13%);
+    --dock-tab-shade: rgb(0 0 0 / 12%);
+    --dock-tab-edge: rgb(0 0 0 / 50%);
+    --dock-tab-shadow: rgb(0 0 0 / 25%);
+    --dock-float-border: rgb(255 255 255 / 22%);
+    --dock-float-shadow: var(--elevation-modal);
+    --dock-grip: rgb(255 255 255 / 32%);
+    --dock-grip-hover: rgb(255 255 255 / 70%);
+    --dock-float-titlebar-hover: rgb(255 255 255 / 7%);
+}
+
+/* 阶段3公开预览实测材质（输入/选择/开关/头像/提示描述）。 */
+:root {
+    --control-input-background: #fbfbfc;
+    --control-input-focus-background: #ffffff;
+    --control-input-edge: rgb(0 0 0 / 20%);
+    --control-select-background: #e9e9ed;
+    --control-neutral-selected: #d0d0d7;
+    --control-toggle-background: #dfdfe4;
+    --control-toggle-selected: #d0d0d7;
+    --avatar-background: #e1e1e6;
+    --avatar-fallback: #e9e9ed;
+    --alert-description: rgb(0 0 0 / 60%);
+}
+.dark {
+    --control-input-background: #1e1f23;
+    --control-input-focus-background: #232428;
+    --control-input-edge: #141518;
+    --control-select-background: #3f4047;
+    --control-neutral-selected: #5c5e66;
+    --control-toggle-background: #3c3d43;
+    --control-toggle-selected: #52545c;
+    --avatar-background: #46474e;
+    --avatar-fallback: #4c4d54;
+    --alert-description: #b9bbc2;
+}
+
+/* 气泡：按公开气泡预览校准，随主题中性色阶与蓝色主色。 */
+:root {
+    --bubble-secondary: #e9e9ed;
+    --bubble-secondary-foreground: #09090b;
+    --bubble-tinted: color-mix(in srgb, var(--primary) 10%, var(--background));
+}
+.dark {
+    --bubble-secondary: #3a3b41;
+    --bubble-secondary-foreground: #dcdde2;
     --bubble-tinted: oklch(0.3 0.0822 255.49);
-    --shadow-toast: 0 6px 22px rgb(0 0 0 / 46.7%), 0 1px 3px rgb(0 0 0 / 26.7%);
-    /* 敲敲应用层 */
-    --hover-fill: rgb(255 255 255 / 5%);
-    --row-selected: #254563;
+}
+
+/* 拖拽投放反馈令牌：上游 src/components/ui/drag.tsx 的 useDropTarget 设置 data-drop-state / data-insertion，
+   颜色与插入线统一走令牌，深浅主题自动跟随。本项目暂未复制 drag.tsx，令牌先随默认主题带过来。 */
+:root {
+    --drop-target: rgb(37 99 235 / 10%);
+    --drop-target-border: rgb(37 99 235 / 45%);
+    --drop-target-line: var(--primary);
+    --drop-target-invalid: rgb(220 38 38 / 12%);
+}
+.dark {
+    --drop-target: color-mix(in srgb, var(--primary) 18%, transparent);
+    --drop-target-border: color-mix(in srgb, var(--primary) 50%, transparent);
+    --drop-target-line: var(--primary);
+    --drop-target-invalid: color-mix(in srgb, var(--destructive) 20%, transparent);
+}
+
+/* 敲敲应用层令牌：只剩终端配色（xterm 主题经 CSS 变量读取，库没有对应令牌）。
+   悬停与选中填充已改用库的 --state-hover / --state-selected。 */
+:root {
+    --term-bg: #ffffff;
+    --term-fg: #1f1f23;
+    --term-sel: rgb(37 99 235 / 25%);
+}
+.dark {
     --term-bg: #1c1c1c;
     --term-fg: #e0e0e0;
     --term-sel: rgb(10 132 255 / 35%);
 }
 
-/* 标题栏空白处可拖动窗口，搜索、按钮与弹出内容排除拖动以保留输入事件。 */
+/* 标题栏空白处可拖动窗口，搜索、按钮与弹出内容排除拖动以保留输入事件。
+   上游组件用 gan-drag / gan-no-drag，本项目调用点仍用 app-* 命名，两套并存（本地差异第 2 条）。 */
 .app-drag {
     -webkit-app-region: drag;
 }
 .app-no-drag {
+    -webkit-app-region: no-drag;
+}
+
+@utility gan-drag {
+    -webkit-app-region: drag;
+}
+
+@utility gan-no-drag {
     -webkit-app-region: no-drag;
 }
 
@@ -346,7 +746,62 @@
         background: var(--text-selection);
     }
 
-    /* 桌面软件感:交互控件不响应文本选择;禁用态统一光标 */
+    /* 全局滚动条：滑块静止 6px、悬停或拖动 10px（2px 透明边框 + padding-box 背景裁出 6px 可见宽度），所有平台一致。
+       Chromium 121 起元素上只要有 scrollbar-color / scrollbar-width（scrollbar-color 还会继承），::-webkit-scrollbar 就整体失效，
+       所以标准属性只放在不支持该伪元素的浏览器（Firefox）分支，Chromium / Electron / Safari 走伪元素。
+       限制：CSS 没有“悬停轨道时改滑块”的选择器，只有鼠标直接悬停滑块才加宽；轨道淡底用 track:hover。
+       forced-colors 下整体不生效，由系统绘制。 */
+    @media not (forced-colors: active) {
+        @supports selector(::-webkit-scrollbar) {
+            *::-webkit-scrollbar {
+                width: var(--scrollbar-size);
+                height: var(--scrollbar-size);
+            }
+            *::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            *::-webkit-scrollbar-track:hover {
+                background: var(--scrollbar-track-hover);
+            }
+            *::-webkit-scrollbar-thumb {
+                border: 2px solid transparent;
+                border-radius: 9999px;
+                background-color: var(--scrollbar-thumb);
+                background-clip: padding-box;
+            }
+            *::-webkit-scrollbar-thumb:hover {
+                border-width: 0;
+                background-color: var(--scrollbar-thumb-hover);
+            }
+            *::-webkit-scrollbar-thumb:active {
+                border-width: 0;
+                background-color: var(--scrollbar-thumb-active);
+            }
+            *::-webkit-scrollbar-button {
+                display: none;
+            }
+            *::-webkit-scrollbar-corner {
+                background: transparent;
+            }
+        }
+        @supports not selector(::-webkit-scrollbar) {
+            * {
+                scrollbar-width: thin;
+                scrollbar-color: var(--scrollbar-thumb) transparent;
+            }
+        }
+    }
+
+    /* Lucide 图标统一为 1 个 CSS 像素的实际线宽：Lucide 默认 stroke-width="2"，属性值为 2 时由令牌接管，
+       non-scaling-stroke 让线宽不随 viewBox 缩放。显式传其他线宽（或工具类）的图标保持 Lucide 原生缩放。 */
+    svg.lucide[stroke-width="2"] {
+        stroke-width: var(--icon-stroke);
+    }
+    svg.lucide[stroke-width="2"] :is(path, line, polyline, polygon, circle, ellipse, rect) {
+        vector-effect: non-scaling-stroke;
+    }
+
+    /* 桌面软件感：交互控件不响应文本选择 */
     :where(
         button,
         input,
@@ -371,192 +826,35 @@
     }
 }
 
-/* 滚动条:细、按主题取色,悬停提亮 */
-::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-::-webkit-scrollbar-thumb {
-    background: rgb(0 0 0 / 18%);
-    border-radius: 999px;
-    border: 3px solid transparent;
-    background-clip: padding-box;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: rgb(0 0 0 / 30%);
-    border: 3px solid transparent;
-    background-clip: padding-box;
-}
-.dark ::-webkit-scrollbar-thumb {
-    background: rgb(255 255 255 / 16%);
-    border: 3px solid transparent;
-    background-clip: padding-box;
-}
-.dark ::-webkit-scrollbar-thumb:hover {
-    background: rgb(255 255 255 / 28%);
-    border: 3px solid transparent;
-    background-clip: padding-box;
-}
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-    background: transparent;
-}
-
-/* ── 顶栏/工具栏图标按钮(28px,原型 .kn-icon 语言):无底,悬停浮填充,
-   aria-pressed 用强调色表达选中 ── */
-.icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    flex: none;
-    border-radius: 4px;
-    color: var(--muted-foreground);
-    cursor: default;
-    user-select: none;
-    transition:
-        background-color 100ms var(--motion-ease),
-        color 100ms var(--motion-ease);
-}
-.icon-btn:hover {
-    background: var(--hover-fill);
-    color: var(--foreground);
-}
-.icon-btn[aria-pressed="true"] {
-    background: var(--row-selected);
-    color: var(--primary);
-}
-
-/* ── 幽灵小图标按钮(tab 行 ＋ 等 26px) ── */
-.ghost-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    flex: none;
-    border-radius: 4px;
-    color: var(--dim-foreground);
-    cursor: default;
-    user-select: none;
-    transition:
-        background-color 100ms var(--motion-ease),
-        color 100ms var(--motion-ease);
-}
-.ghost-btn:hover {
-    background: var(--hover-fill);
-    color: var(--foreground);
-}
-.ghost-btn[aria-pressed="true"] {
-    color: var(--primary);
-}
-
-/* ── 条目类型徽章:等宽小字,井底 + 分隔线 ── */
-.kind-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 34px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--well);
-    color: var(--muted-foreground);
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    line-height: 1.2;
-    letter-spacing: 0.02em;
-}
-
-/* ── 搜索下拉/悬浮层入场:从触发器上方展开 ── */
-.drop-anim {
-    transform-origin: top center;
-    transition:
-        opacity 100ms var(--motion-ease),
-        transform 100ms var(--motion-ease);
-    @starting-style {
-        opacity: 0;
-        transform: translateY(-4px) scale(0.98);
-    }
-}
-
-/* 终端式文字按钮(工具栏轻量动作,原型 .kn-text-action):
-   次级色文字,悬停提亮,按压降不透明度 */
-.tbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: none;
-    border: 0;
-    padding: 3px 6px;
-    border-radius: 3px;
-    color: var(--muted-foreground);
-    font: inherit;
-    font-size: 11px;
-    cursor: default;
-    user-select: none;
-    white-space: nowrap;
-    transition:
-        color 100ms var(--motion-ease),
-        background-color 100ms var(--motion-ease);
-}
-.tbtn:hover,
-.tbtn[aria-pressed="true"] {
-    background: var(--hover-fill);
-    color: var(--foreground);
-}
-.tbtn:active {
-    opacity: 0.7;
-}
-/* 危险文字动作(删除选中之类):悬停红 */
-.tbtn-danger:hover,
-.tbtn-danger[aria-pressed="true"] {
-    color: var(--destructive);
-    background: transparent;
-}
-
-/* 切换按钮(segmented/chip)的选中态:强调色文字 + 选中填充。
-   .tbtn.seg-on 需与 .tbtn[aria-pressed] 同特异性且声明在后,
-   否则补上的 aria-pressed 会把选中填充盖回悬停填充 */
-.tbtn.seg-on,
-.seg-on {
-    background: var(--row-selected);
-    color: var(--primary);
-}
-.tbtn.seg-on:hover,
-.seg-on:hover {
-    color: var(--primary);
-}
-
-/* ── GaN.UI 浅色适配(结构同源,仅取色):按钮填充改实底深字、悬停用低透明黑叠加、
-   浮层阴影减淡。暗色渲染值不受影响 ── */
+/* ── 浅色局部材质覆盖：普通填充按钮用实底与深色文字，悬停/按压改用低透明黑叠加
+   （浅色下白色叠加不可见）；Select 触发器按下/展开用黑色状态层。
+   上游的 .gan-surface-light / :not(.gan-surface-dark *) 分支已去掉，只保留 :root:not(.dark)。 ── */
 :root:not(.dark) [data-slot="button"][data-variant="secondary"]:not([data-active]) {
     color: var(--foreground);
 }
+
 :root:not(.dark)
     [data-slot="button"][data-appearance="desktop"][data-variant="secondary"]:not([data-active]):not(
         [data-state="open"]
     ) {
-    background: #e4e4e7;
+    background: var(--button-standard-secondary);
 }
+
 :root:not(.dark)
     [data-slot="button"][data-appearance="standard"][data-variant="default"]:not([data-active]):not(
         [data-state="open"]
     ) {
-    background: #e4e4e7;
+    background: var(--button-standard-secondary);
 }
+
 :root:not(.dark) [data-slot="button"][data-appearance="standard"][data-variant="secondary"] {
-    color: #18181b;
+    color: var(--foreground);
 }
-:root:not(.dark)
-    [data-slot="button"][data-appearance="standard"][data-variant="outline"]:not([data-active]):not(
-        [data-state="open"]
-    ) {
-    background: rgb(0 0 0 / 2%);
-}
+
 :root:not(.dark) [data-slot="button"][data-appearance="standard"][data-active] {
-    color: #18181b;
+    color: var(--foreground);
 }
+
 :root:not(.dark)
     [data-slot="button"][data-appearance="desktop"][data-variant="secondary"]:enabled:is(:active, [data-pressed]):not(
         [data-active]
@@ -566,14 +864,16 @@
         [data-variant="default"],
         [data-variant="secondary"]
     ):enabled:is(:active, [data-pressed]):not([data-active]) {
-    background: #d4d4d8;
+    background: var(--control-selection);
 }
+
 :root:not(.dark)
     [data-slot="button"][data-appearance="standard"][data-variant="primary"]:enabled:is(:active, [data-pressed]):not(
         [data-active]
     ) {
-    background: #1d4ed8;
+    background: var(--button-primary-pressed);
 }
+
 :root:not(.dark)
     [data-slot="button"][data-appearance="standard"][data-variant="destructive"]:enabled:is(
         :active,
@@ -581,41 +881,31 @@
     ):not([data-active]) {
     background: #b91c1c;
 }
-:root:not(.dark) [data-slot="button"][data-variant="ghost"]:enabled:hover:not([data-active]),
-:root:not(.dark) [data-slot="button"][data-variant="outline"]:enabled:hover:not([data-active]) {
-    background: rgb(0 0 0 / 4%);
+
+/* 显式通知主题使用配套颜色（与跟随应用时的 --muted/--foreground/--border 取值一致），
+   跟随系统时由通知容器的实际主题决定。 */
+[data-sonner-toaster].toaster-explicit[data-sonner-theme="light"] {
+    --normal-bg: #e7e7eb;
+    --normal-text: #1d1d20;
+    --normal-border: rgb(20 20 40 / 13%);
+    /* 强制外观与页面外观可能相反，取与对应主题的 --elevation-overlay 相同的值。 */
+    --shadow-toast: inset 0 0.5px 0 rgb(255 255 255 / 90%), 0 1px 2px rgb(0 0 0 / 8%), 0 8px 24px rgb(0 0 0 / 14%);
 }
-:root:not(.dark) [data-slot="button"][data-variant="ghost"]:enabled:is(:active, [data-pressed]):not([data-active]),
-:root:not(.dark) [data-slot="button"][data-variant="outline"]:enabled:is(:active, [data-pressed]):not([data-active]) {
-    background: rgb(0 0 0 / 6%);
-}
-:root:not(.dark) [data-slot="input"]::file-selector-button {
-    background: rgb(0 0 0 / 4%);
+[data-sonner-toaster].toaster-explicit[data-sonner-theme="dark"] {
+    --normal-bg: #34353a;
+    --normal-text: #e8e9ec;
+    --normal-border: #3a3b41;
+    --shadow-toast: inset 0 1px 0 rgb(255 255 255 / 7%), 0 5px 16px rgb(0 0 0 / 40%);
 }
 
-/* 浅色浮层:保留层数与几何,仅降低阴影黑度;select 浮层边框减淡 */
-:root:not(.dark) [data-slot="dialog-content"] {
-    box-shadow:
-        0 16px 60px rgb(0 0 0 / 14%),
-        inset 0 0.5px 0 rgb(255 255 255 / 7%);
-}
-:root:not(.dark) [data-slot="menu-content"] {
-    box-shadow:
-        inset 0 1px 0 rgb(255 255 255 / 7%),
-        0 5px 16px rgb(0 0 0 / 12%);
-}
-:root:not(.dark) [data-slot="select-content"] {
-    border-color: rgb(0 0 0 / 10%);
-}
+/* 浅色 Select 触发器按下或展开：状态层是黑色叠加（白色叠加在浅色填充上看不出按下），其余沿用凸起材质。 */
 :root:not(.dark) [data-slot="select-trigger"]:enabled:active,
 :root:not(.dark) [data-slot="select-trigger"]:enabled[data-state="open"] {
     box-shadow:
         inset 0 0 0 100px rgb(0 0 0 / 5%),
-        inset 0 0.5px 0 rgb(255 255 255 / 15%),
-        inset 0 0 0 0.5px rgb(0 0 0 / 20%);
+        var(--elevation-raised);
 }
 
-/* 免费 Button 样板的相对填充高光;随底色合成,避免一条过亮的白边 */
 @layer components {
     [data-slot="button"][data-appearance="desktop"][data-variant="secondary"]::before {
         content: "";
@@ -644,12 +934,46 @@
     }
 }
 
+/* ── 幽灵小图标按钮(tab 行 ＋ 等 26px) ── */
+.ghost-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border-radius: 4px;
+    color: var(--dim-foreground);
+    cursor: default;
+    user-select: none;
+    transition:
+        background-color 100ms var(--motion-ease),
+        color 100ms var(--motion-ease);
+}
+.ghost-btn:hover {
+    background: var(--state-hover);
+    color: var(--foreground);
+}
+.ghost-btn[aria-pressed="true"] {
+    color: var(--primary);
+}
+
+/* ── 搜索下拉/悬浮层入场:从触发器上方展开 ── */
+.drop-anim {
+    transform-origin: top center;
+    transition:
+        opacity 100ms var(--motion-ease),
+        transform 100ms var(--motion-ease);
+    @starting-style {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+    }
+}
+
 /* ── 减弱动态:去过渡与动画,保留颜色变化 ── */
 @media (prefers-reduced-motion: reduce) {
-    .icon-btn,
     .ghost-btn,
     .knock-search,
-    .tbtn,
     .drop-anim {
         transition: none;
     }

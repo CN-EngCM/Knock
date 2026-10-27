@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 
 // 错误边界：任何子树渲染抛错时兜底，避免整页白屏。
 // 放在 I18nProvider 外层（崩溃时可能连 i18n 都不可用），文案直接双语写死。
@@ -19,13 +20,15 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
                 <p className="text-[15px] text-foreground">──[ 页面出错 / Something went wrong ]──</p>
                 <p className="max-w-[520px] break-all text-xs text-dim-foreground">{String(this.state.error)}</p>
-                <button
+                <Button
                     type="button"
-                    className="rounded-[4px] border border-border px-4 py-2 text-[13px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                    appearance="standard"
+                    variant="outline"
+                    size="default"
                     onClick={() => window.location.reload()}
                 >
                     [ 刷新 / Reload ]
-                </button>
+                </Button>
             </div>
         );
     }

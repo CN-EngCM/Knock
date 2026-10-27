@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize, Minimize, Pause, Play, X } from "lucide-react";
+import { ActionBar, ActionBarGroup, ActionBarSeparator } from "@/components/ui/action-bar";
+import { Empty, EmptyDescription } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import { api, type GalleryImage } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import { TipActionButton } from "../TipButton";
 
 type Props = {
     /** 解锁密码：画廊快照按解锁视角取（锁定视角自动剔除私密图，与侧栏计数同一边界） */
@@ -206,10 +210,16 @@ export function Slideshow({ password, onClose }: Props) {
         }
     }
 
-    // 控制条按钮：项目统一 icon-btn 图标按钮（悬停浮填充、aria-pressed 选中态由全局 CSS 给出），
-    // 补按压与禁用两态；文字档位（布局/间隔）覆写字号保持紧凑
-    const sbtn = "icon-btn active:opacity-60 disabled:pointer-events-none disabled:opacity-40";
-    const sep = <span className="mx-0.5 h-4 w-px flex-none bg-border" aria-hidden />;
+    // 控制条按钮：ActionBarButton 图标态 + Tooltip，密度保持原 28px。
+    // ActionBar 自带通栏 transport 材质与 34px 控件高，用 className 覆写回药丸：
+    // 尺寸/圆角/悬停填充走工具类与令牌，选中态用库令牌，不新增颜色字面值。
+    const actionButton = {
+        plain: true,
+        activeTint: "var(--control-selection)",
+        className:
+            "size-7 min-w-0 rounded-md! text-muted-foreground enabled:hover:text-foreground enabled:hover:not-data-active:bg-(--state-hover-control)! enabled:active:not-data-active:bg-(--state-pressed)! data-active:text-(--state-selected-foreground) data-active:shadow-sunken! disabled:opacity-(--state-disabled-opacity) [&_svg]:size-4",
+    } as const;
+    const textButtonClass = `${actionButton.className} text-[10.5px] font-normal`;
     const ready = status === "done" && items != null && items.length > 0;
 
     return (
@@ -223,17 +233,23 @@ export function Slideshow({ password, onClose }: Props) {
             {/* 舞台 */}
             <div className="h-full w-full p-1">
                 {status === "loading" && (
-                    <div className="flex h-full w-full items-center justify-center text-[12.5px] text-white/50">…</div>
+                    <div className="flex h-full w-full items-center justify-center text-white/50">
+                        <Spinner label={t("common.loading")} />
+                    </div>
                 )}
                 {status === "error" && (
-                    <div className="flex h-full w-full items-center justify-center text-[12.5px] text-white/50">
-                        {t("gallery.slide.loadFail")}
-                    </div>
+                    <Empty className="h-full w-full justify-center">
+                        <EmptyDescription className="text-[12.5px] text-white/50">
+                            {t("gallery.slide.loadFail")}
+                        </EmptyDescription>
+                    </Empty>
                 )}
                 {status === "done" && items != null && items.length === 0 && (
-                    <div className="flex h-full w-full items-center justify-center text-[12.5px] text-white/50">
-                        {t("gallery.slide.empty")}
-                    </div>
+                    <Empty className="h-full w-full justify-center">
+                        <EmptyDescription className="text-[12.5px] text-white/50">
+                            {t("gallery.slide.empty")}
+                        </EmptyDescription>
+                    </Empty>
                 )}
                 {ready && (
                     <div
@@ -261,69 +277,89 @@ export function Slideshow({ password, onClose }: Props) {
                 </div>
             )}
 
-            {/* 底部控制条 */}
+            {/* 底部控制条：ActionBar 药丸形态（className 覆写回 panel 材质、小圆角与 28px 图标按钮） */}
             <div
                 className={`absolute bottom-3 left-1/2 -translate-x-1/2 transition-opacity ${
                     uiVisible ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
             >
-                {/* 控制条：主题面板材质（表面/文字/边框随深浅主题），浮在黑舞台上靠底色对比 */}
-                <div className="flex items-center gap-0.5 rounded-md border border-border bg-panel p-1 shadow-[var(--shadow-toast)]">
-                    <button type="button" className={sbtn} title={t("common.close")} onClick={onClose}>
-                        <X size={15} />
-                    </button>
-                    {sep}
-                    <button type="button" className={sbtn} title={t("gallery.slide.prevPage")} onClick={() => go(-1)}>
-                        <ChevronLeft size={15} />
-                    </button>
-                    <button
-                        type="button"
-                        className={sbtn}
-                        disabled={prefs.ms === 0}
-                        title={playing ? t("gallery.slide.pause") : t("gallery.slide.play")}
-                        onClick={() => setPlaying((p) => !p)}
+                <ActionBar className="flex-nowrap gap-0.5! rounded-md border border-border bg-panel! bg-none! p-(--space-xs)! shadow-[var(--shadow-toast)]!">
+                    <TipActionButton
+                        {...actionButton}
+                        label={t("common.close")}
+                        aria-label={t("common.close")}
+                        onClick={onClose}
                     >
-                        {playing ? <Pause size={15} /> : <Play size={15} />}
-                    </button>
-                    <button type="button" className={sbtn} title={t("gallery.slide.nextPage")} onClick={() => go(1)}>
-                        <ChevronRight size={15} />
-                    </button>
-                    {sep}
-                    {LAYOUTS.map((l) => (
-                        <button
-                            key={l.id}
-                            type="button"
-                            title={t("gallery.slide.layout")}
-                            aria-pressed={prefs.layout === l.id}
-                            className={`${sbtn} text-[10.5px]`}
-                            onClick={() => switchLayout(l.id)}
+                        <X />
+                    </TipActionButton>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.slide.prevPage")}
+                            aria-label={t("gallery.slide.prevPage")}
+                            onClick={() => go(-1)}
                         >
-                            {l.id.replace("x", "×")}
-                        </button>
-                    ))}
-                    {sep}
-                    {INTERVALS.map((ms) => (
-                        <button
-                            key={ms}
-                            type="button"
-                            title={t("gallery.slide.interval")}
-                            aria-pressed={prefs.ms === ms}
-                            className={`${sbtn} text-[10.5px]`}
-                            onClick={() => switchInterval(ms)}
+                            <ChevronLeft />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={playing ? t("gallery.slide.pause") : t("gallery.slide.play")}
+                            aria-label={playing ? t("gallery.slide.pause") : t("gallery.slide.play")}
+                            disabled={prefs.ms === 0}
+                            onClick={() => setPlaying((p) => !p)}
                         >
-                            {ms === 0 ? t("gallery.slide.manual") : `${ms / 1000}s`}
-                        </button>
-                    ))}
-                    {sep}
-                    <button
-                        type="button"
-                        className={sbtn}
-                        title={fs ? t("gallery.slide.exitFullscreen") : t("gallery.slide.fullscreen")}
+                            {playing ? <Pause /> : <Play />}
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.slide.nextPage")}
+                            aria-label={t("gallery.slide.nextPage")}
+                            onClick={() => go(1)}
+                        >
+                            <ChevronRight />
+                        </TipActionButton>
+                    </ActionBarGroup>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        {LAYOUTS.map((l) => (
+                            <TipActionButton
+                                key={l.id}
+                                {...actionButton}
+                                active={prefs.layout === l.id}
+                                label={t("gallery.slide.layout")}
+                                className={textButtonClass}
+                                onClick={() => switchLayout(l.id)}
+                            >
+                                {l.id.replace("x", "×")}
+                            </TipActionButton>
+                        ))}
+                    </ActionBarGroup>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        {INTERVALS.map((ms) => (
+                            <TipActionButton
+                                key={ms}
+                                {...actionButton}
+                                active={prefs.ms === ms}
+                                label={t("gallery.slide.interval")}
+                                className={textButtonClass}
+                                onClick={() => switchInterval(ms)}
+                            >
+                                {ms === 0 ? t("gallery.slide.manual") : `${ms / 1000}s`}
+                            </TipActionButton>
+                        ))}
+                    </ActionBarGroup>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <TipActionButton
+                        {...actionButton}
+                        label={fs ? t("gallery.slide.exitFullscreen") : t("gallery.slide.fullscreen")}
+                        aria-label={fs ? t("gallery.slide.exitFullscreen") : t("gallery.slide.fullscreen")}
                         onClick={toggleFs}
                     >
-                        {fs ? <Minimize size={15} /> : <Maximize size={15} />}
-                    </button>
-                </div>
+                        {fs ? <Minimize /> : <Maximize />}
+                    </TipActionButton>
+                </ActionBar>
             </div>
         </div>
     );

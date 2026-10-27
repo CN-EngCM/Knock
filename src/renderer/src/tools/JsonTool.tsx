@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { StatusBar, StatusBarItem } from "@/components/ui/statusbar";
 import { Textarea } from "@/components/ui/textarea";
+import { Toolbar, ToolbarGroup, ToolbarSeparator } from "@/components/ui/toolbar";
 import { useI18n } from "@/i18n/useI18n";
 import { useToolInput } from "./toolInput";
 
@@ -37,34 +39,46 @@ export default function JsonTool({ initialInput }: { initialInput?: string | nul
 
     return (
         <div className="flex h-full flex-col">
-            {/* 工具栏：主操作蓝实心，次操作描边，轻量动作用 tbtn */}
-            <div className="flex min-h-[46px] flex-none items-center gap-2 border-b border-line bg-panel px-3.5">
-                <Button appearance="standard" variant="primary" size="sm" onClick={() => run(false)}>
-                    {t("json.format")}
-                </Button>
-                <Button appearance="standard" variant="outline" size="sm" onClick={() => run(true)}>
-                    {t("json.minify")}
-                </Button>
-                <Button appearance="standard" variant="outline" size="sm" onClick={copy}>
-                    {t("json.copy")}
-                </Button>
-                <button
-                    type="button"
-                    className="tbtn"
-                    onClick={() => {
-                        setInput("");
-                        setOutput("");
-                        setError(null);
-                    }}
-                >
-                    {t("json.clear")}
-                </button>
+            {/* 工具栏：主操作蓝实心，次操作描边，轻量动作 ghost；状态文案跟在尾部 */}
+            <Toolbar className="gan-no-drag gap-2 px-3.5">
+                <ToolbarGroup>
+                    <Button appearance="standard" variant="primary" size="sm" onClick={() => run(false)}>
+                        {t("json.format")}
+                    </Button>
+                    <Button appearance="standard" variant="outline" size="sm" onClick={() => run(true)}>
+                        {t("json.minify")}
+                    </Button>
+                </ToolbarGroup>
+                <ToolbarSeparator />
+                <ToolbarGroup>
+                    <Button appearance="standard" variant="outline" size="sm" onClick={copy}>
+                        {t("json.copy")}
+                    </Button>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="ghost"
+                        size="xs"
+                        className="h-auto px-0 text-[11px] text-muted-foreground enabled:hover:text-foreground"
+                        onClick={() => {
+                            setInput("");
+                            setOutput("");
+                            setError(null);
+                        }}
+                    >
+                        {t("json.clear")}
+                    </Button>
+                </ToolbarGroup>
                 {input && (
-                    <span className={`text-[11.5px] ${error ? "text-destructive" : "text-dim-foreground"}`}>
-                        {error ?? (output ? t("json.ok") : "")}
-                    </span>
+                    <StatusBar className="h-full min-w-0 grow shrink border-t-0 bg-transparent px-0">
+                        <StatusBarItem
+                            className={`truncate text-[11.5px] ${error ? "text-destructive" : "text-dim-foreground"}`}
+                        >
+                            {error ?? (output ? t("json.ok") : "")}
+                        </StatusBarItem>
+                    </StatusBar>
                 )}
-            </div>
+            </Toolbar>
             {/* 双栏编辑器：左输入右结果，弱分隔线隔开；结果区用井底区分。
                 整栏 Textarea 覆盖圆角与内阴影，避免编辑区看起来像内嵌卡片 */}
             <div className="flex min-h-0 flex-1">

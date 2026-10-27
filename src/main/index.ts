@@ -174,10 +174,10 @@ if (!app.requestSingleInstanceLock()) {
 // 窗口预绘底色与 DWM 边线颜色随主题走；渲染端令牌见 src/renderer/src/index.css（同源值）
 type Theme = "dark" | "light";
 let currentTheme: Theme = "dark";
-const THEME_BG: Record<Theme, string> = { dark: "#303030", light: "#f8f8f8" };
-// DWM 边线取 GaN.UI 的 --window-border：深色 #222222；浅色为黑 10% 透明，
-// COLORREF 不支持透明度，取等视觉的实色
-const THEME_BORDER: Record<Theme, string> = { dark: "#222222", light: "#e2e2e6" };
+const THEME_BG: Record<Theme, string> = { dark: "#26272b", light: "#eeeef1" };
+// DWM 边线取 GaN.UI v1.0.0 的 --window-border：深色 #131417；浅色 rgb(20 20 40 / 15%)，
+// COLORREF 不支持透明度，按浅色底 #eeeef1 合成出等视觉实色 #cdcdd3
+const THEME_BORDER: Record<Theme, string> = { dark: "#131417", light: "#cdcdd3" };
 
 // ── Win11 DWM 系统描边染色 ──
 // frame:false + 默认 thickFrame 保留了边缘缩放与系统阴影，但 Win11 会沿窗口边缘

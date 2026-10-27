@@ -2,17 +2,18 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, type AiEffortId, type AiModelConfig, type AiProviderId, type Expert } from "@/api/client";
 import { loadExperts, useExperts } from "@/lib/experts";
 import { dropConv, getActive, setActive } from "@/tools/aiSessions";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
-import { row } from "./settings/shared";
+import { FormRow } from "./settings/shared";
 
 type Props = {
     /** 编辑目标："new" 新建，否则为既有专家 id */
@@ -109,8 +110,8 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                 </DialogHeader>
 
                 <div className="grid gap-4">
-                    <div className={row}>
-                        <Label htmlFor="ee-name">{t("ai.name")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="ee-name">{t("ai.name")}</FieldLabel>
                         <Input
                             id="ee-name"
                             value={name}
@@ -118,11 +119,11 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                             onChange={(e) => setName(e.target.value)}
                             required
                         />
-                    </div>
+                    </FormRow>
 
-                    {/* 提示词占满整行多行输入，脱离 row 网格（标签在上不占标签列） */}
-                    <div className="flex flex-col gap-2">
-                        <Label htmlFor="ee-prompt">{t("ai.prompt")}</Label>
+                    {/* 提示词占满整行多行输入，脱离表单行的定宽标签列 */}
+                    <Field className="gap-2">
+                        <FieldLabel htmlFor="ee-prompt">{t("ai.prompt")}</FieldLabel>
                         <Textarea
                             id="ee-prompt"
                             className="min-h-36 resize-none"
@@ -131,28 +132,27 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                             spellCheck={false}
                             onChange={(e) => setPrompt(e.target.value)}
                         />
-                    </div>
+                    </Field>
 
-                    {/* 单轮/多轮用井底分段控件（与基础设置的主题切换同一套语言） */}
-                    <div className={row}>
-                        <Label>{t("ai.mode")}</Label>
-                        <div className="inline-flex w-fit items-center gap-0.5 rounded-[4px] border border-border bg-well p-0.5">
-                            {[false, true].map((m) => (
-                                <button
-                                    key={String(m)}
-                                    type="button"
-                                    className={`tbtn ${multi === m ? "seg-on" : ""}`}
-                                    aria-pressed={multi === m}
-                                    onClick={() => setMulti(m)}
-                                >
-                                    {t(m ? "ai.modeMulti" : "ai.modeSingle")}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+                    {/* 单轮/多轮分段控件（与基础设置的主题切换同一套语言）；选中值与回调不变 */}
+                    <FormRow>
+                        <FieldLabel>{t("ai.mode")}</FieldLabel>
+                        <ToggleGroup
+                            type="single"
+                            value={multi ? "multi" : "single"}
+                            onValueChange={(value) => {
+                                if (value) setMulti(value === "multi");
+                            }}
+                            aria-label={t("ai.mode")}
+                            className="w-fit"
+                        >
+                            <ToggleGroupItem value="single">{t("ai.modeSingle")}</ToggleGroupItem>
+                            <ToggleGroupItem value="multi">{t("ai.modeMulti")}</ToggleGroupItem>
+                        </ToggleGroup>
+                    </FormRow>
 
-                    <div className={row}>
-                        <Label>{t("ai.effort")}</Label>
+                    <FormRow>
+                        <FieldLabel>{t("ai.effort")}</FieldLabel>
                         <Select value={effort} onValueChange={(v) => setEffort(v as AiEffortId)}>
                             <SelectTrigger className="w-full">
                                 <SelectValue />
@@ -165,15 +165,15 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                                 ))}
                             </SelectContent>
                         </Select>
-                    </div>
+                    </FormRow>
 
-                    <div className={row}>
-                        <Label htmlFor="ee-recommend">{t("ai.recommend")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="ee-recommend">{t("ai.recommend")}</FieldLabel>
                         <Switch id="ee-recommend" checked={recommend} onCheckedChange={setRecommend} />
-                    </div>
+                    </FormRow>
 
-                    <div className={row}>
-                        <Label>{t("ai.bindModel")}</Label>
+                    <FormRow>
+                        <FieldLabel>{t("ai.bindModel")}</FieldLabel>
                         <Select value={modelId || NO_MODEL} onValueChange={(v) => setModelId(v === NO_MODEL ? "" : v)}>
                             <SelectTrigger className="w-full">
                                 <SelectValue />
@@ -187,10 +187,11 @@ export function EditExpertDialog({ target, models, onClose }: Props) {
                                 ))}
                             </SelectContent>
                         </Select>
-                    </div>
+                    </FormRow>
                 </div>
 
-                <DialogFooter>
+                {/* autoOrder={false}：删除按钮靠 mr-auto 独占起始端，反向排序会把它卷进取消/保存组并破坏对齐 */}
+                <DialogFooter autoOrder={false}>
                     {typeof target === "number" && (
                         <Button
                             type="button"

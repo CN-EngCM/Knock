@@ -1,9 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { api, type GalleryCandidate } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
@@ -95,7 +98,7 @@ const FILTERS: readonly { key: keyof Params; label: MessageKey }[] = [
 function CandThumb({ index }: { index: number }) {
     const [failed, setFailed] = useState(false);
     if (failed) {
-        return <div className="h-full w-full bg-hover" />;
+        return <div className="h-full w-full bg-(--state-hover)" />;
     }
     return (
         <img
@@ -404,9 +407,15 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
                 {phase === "form" && (
                     <div className="flex flex-col gap-4 px-1">
-                        <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                            <span className="w-10 flex-none text-right">{t("gallery.url.url")}</span>
+                        <Field orientation="horizontal" className="gap-2 text-[12px] text-muted-foreground">
+                            <FieldLabel
+                                htmlFor="gallery-url"
+                                className="w-10 flex-none! justify-end font-normal text-muted-foreground"
+                            >
+                                {t("gallery.url.url")}
+                            </FieldLabel>
                             <Input
+                                id="gallery-url"
                                 value={url}
                                 onChange={(e) => setUrl(e.target.value)}
                                 spellCheck={false}
@@ -414,21 +423,28 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                 autoFocus
                                 className="h-7 flex-1"
                             />
-                        </label>
+                        </Field>
                         <div className="flex flex-wrap gap-x-5 gap-y-2">
                             {FIELDS.map((f) => (
-                                <label
+                                <Field
                                     key={f.key}
-                                    className="flex items-center gap-1.5 text-[11.5px] text-dim-foreground"
+                                    orientation="horizontal"
+                                    className="w-auto gap-1.5 text-[11.5px] text-dim-foreground"
                                 >
-                                    <span>{t(f.label)}</span>
+                                    <FieldLabel
+                                        htmlFor={`url-param-${f.key}`}
+                                        className="flex-none! font-normal text-dim-foreground"
+                                    >
+                                        {t(f.label)}
+                                    </FieldLabel>
                                     <Input
+                                        id={`url-param-${f.key}`}
                                         value={params[f.key]}
                                         onChange={(e) => setParam(f.key, e.target.value)}
                                         inputMode="numeric"
                                         className="h-6 w-16"
                                     />
-                                </label>
+                                </Field>
                             ))}
                         </div>
                         <div className="flex items-center gap-2 text-[11.5px] text-dim-foreground">
@@ -479,12 +495,10 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                   : "…"}
                         </span>
                         {progress?.stage === "download" && (
-                            <div className="h-0.5 w-64 rounded-full bg-well">
-                                <div
-                                    className="h-full rounded-full bg-primary"
-                                    style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }}
-                                />
-                            </div>
+                            <Progress
+                                value={progress.total ? (progress.done / progress.total) * 100 : 0}
+                                className="h-0.5 w-64"
+                            />
                         )}
                         <Button
                             type="button"
@@ -502,15 +516,25 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                     <>
                         <div className="flex flex-none flex-wrap items-center gap-3 px-1 text-[11.5px] text-dim-foreground">
                             {FILTERS.map((f) => (
-                                <label key={f.key} className="flex items-center gap-1">
-                                    <span>{t(f.label)}</span>
+                                <Field
+                                    key={f.key}
+                                    orientation="horizontal"
+                                    className="w-auto gap-1 text-[11.5px] text-dim-foreground"
+                                >
+                                    <FieldLabel
+                                        htmlFor={`url-filter-${f.key}`}
+                                        className="flex-none! font-normal text-dim-foreground"
+                                    >
+                                        {t(f.label)}
+                                    </FieldLabel>
                                     <Input
+                                        id={`url-filter-${f.key}`}
                                         value={params[f.key]}
                                         onChange={(e) => setParam(f.key, e.target.value)}
                                         inputMode="numeric"
                                         className="h-6 w-16"
                                     />
-                                </label>
+                                </Field>
                             ))}
                             <span className="text-muted-foreground">
                                 {fmt(t("gallery.url.matchCount"), { n: visible.length, m: sorted.length })}
@@ -540,7 +564,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                             {c.ok ? (
                                                 <CandThumb index={c.index} />
                                             ) : (
-                                                <div className="flex h-full w-full items-center justify-center bg-hover px-1 text-center text-[10.5px] text-dim-foreground">
+                                                <div className="flex h-full w-full items-center justify-center bg-(--state-hover) px-1 text-center text-[10.5px] text-dim-foreground">
                                                     {t("gallery.url.failed")}
                                                 </div>
                                             )}
@@ -561,9 +585,12 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                                 </div>
                                             )}
                                             {c.ok && c.inLibrary && (
-                                                <span className="absolute right-1 top-1 rounded-[3px] bg-foreground/85 px-1 text-[10px] text-background">
+                                                <Badge
+                                                    variant="ghost"
+                                                    className="absolute right-1 top-1 rounded-[3px] bg-foreground/85 px-1 text-[10px] text-background"
+                                                >
                                                     {t("gallery.url.inLibrary")}
-                                                </span>
+                                                </Badge>
                                             )}
                                             {clickable && (
                                                 <span
@@ -591,14 +618,10 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                                 ? fmt(t("gallery.importing"), { done: importing.done, total: importing.total })
                                 : "…"}
                         </span>
-                        <div className="h-0.5 w-64 rounded-full bg-well">
-                            <div
-                                className="h-full rounded-full bg-primary"
-                                style={{
-                                    width: `${importing && importing.total ? (importing.done / importing.total) * 100 : 0}%`,
-                                }}
-                            />
-                        </div>
+                        <Progress
+                            value={importing && importing.total ? (importing.done / importing.total) * 100 : 0}
+                            className="h-0.5 w-64"
+                        />
                         <Button
                             type="button"
                             appearance="standard"

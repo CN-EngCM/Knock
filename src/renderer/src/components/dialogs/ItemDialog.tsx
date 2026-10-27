@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
 import { api, type Group, type Item, type Kind } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import { FormRow } from "./settings/shared";
 
 // 表单值：提交前保证 args 为 null（而非空串），与数据库约定一致
 export type ItemFormValues = {
@@ -115,8 +116,8 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="grid gap-4">
-                    <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                        <Label htmlFor="item-kind">{t("item.kind")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="item-kind">{t("item.kind")}</FieldLabel>
                         <Select value={kind} onValueChange={(v) => setKind(v as Kind)}>
                             <SelectTrigger id="item-kind" className="w-full">
                                 <SelectValue />
@@ -128,10 +129,10 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                 <SelectItem value="command">{t("item.kind.command")}</SelectItem>
                             </SelectContent>
                         </Select>
-                    </div>
+                    </FormRow>
 
-                    <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                        <Label htmlFor="item-title">{t("item.title")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="item-title">{t("item.title")}</FieldLabel>
                         <Input
                             id="item-title"
                             value={title}
@@ -139,10 +140,10 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                             required
                             maxLength={100}
                         />
-                    </div>
+                    </FormRow>
 
-                    <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                        <Label htmlFor="item-target">{t("item.target")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="item-target">{t("item.target")}</FieldLabel>
                         <div className="flex gap-2">
                             <Input
                                 id="item-target"
@@ -178,12 +179,14 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                 </Button>
                             )}
                         </div>
-                    </div>
+                    </FormRow>
 
                     {/* args 列被 app（启动参数）与 command（工作目录）复用；command 额外给「浏览…」 */}
                     {(kind === "app" || kind === "command") && (
-                        <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                            <Label htmlFor="item-args">{kind === "app" ? t("item.args") : t("item.cwd")}</Label>
+                        <FormRow>
+                            <FieldLabel htmlFor="item-args">
+                                {kind === "app" ? t("item.args") : t("item.cwd")}
+                            </FieldLabel>
                             <div className="flex gap-2">
                                 <Input
                                     id="item-args"
@@ -205,11 +208,11 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                     </Button>
                                 )}
                             </div>
-                        </div>
+                        </FormRow>
                     )}
 
-                    <div className="grid grid-cols-[5.5rem_1fr] items-center gap-3">
-                        <Label htmlFor="item-group">{t("item.group")}</Label>
+                    <FormRow>
+                        <FieldLabel htmlFor="item-group">{t("item.group")}</FieldLabel>
                         <Select value={String(groupId)} onValueChange={(v) => setGroupId(Number(v))}>
                             <SelectTrigger id="item-group" className="w-full">
                                 <SelectValue />
@@ -222,7 +225,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                                 ))}
                             </SelectContent>
                         </Select>
-                    </div>
+                    </FormRow>
 
                     <DialogFooter>
                         <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>

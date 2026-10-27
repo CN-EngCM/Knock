@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Label } from "@/components/ui/label";
+import { FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Spinner } from "@/components/ui/spinner";
 import { type ToolAliasPatch, type ToolAliases, type ToolId } from "@/api/client";
 import { TOOLS } from "@/tools/registry";
 import { useI18n } from "@/i18n/useI18n";
-import { CommitInput, row } from "./shared";
+import { CommitInput, FormRow } from "./shared";
 
 type Props = {
     /** 工具别名：提交走 onToolAlias（App 负责落库与回填，SearchBox 随之生效） */
@@ -34,11 +35,11 @@ export function ToolsSection({ toolAliases, onToolAlias }: Props) {
     return (
         <>
             {toolAliases === null ? (
-                <span className="px-1 text-[13px] text-dim-foreground">…</span>
+                <Spinner decorative className="m-1 size-3.5 text-dim-foreground" />
             ) : (
                 TOOLS.map((tool) => (
-                    <div className={row} key={tool.id}>
-                        <Label htmlFor={`alias-${tool.id}`}>{t(tool.nameKey)}</Label>
+                    <FormRow key={tool.id}>
+                        <FieldLabel htmlFor={`alias-${tool.id}`}>{t(tool.nameKey)}</FieldLabel>
                         <CommitInput
                             id={`alias-${tool.id}`}
                             value={aliasEdits[tool.id] ?? ""}
@@ -46,10 +47,12 @@ export function ToolsSection({ toolAliases, onToolAlias }: Props) {
                             onCommit={() => void commitAlias(tool.id)}
                             placeholder={t("settings.tools.aliasPlaceholder")}
                         />
-                    </div>
+                    </FormRow>
                 ))
             )}
-            <div className="-mt-1 px-1 text-[11.5px] text-dim-foreground">{t("settings.tools.aliasHint")}</div>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.tools.aliasHint")}
+            </FieldDescription>
         </>
     );
 }

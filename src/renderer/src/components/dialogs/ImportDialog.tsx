@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -9,6 +10,8 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { api, type ImportStats } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 
@@ -76,19 +79,21 @@ export function ImportDialog({ open, onClose, onImported }: Props) {
                     <DialogDescription>{t("import.step1")}</DialogDescription>
                 </DialogHeader>
 
-                <label className="flex cursor-pointer items-center justify-between gap-3 border border-line px-3 py-2.5 text-[13px] hover:bg-hover">
-                    <span className={fileName ? "text-foreground" : "text-dim-foreground"}>
-                        {fileName || t("import.pick")}
-                    </span>
-                    <input type="file" accept=".html,.htm" onChange={handleFile} className="hidden" />
-                    <span className="text-dim-foreground">{t("import.pick")}</span>
-                </label>
+                {/* 文件选择：库 Input type=file 自带 file-selector-button 样式；
+                    Label 关联后点文案也能打开文件框，选中文件名在下方回显 */}
+                <Field>
+                    <FieldLabel htmlFor="import-file">{t("import.pick")}</FieldLabel>
+                    <Input id="import-file" type="file" accept=".html,.htm" onChange={handleFile} />
+                    {fileName && <FieldDescription className="truncate text-foreground">{fileName}</FieldDescription>}
+                </Field>
 
                 {result && (
-                    <div className="border border-line bg-well px-3 py-2 text-[13px] text-dim-foreground">
-                        {t("import.createdGroups")} {result.createdGroups} · {t("import.imported")}{" "}
-                        {result.importedItems} · {t("import.skipped")} {result.skipped}
-                    </div>
+                    <Alert>
+                        <AlertDescription>
+                            {t("import.createdGroups")} {result.createdGroups} · {t("import.imported")}{" "}
+                            {result.importedItems} · {t("import.skipped")} {result.skipped}
+                        </AlertDescription>
+                    </Alert>
                 )}
 
                 <DialogFooter>
