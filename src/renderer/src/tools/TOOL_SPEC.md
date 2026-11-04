@@ -69,7 +69,7 @@
 - **异步竞态**（输入驱动请求的工具必备）：防抖 300–600ms + `seq` ref 序号，晚归旧包直接丢弃；清理函数取消定时器；输入清空时推进序号并回 idle。FileSearchTool / TranslateTool 是同款范式。
 - **操作反馈**：sonner toast；成功用具体文案，失败兜底 `toast.error`。复制走 `navigator.clipboard` + try/catch。
 - **视觉骨架**（GaN.UI 中性灰体系，令牌见 `src/renderer/src/index.css`，与现有工具保持一致，具体值可微调但不要另起炉灶）：
-  - 工具区是 GaN.UI DockLayout 停靠区（components/DockZone.tsx），四周 6px 留白由 DockZone 提供，组边框与标签规格归 dock 皮肤。各工具仅负责面板内部布局，不自行追加外侧留白；
+  - 工具区是 GaN.UI DockLayout 停靠区（components/DockZone.tsx），面板内容铺满标签页：停靠区不提供外围留白，留白由各工具的根容器自己给（见下条），组边框与标签规格归 dock 皮肤；
   - 根容器吃满 `h-full`；工具栏一律用 `@/components/ui/toolbar` 的 `Toolbar`（高度取 `--size-toolbar`，regular 43px）+ `ToolbarGroup` / `ToolbarSeparator`，搜索框用 `ToolbarSearch`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
   - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；双栏编辑器中间用 `border-l border-line` 分隔，代码/结果区底 `bg-well`；
   - 按钮用 `@/components/ui/button` 的 Button 组件（GaN.UI v1.0.0 版）：主操作 `appearance="standard" variant="primary"`（蓝实心），次操作 `appearance="standard" variant="outline"`；工具内默认 **size sm**（h-22px，紧凑工具栏密度），弹窗底部主/次按钮用 **size default**（25px）。按钮文案直接写动词短语，不加方括号装饰；
