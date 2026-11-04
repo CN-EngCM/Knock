@@ -1,7 +1,8 @@
 import db from "./db";
 import Database from "better-sqlite3";
-// 专家出厂播种：模块加载时执行一次（幂等），比放 db.ts 干净——db.ts 调 util/settings 会循环依赖
+// 出厂数据播种（专家、临时工作区）：模块加载时各执行一次（幂等），比放 db.ts 干净——db.ts 调 util/settings 会循环依赖
 import { ensureSeeded } from "./experts";
+import { ensureSeeded as ensureWorkspacesSeeded } from "./workspaces";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
 import { parseNetscapeBookmarks } from "./bookmarks";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
@@ -26,6 +27,7 @@ import {
 import { currentWindowState } from "../windowState";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
+import { createWorkspace, deleteWorkspace, listWorkspaces, renameWorkspace, setActiveWorkspace } from "./workspaces";
 import {
     addTagsToImages as galleryAddTagsToImages,
     allTags as galleryAllTags,
@@ -79,6 +81,7 @@ import {
     createExpertSchema,
     createGroupSchema,
     createItemSchema,
+    createWorkspaceSchema,
     galleryGroupSchema,
     galleryIdsSchema,
     galleryImportSchema,
@@ -102,12 +105,14 @@ import {
     ptyResizeSchema,
     ptySpawnSchema,
     ptyWriteSchema,
+    renameWorkspaceSchema,
     termPatchSchema,
     themeSchema,
     toolAliasPatchSchema,
     updateExpertSchema,
     updateGroupSchema,
     updateItemSchema,
+    workspaceIdSchema,
     TOOL_IDS,
     type AiModelConfig,
     type AiChatInput,
@@ -140,6 +145,7 @@ import {
     type TranslateConfigPatch,
     type TranslateInput,
     type UpdateItemInput,
+    type Workspace,
 } from "./schemas";
 
 // ── 渲染进程 API 契约（v2.1：标准 Electron IPC，替代 v2.0 的 Hono 假 HTTP）──
@@ -168,9 +174,10 @@ export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError 
 
 export type ImportStats = { createdGroups: number; importedItems: number; skipped: number };
 
-// 专家出厂播种（幂等）：主进程业务装载的必经之路就是本模块，
+// 出厂数据播种（专家、临时工作区，均幂等）：主进程业务装载的必经之路就是本模块，
 // 在此显式调一次，避免依赖各 entry 的 import 次序
 ensureSeeded();
+ensureWorkspacesSeeded();
 
 export interface MpApi {
     session(): Promise<ApiResult<{ platform: NodeJS.Platform }>>;
@@ -178,6 +185,13 @@ export interface MpApi {
     createGroup(name: string): Promise<ApiResult<{ id: number }>>;
     renameGroup(id: number, name: string): Promise<ApiResult<null>>;
     deleteGroup(id: number): Promise<ApiResult<null>>;
+    // ── 工作区：每个工作区一套独立的停靠区；builtin 行是自带的「临时工作区」，不可删/改名 ──
+    /** 全量工作区（临时的恒在首位）+ 生效 id；activeWorkspace 失效时只读回落到临时的 */
+    getWorkspaces(): Promise<ApiResult<{ workspaces: Workspace[]; activeId: number }>>;
+    createWorkspace(name: string): Promise<ApiResult<{ id: number }>>;
+    renameWorkspace(id: number, name: string): Promise<ApiResult<null>>;
+    deleteWorkspace(id: number): Promise<ApiResult<null>>;
+    setActiveWorkspace(id: number): Promise<ApiResult<null>>;
     createItem(input: CreateItemInput): Promise<ApiResult<{ id: number }>>;
     updateItem(id: number, patch: UpdateItemInput): Promise<ApiResult<null>>;
     deleteItem(id: number): Promise<ApiResult<null>>;
@@ -369,6 +383,29 @@ export const apiHandlers: ApiHandlers = {
     deleteGroup: async (id) => {
         const info = db.prepare("DELETE FROM groups WHERE id = ?").run(id);
         return info.changes === 0 ? notFound : { ok: true, data: null };
+    },
+
+    // ── 工作区：入口只做 zod 校验与转发，行不存在 / builtin 拒删改的判定在 server/workspaces.ts ──
+    getWorkspaces: async () => listWorkspaces(),
+    createWorkspace: async (name) => {
+        const v = guard(createWorkspaceSchema, { name });
+        if (!v) return badRequest;
+        return createWorkspace(v.name);
+    },
+    renameWorkspace: async (id, name) => {
+        const v = guard(renameWorkspaceSchema, { id, name });
+        if (!v) return badRequest;
+        return renameWorkspace(v.id, v.name);
+    },
+    deleteWorkspace: async (id) => {
+        const v = guard(workspaceIdSchema, { id });
+        if (!v) return badRequest;
+        return deleteWorkspace(v.id);
+    },
+    setActiveWorkspace: async (id) => {
+        const v = guard(workspaceIdSchema, { id });
+        if (!v) return badRequest;
+        return setActiveWorkspace(v.id);
     },
 
     createItem: async (input) => {

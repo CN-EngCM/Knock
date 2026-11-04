@@ -15,6 +15,16 @@ export const createGroupSchema = z.object({
 // 目前分组只有 name 可改，直接复用创建 schema
 export const updateGroupSchema = createGroupSchema;
 
+// ── 工作区：每个工作区一套独立的停靠区 ──
+// 名字规则同分组（trim 后非空），上限按工作区取 40；创建与改名共用一份
+const workspaceNameSchema = z.string().trim().min(1).max(40);
+
+export const createWorkspaceSchema = z.object({ name: workspaceNameSchema });
+// 改名把 id 与名字一起校验，处理器入口一次过
+export const renameWorkspaceSchema = z.object({ id: z.number().int().positive(), name: workspaceNameSchema });
+// 删除、设为当前只认 id
+export const workspaceIdSchema = z.object({ id: z.number().int().positive() });
+
 export const createItemSchema = z.object({
     group_id: z.number().int().positive(),
     kind: kindSchema,
@@ -385,6 +395,14 @@ export type Item = {
     target: string;
     args: string | null;
     icon: string | null;
+    position: number;
+};
+
+export type Workspace = {
+    id: number;
+    name: string;
+    /** 自带的「临时工作区」：显示名走渲染端 i18n（库里存空串），不可删除/改名，恒排第一 */
+    builtin: boolean;
     position: number;
 };
 

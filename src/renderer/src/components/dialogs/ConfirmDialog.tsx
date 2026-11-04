@@ -15,6 +15,8 @@ type Props = {
     open: boolean;
     title: string;
     description?: string;
+    /** 确认按钮文案；缺省为「删除」 */
+    confirmLabel?: string;
     onClose: () => void;
     onConfirm: () => Promise<void>;
 };
@@ -22,7 +24,7 @@ type Props = {
 // 通用确认弹窗：用于删除等不可逆操作的二次确认。
 // 用 AlertDialog 表达 alertdialog 语义：遮罩点击被库拦截，关闭路径只剩 Esc、取消与确认；
 // 初始焦点由库落到 Cancel（取消在前，主操作在后）。
-export function ConfirmDialog({ open, title, description, onClose, onConfirm }: Props) {
+export function ConfirmDialog({ open, title, description, confirmLabel, onClose, onConfirm }: Props) {
     const { t } = useI18n();
     const [busy, setBusy] = useState(false);
 
@@ -54,7 +56,7 @@ export function ConfirmDialog({ open, title, description, onClose, onConfirm }: 
                             void handleConfirm();
                         }}
                     >
-                        {t("common.delete")}
+                        {confirmLabel ?? t("common.delete")}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

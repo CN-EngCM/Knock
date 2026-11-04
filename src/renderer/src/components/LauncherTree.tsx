@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuSeparator,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tree, type TreeDropPosition, type TreeRowContext, type TreeNode } from "@/components/ui/tree";
 import { KindIcon } from "@/lib/kindIcon";
@@ -31,6 +37,9 @@ type Props = {
     items: Item[];
     /** 排序模式：开启才传 dnd 给 Tree（显示把手、允许拖动），平时整树不可拖 */
     sortable?: boolean;
+    /** 目标经运行时确认是本机目录的条目 id：只有这些条目才出现「在此打开终端」一组 */
+    dirIds: ReadonlySet<number>;
+    onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
     onOpen: (item: Item) => void;
     onEditItem: (item: Item) => void;
     onDeleteItem: (item: Item) => void;
@@ -51,6 +60,8 @@ export function LauncherTree({
     groups,
     items,
     sortable,
+    dirIds,
+    onOpenInTerminal,
     onOpen,
     onEditItem,
     onDeleteItem,
@@ -166,8 +177,19 @@ export function LauncherTree({
     }
 
     function renderRow({ node, expanded }: TreeRowContext) {
-        if (isItem(node.data))
-            return <ItemRowContent item={node.data} onOpen={onOpen} onEdit={onEditItem} onDelete={onDeleteItem} />;
+        if (isItem(node.data)) {
+            const item = node.data;
+            return (
+                <ItemRowContent
+                    item={item}
+                    isDir={dirIds.has(item.id)}
+                    onOpen={onOpen}
+                    onOpenInTerminal={onOpenInTerminal}
+                    onEdit={onEditItem}
+                    onDelete={onDeleteItem}
+                />
+            );
+        }
         if (isGroup(node.data)) {
             // 类型收窄进不了 onToggle 闭包，先存 const
             const group = node.data;
@@ -207,12 +229,17 @@ export function LauncherTree({
 /** 条目行内容：图标 + 标题，target 悬停提示，右键菜单与单击启动 */
 function ItemRowContent({
     item,
+    isDir,
     onOpen,
+    onOpenInTerminal,
     onEdit,
     onDelete,
 }: {
     item: Item;
+    /** 目标是本机目录：菜单多出「在此打开终端」一组 */
+    isDir: boolean;
     onOpen: (item: Item) => void;
+    onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
     onEdit: (item: Item) => void;
     onDelete: (item: Item) => void;
 }) {
@@ -236,6 +263,21 @@ function ItemRowContent({
             </ContextMenuTrigger>
             <ContextMenuContent>
                 <ContextMenuItem onClick={() => onOpen(item)}>{t("menu.open")}</ContextMenuItem>
+                {isDir && (
+                    <>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem onClick={() => onOpenInTerminal(item)}>
+                            {t("menu.terminalHere")}
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => onOpenInTerminal(item, "opencode")}>
+                            {t("menu.opencodeHere")}
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => onOpenInTerminal(item, "claude")}>
+                            {t("menu.claudeHere")}
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                    </>
+                )}
                 <ContextMenuItem onClick={() => onEdit(item)}>{t("menu.edit")}</ContextMenuItem>
                 <ContextMenuItem variant="destructive" onClick={() => onDelete(item)}>
                     {t("menu.delete")}

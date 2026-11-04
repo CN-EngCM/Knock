@@ -49,6 +49,18 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_experts_pos ON experts(position);
 
+  -- 工作区：每个工作区一套独立的停靠区。builtin = 1 是自带的「临时工作区」：
+  -- 显示名走渲染端 i18n，库里 name 存空串；不可删除/改名，排序恒在第一。
+  -- 播种按 builtin 行存在与否幂等（见 server/workspaces.ts）
+  CREATE TABLE IF NOT EXISTS workspaces (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT    NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    builtin  INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_workspaces_pos ON workspaces(position);
+
   -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 groups/items 表。
   -- 图片字节级复制进数据目录 gallery/<组文件夹>/（server/gallery.ts），行里只存元数据；
   -- 图片经 mpimg:// 协议按 id 直读（注册见 src/main/index.ts），不经 IPC 传字节

@@ -11,12 +11,16 @@ type Props = {
     open: boolean;
     /** 编辑时传入；新建时为 null */
     initialName: string | null;
+    /** 标题与字段文案可由调用方覆盖：工作区改名也复用这个弹窗，默认按分组口径 */
+    title?: string;
+    label?: string;
+    maxLength?: number;
     onClose: () => void;
     onSubmit: (name: string) => Promise<void>;
 };
 
-// 分组新建 / 重命名共用一个弹窗，仅标题和初始值不同
-export function GroupDialog({ open, initialName, onClose, onSubmit }: Props) {
+// 分组新建 / 重命名共用一个弹窗，仅标题和初始值不同；工作区改名也复用这个形态，文案由调用方覆盖
+export function GroupDialog({ open, initialName, title, label, maxLength = 50, onClose, onSubmit }: Props) {
     const { t } = useI18n();
     const [name, setName] = useState("");
     const [saving, setSaving] = useState(false);
@@ -46,18 +50,18 @@ export function GroupDialog({ open, initialName, onClose, onSubmit }: Props) {
         <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>{initialName === null ? t("group.new") : t("group.rename")}</DialogTitle>
+                    <DialogTitle>{title ?? (initialName === null ? t("group.new") : t("group.rename"))}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="grid gap-4">
                     <FormRow>
-                        <FieldLabel htmlFor="group-name">{t("group.name")}</FieldLabel>
+                        <FieldLabel htmlFor="group-name">{label ?? t("group.name")}</FieldLabel>
                         <Input
                             id="group-name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             autoFocus
                             required
-                            maxLength={50}
+                            maxLength={maxLength}
                         />
                     </FormRow>
                     <DialogFooter>

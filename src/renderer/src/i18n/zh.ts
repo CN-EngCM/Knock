@@ -177,6 +177,9 @@ export const zh = {
     "menu.edit": "编辑…",
     "menu.delete": "删除…",
     "menu.rename": "重命名…",
+    "menu.terminalHere": "在此打开终端",
+    "menu.opencodeHere": "在此打开 opencode",
+    "menu.claudeHere": "在此打开 Claude Code",
 
     "common.create": "创建",
     "common.save": "保存",
@@ -203,6 +206,10 @@ export const zh = {
     "tool.scan.desc": "条形码 / 二维码识别",
     "tool.terminal.name": "终端",
     "tool.terminal.desc": "新建独立终端会话",
+    "term.closeConfirm": "关闭终端？",
+    "term.closeConfirmHint": "会话里正在运行的程序会一起结束。",
+    "term.rename": "重命名…",
+    "term.renameTitle": "重命名终端标签",
 
     "json.input": "输入",
     "json.output": "输出",
@@ -455,6 +462,16 @@ export const zh = {
     "side.sort": "排序模式",
     "side.addItem": "添加启动项",
     "side.createGroupFirst": "请先添加分组",
+
+    // ── 侧栏底部的工作区 ──
+    "ws.title": "工作区",
+    "ws.new": "新建工作区",
+    "ws.defaultName": "工作区",
+    "ws.rename": "重命名",
+    "ws.deleteTitle": "删除工作区",
+    "ws.deleteHint": "该工作区里打开的终端会被结束，面板会被关闭。",
+    "ws.scratch": "临时工作区",
+    "ws.termUnit": "个终端",
 
     // ── 启动列表树（GaN.UI Tree）──
     "tree.collapse": "折叠",

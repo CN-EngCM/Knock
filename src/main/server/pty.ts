@@ -22,6 +22,29 @@ export function setPtySink(fn: (e: PtyEvent) => void): void {
 const sessions = new Map<number, IPty>();
 let nextId = 1;
 
+// ConPTY 会把一次程序输出拆成许多很小的回调，逐块 send 到渲染进程会让 IPC 消息数
+// 随输出量膨胀；这里按会话攒 8ms 再整批发出（块内顺序不变），洪峰下消息数降一个量级。
+const outBuf = new Map<number, string[]>();
+let outTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushOut(): void {
+    outTimer = null;
+    if (!emit) {
+        outBuf.clear();
+        return;
+    }
+    const batches = [...outBuf];
+    outBuf.clear();
+    for (const [id, chunks] of batches) emit({ type: "data", id, data: chunks.join("") });
+}
+
+function queueOut(id: number, data: string): void {
+    const chunks = outBuf.get(id);
+    if (chunks) chunks.push(data);
+    else outBuf.set(id, [data]);
+    outTimer ??= setTimeout(flushOut, 8);
+}
+
 // 候选 shell 探测缓存（id → 绝对路径，null = 不可用），应用运行期内只探一次。
 // 注意：微软商店版 pwsh 是 WindowsApps 下的「应用执行别名」（重解析点），
 // fs.existsSync 对它返回 false——Windows 侧不能用 existsSync 验证 `where`
@@ -123,9 +146,11 @@ export function spawnSession(opts?: { cwd?: string; label?: string }): { id: num
         name: "xterm-256color",
         env: env as Record<string, string>,
     });
-    p.onData((data) => emit?.({ type: "data", id, data }));
+    p.onData((data) => queueOut(id, data));
     // exitCode 可能为 null（信号终止），对前端只关心「没了」
     p.onExit(() => {
+        // 先发完缓冲里的输出再发 exit，渲染端才不会丢掉最后一段
+        flushOut();
         sessions.delete(id);
         emit?.({ type: "exit", id });
     });

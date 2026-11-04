@@ -182,6 +182,9 @@ export const en: Record<MessageKey, string> = {
     "menu.edit": "Edit…",
     "menu.delete": "Delete…",
     "menu.rename": "Rename…",
+    "menu.terminalHere": "Open terminal here",
+    "menu.opencodeHere": "Open opencode here",
+    "menu.claudeHere": "Open Claude Code here",
 
     "common.create": "Create",
     "common.save": "Save",
@@ -208,6 +211,10 @@ export const en: Record<MessageKey, string> = {
     "tool.scan.desc": "barcode / QR decoder",
     "tool.terminal.name": "Terminal",
     "tool.terminal.desc": "Open a new terminal session",
+    "term.closeConfirm": "Close terminal?",
+    "term.closeConfirmHint": "Programs running in this session will end as well.",
+    "term.rename": "Rename…",
+    "term.renameTitle": "Rename terminal tab",
 
     "json.input": "input",
     "json.output": "output",
@@ -465,6 +472,16 @@ export const en: Record<MessageKey, string> = {
     "side.sort": "Sort mode",
     "side.addItem": "Add launch item",
     "side.createGroupFirst": "Create a group first",
+
+    // ── workspaces at the bottom of the sidebar ──
+    "ws.title": "Workspaces",
+    "ws.new": "New workspace",
+    "ws.defaultName": "Workspace",
+    "ws.rename": "Rename",
+    "ws.deleteTitle": "Delete workspace",
+    "ws.deleteHint": "Terminals open in this workspace will be ended and its panels closed.",
+    "ws.scratch": "Scratch",
+    "ws.termUnit": "terminals",
 
     // ── launch list tree (GaN.UI Tree) ──
     "tree.collapse": "Collapse",

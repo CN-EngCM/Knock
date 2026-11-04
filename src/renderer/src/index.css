@@ -820,6 +820,17 @@
         }
     }
 
+    /* 终端滚动条：xterm 6 自带 DOM 滚动条，而 .xterm-viewport 仍是 overflow-y: scroll，
+       全局 ::-webkit-scrollbar 会给它再画一条原生滑块；两条叠在一起、长度又对不齐，
+       看起来就是边缘发毛的锯齿。原生这条在 xterm 6 里不参与滚动，直接关掉。 */
+    .xterm .xterm-viewport {
+        scrollbar-width: none;
+    }
+    .xterm .xterm-viewport::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+    }
+
     /* Lucide 图标统一为 1 个 CSS 像素的实际线宽：Lucide 默认 stroke-width="2"，属性值为 2 时由令牌接管，
        non-scaling-stroke 让线宽不随 viewBox 缩放。显式传其他线宽（或工具类）的图标保持 Lucide 原生缩放。 */
     svg.lucide[stroke-width="2"] {

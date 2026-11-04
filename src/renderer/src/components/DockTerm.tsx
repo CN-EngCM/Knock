@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { IDockviewPanelProps } from "@/components/ui/dock-layout";
 import { api } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import { cleanTermTitle } from "@/lib/termTitle";
 import { getTerm, registerTerm, termFont, themeFromVars } from "./termStore";
 
 // 终端面板：每个会话一块 dock 面板。xterm 实例归 termStore 持有（与面板生命周期
@@ -46,7 +47,9 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
         } else {
             term = new XTerm({
                 ...termFont(),
-                lineHeight: 1.2,
+                // 行高不能大于 1：DOM 渲染器里方块字符也由字体绘制，单元格被撑高后
+                // 字形只占中间一段，TUI 用方块拼的 logo 会碎成一格一格的横条。
+                lineHeight: 1,
                 cursorBlink: true,
                 scrollback: 5000,
                 theme: themeFromVars(),
@@ -65,6 +68,12 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             });
             handle = { term, fit };
         }
+        // 终端程序可用 OSC 0/2 改窗口标题：跟随到面板标签上，手动改过的名字同样会被
+        // 后续标题覆盖（用户决策）。订阅随本次挂载，面板重挂时换新的 panelApi
+        const titleSub = term.onTitleChange((title) => {
+            const next = cleanTermTitle(title);
+            if (next) panelApi.setTitle(next);
+        });
         // 右键挂当前容器元素（随元素生死，重挂到新容器不会重复）
         const onContextMenu = (ev: MouseEvent) => {
             ev.preventDefault();
@@ -79,7 +88,28 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
         term.open(el);
         registerTerm(sessionId, handle);
 
-        // fit 后把新尺寸同步给 pty；隐藏组里的面板跳过（0 尺寸 fit 无意义）
+        // fit 后把新尺寸同步给 pty；隐藏组里的面板跳过（0 尺寸 fit 无意义）。
+        // 拖动分栏时容器尺寸每帧都在变，TUI 程序会跟着反复重排；画面仍立即 fit，
+        // pty 尺寸改成停手后再发（120ms 尾随），别让 vim/fzf 这类程序被高频重排拖慢。
+        let sizeTimer: number | undefined;
+        let sentCols = 0;
+        let sentRows = 0;
+        const sendSize = () => {
+            sizeTimer = undefined;
+            if (term.cols === sentCols && term.rows === sentRows) return;
+            sentCols = term.cols;
+            sentRows = term.rows;
+            void api.ptyResize(sessionId, term.cols, term.rows);
+        };
+        const scheduleSize = () => {
+            // 首次先同步一次，免得 TUI 按 80x24 画完再跳
+            if (!sentCols) {
+                sendSize();
+                return;
+            }
+            window.clearTimeout(sizeTimer);
+            sizeTimer = window.setTimeout(sendSize, 120);
+        };
         const fitAndSync = () => {
             if (el.offsetParent === null) return;
             try {
@@ -87,7 +117,7 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             } catch {
                 /* 0 尺寸瞬间，忽略 */
             }
-            void api.ptyResize(sessionId, term.cols, term.rows);
+            scheduleSize();
         };
         requestAnimationFrame(() => {
             fitAndSync();
@@ -95,9 +125,10 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
         });
         const ro = new ResizeObserver(fitAndSync);
         ro.observe(el);
-        // 面板从隐藏组切回可见（激活/拖回）：重新 fit 并聚焦
-        const visibility = panelApi.onDidVisibilityChange((visible) => {
-            if (!visible) return;
+        // 面板从隐藏组切回可见（激活/拖回）：重新 fit 并聚焦。回调收到的是
+        // { isVisible } 对象，必须读字段——直接判断对象真假恒为真，隐藏时也会白跑一次 fit
+        const visibility = panelApi.onDidVisibilityChange((event) => {
+            if (!event.isVisible) return;
             requestAnimationFrame(() => {
                 fitAndSync();
                 term.focus();
@@ -106,7 +137,13 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
         return () => {
             ro.disconnect();
             visibility.dispose();
+            titleSub.dispose();
             el.removeEventListener("contextmenu", onContextMenu);
+            // 卸载时还有没发出的尺寸就补一刀，避免 pty 停在拖动中途的大小
+            if (sizeTimer !== undefined) {
+                window.clearTimeout(sizeTimer);
+                sendSize();
+            }
             // 实例保留在 termStore——会话结束才 dispose
         };
     }, [sessionId, panelApi, t]);
