@@ -26,6 +26,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { LauncherTree, type ItemMove } from "./components/LauncherTree";
 import { SearchBox } from "./components/SearchBox";
+import { ToolsMenu } from "./components/ToolsMenu";
 import { ToolHome } from "./components/ToolHome";
 import { disposeTerm, setTermFont } from "./components/termStore";
 import type { DockviewApi } from "@/components/ui/dock-layout";
@@ -403,6 +404,13 @@ export default function App() {
         else ctl.queue.push(fn);
     }
 
+    // 工具集菜单的「已打开」标记：菜单展开时现取，dock 未就绪或面板清空都按空表算
+    function getOpenTools(): ToolId[] {
+        const dock = dockCtl.current.api;
+        if (!dock) return [];
+        return dock.panels.filter((p) => p.id.startsWith("tool:")).map((p) => p.id.slice(5) as ToolId);
+    }
+
     function openTool(id: ToolId, input?: string | null, expertId?: number) {
         if (id === "terminal") {
             void spawnSession();
@@ -547,6 +555,7 @@ export default function App() {
                     }
                     right={
                         <div className="flex flex-none items-center gap-1">
+                            <ToolsMenu getOpenTools={getOpenTools} onOpen={openTool} />
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <Button
@@ -722,7 +731,7 @@ export default function App() {
                             </Suspense>
                         ) : (
                             /* 冷启动空态：dock 未挂载不加载 dockview，首页卡片与搜索即入口 */
-                            <div className="h-full min-h-0 p-1.5">
+                            <div className="h-full min-h-0">
                                 <ToolHome onOpen={openTool} />
                             </div>
                         )}

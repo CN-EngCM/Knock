@@ -198,7 +198,7 @@ export const en: Record<MessageKey, string> = {
     "search.gotoFolder": "go to folder",
 
     // ── v2.2: tools zone / terminal zone ──
-    "tools.menu": "tools",
+    "tools.menu": "Tools",
     "tools.opened": "open",
     "tool.json.name": "json",
     "tool.json.desc": "JSON format / minify",
@@ -371,6 +371,7 @@ export const en: Record<MessageKey, string> = {
     "gallery.tags.batchTitle": "Add tags",
     "gallery.tags.batchHint": "Will be added to {m} images",
     "gallery.tags.placeholder": "Type a tag, Enter or comma to add…",
+    "gallery.tags.noMatch": "No matching tag — press Enter to create it",
     "gallery.view.prev": "Previous",
     "gallery.view.next": "Next",
     "gallery.view.zoomIn": "Zoom in",

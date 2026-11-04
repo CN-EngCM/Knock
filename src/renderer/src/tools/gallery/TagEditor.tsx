@@ -1,5 +1,4 @@
-import { useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -9,7 +8,18 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import {
+    Combobox,
+    ComboboxChip,
+    ComboboxChips,
+    ComboboxChipsInput,
+    ComboboxContent,
+    ComboboxEmpty,
+    ComboboxItem,
+    ComboboxList,
+    ComboboxValue,
+    useComboboxAnchor,
+} from "@/components/ui/combobox";
 import { useI18n } from "@/i18n/useI18n";
 
 type Props = {
@@ -28,13 +38,23 @@ type Props = {
 // 与 server/schemas.galleryTagsSchema 的单次上限一致
 const MAX_TAGS = 50;
 
-// 标签编辑面板：图片单张 / 批量添加 / 分组 tag 三种场景共用（差异全在调用方的 onSave 里）
+// 标签编辑面板：图片单张 / 批量添加 / 分组 tag 三种场景共用（差异全在调用方的 onSave 里）。
+// 输入框是 Combobox 的 chips 输入：候选来自全局 tag 池，回车收下的是输入框里的原文——
+// 这样「选已有标签」和「输入新标签」是同一个动作。
 export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: Props) {
     const { t } = useI18n();
     const [tags, setTags] = useState<string[]>(initialTags);
     const [draft, setDraft] = useState("");
     const [busy, setBusy] = useState(false);
-    const inputRef = useRef<HTMLInputElement>(null);
+    const anchor = useComboboxAnchor();
+
+    const full = tags.length >= MAX_TAGS;
+
+    // 选中候选或删 chip 之后输入框要清空：草稿由我们控制，不交给组件内部状态
+    function onTagsChange(next: string[]) {
+        setTags(next);
+        setDraft("");
+    }
 
     function addTag(raw: string) {
         const v = raw.trim();
@@ -42,33 +62,22 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
         setTags((prev) => (prev.includes(v) || prev.length >= MAX_TAGS ? prev : [...prev, v]));
     }
 
-    function onDraftChange(v: string) {
-        // 中/英文逗号即提交：把逗号前的片段收进 chips，支持一次粘「a,b,c」
-        if (/[,，]/.test(v)) {
-            v.split(/[,，]/).forEach((part) => addTag(part));
+    // 中/英文逗号即提交：把逗号前的片段收进 chips，支持一次粘「a,b,c」
+    function onDraftChange(next: string) {
+        if (/[,，]/.test(next)) {
+            next.split(/[,，]/).forEach(addTag);
             setDraft("");
             return;
         }
-        setDraft(v);
+        setDraft(next);
     }
 
-    function onDraftKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            addTag(draft);
-            setDraft("");
-        } else if (e.key === "Backspace" && draft === "") {
-            // 空输入退格 = 删最后一个 chip（常见 tag 输入框约定）
-            setTags((prev) => prev.slice(0, -1));
-        }
+    function onDraftKeyDown(e: React.KeyboardEvent) {
+        if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+        e.preventDefault();
+        addTag(draft);
+        setDraft("");
     }
-
-    // 建议列表：全局 tag 池去掉已有的，再按输入包含过滤
-    const suggestions = useMemo(() => {
-        const rest = pool.filter((p) => !tags.includes(p));
-        const q = draft.trim().toLowerCase();
-        return (q ? rest.filter((p) => p.toLowerCase().includes(q)) : rest).slice(0, 12);
-    }, [pool, tags, draft]);
 
     function save() {
         if (busy) return;
@@ -79,9 +88,6 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
         });
     }
 
-    const chip =
-        "flex items-center gap-1 rounded-[3px] border border-line px-1.5 py-0.5 text-[12px] text-muted-foreground";
-
     return (
         <Dialog open onOpenChange={(v) => !v && onClose()}>
             <DialogContent className="sm:max-w-md">
@@ -90,54 +96,42 @@ export function TagEditor({ title, hint, initialTags, pool, onSave, onClose }: P
                     {hint && <DialogDescription>{hint}</DialogDescription>}
                 </DialogHeader>
 
-                <div className="flex flex-col gap-2">
-                    {tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                            {tags.map((tag) => (
-                                <span key={tag} className={chip}>
-                                    {tag}
-                                    <button
-                                        type="button"
-                                        aria-label={tag}
-                                        onClick={() => setTags((prev) => prev.filter((x) => x !== tag))}
-                                        className="text-dim-foreground hover:text-foreground"
-                                    >
-                                        <X size={11} />
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
-                    )}
-                    <Input
-                        ref={inputRef}
-                        value={draft}
-                        onChange={(e) => onDraftChange(e.target.value)}
-                        onKeyDown={onDraftKeyDown}
-                        spellCheck={false}
-                        placeholder={t("gallery.tags.placeholder")}
-                        className="h-8 w-full"
-                    />
-                    {suggestions.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                            {suggestions.map((p) => (
-                                <Button
-                                    key={p}
-                                    type="button"
-                                    appearance="standard"
-                                    variant="outline"
-                                    size="xs"
-                                    className="px-1.5"
-                                    onClick={() => {
-                                        addTag(p);
-                                        inputRef.current?.focus();
-                                    }}
-                                >
-                                    + {p}
-                                </Button>
-                            ))}
-                        </div>
-                    )}
-                </div>
+                <Combobox
+                    multiple
+                    items={pool}
+                    value={tags}
+                    onValueChange={onTagsChange}
+                    inputValue={draft}
+                    onInputValueChange={onDraftChange}
+                >
+                    <ComboboxChips ref={anchor} className="w-full" aria-label={title}>
+                        <ComboboxValue>
+                            {(values: string[]) => (
+                                <>
+                                    {values.map((v) => (
+                                        <ComboboxChip key={v}>{v}</ComboboxChip>
+                                    ))}
+                                    <ComboboxChipsInput
+                                        placeholder={t("gallery.tags.placeholder")}
+                                        aria-label={t("gallery.tags.placeholder")}
+                                        disabled={busy || full}
+                                        onKeyDown={onDraftKeyDown}
+                                    />
+                                </>
+                            )}
+                        </ComboboxValue>
+                    </ComboboxChips>
+                    <ComboboxContent anchor={anchor}>
+                        <ComboboxEmpty>{t("gallery.tags.noMatch")}</ComboboxEmpty>
+                        <ComboboxList>
+                            {(item: string) => (
+                                <ComboboxItem key={item} value={item}>
+                                    {item}
+                                </ComboboxItem>
+                            )}
+                        </ComboboxList>
+                    </ComboboxContent>
+                </Combobox>
 
                 <DialogFooter>
                     <Button type="button" appearance="standard" variant="outline" size="sm" onClick={onClose}>

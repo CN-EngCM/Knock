@@ -68,6 +68,12 @@ export interface TreeRowContext {
   loading: boolean
 }
 
+/** 通过 `commandRef` 拿到的命令句柄，供树外的入口（右键菜单项、按钮）驱动树。 */
+export interface TreeHandle {
+  /** 让 `id` 行（省略为当前活动行）进入原地重命名；`rename.enabled` 没开、行被禁用或不在可见行里时什么都不做。 */
+  startRename: (id?: string) => void
+}
+
 export interface TreeProps {
   nodes: TreeNode[]
   expandedIds?: string[]
@@ -79,10 +85,13 @@ export interface TreeProps {
   selectionMode?: TreeSelectionMode
   activeId?: string | null
   onActiveChange?: (id: string | null) => void
+  /** 叶子行上按 Enter 或无修饰键双击时触发；有子节点的行上 Enter 与双击都只切换展开，不触发。 */
   onActivate?: (node: TreeNode) => void
   loadChildren?: (node: TreeNode) => Promise<TreeNode[]>
   onLoadError?: (node: TreeNode, error: unknown) => void
+  /** 重命名只走 F2 或 `commandRef.startRename`（双击用于激活/展开）。 */
   rename?: TreeRenameOptions
+  commandRef?: React.Ref<TreeHandle>
   dnd?: TreeDndOptions
   virtual?: boolean | { estimateRowHeight?: number; overscan?: number }
   indentGuides?: boolean
@@ -104,6 +113,10 @@ interface FlatRow {
   hasChildren: boolean
   expanded: boolean
 }
+
+// 焦点常驻容器（outline-none），键盘光标靠活动行的内缩环表示：只在容器 :focus-visible 时出现，
+// 鼠标点击后不画。行紧贴容器，向外偏移会被 overflow 裁掉，所以用负偏移。
+const activeRing = "group-focus-visible/tree:data-active:outline-[1.5px] group-focus-visible/tree:data-active:outline-solid group-focus-visible/tree:data-active:outline-(--ring) group-focus-visible/tree:data-active:outline-offset-[-1.5px]"
 
 function textOf(label: React.ReactNode): string {
   return typeof label === "string" ? label : ""
@@ -143,6 +156,8 @@ function useStableLabels(labels: Partial<TreeLabels> | undefined): TreeLabels {
  * 树视图：扁平行 + aria-activedescendant（不用 roving tabindex、不渲染嵌套 role="group"）。
  * 这是虚拟化与懒加载下唯一自洽的结构：焦点常驻容器，行被回收/折叠不丢焦点；层级靠
  * aria-level/aria-posinset/aria-setsize 表达。长期约定见 docs/design.md「关键尺寸与行为」。
+ * 分组行上 Enter/双击只切换展开，叶子行上 Enter/双击触发 onActivate；选中跟随键盘光标；
+ * 重命名走 F2 或 commandRef.startRename。
  */
 function Tree({
   nodes,
@@ -159,6 +174,7 @@ function Tree({
   loadChildren,
   onLoadError,
   rename,
+  commandRef,
   dnd,
   virtual,
   indentGuides = true,
@@ -283,12 +299,27 @@ function Tree({
     else rowNodesRef.current.get(id)?.scrollIntoView({ block: "nearest" })
   }
 
-  function moveActive(id: string | null, { extend = false }: { extend?: boolean } = {}) {
+  /**
+   * 键盘光标移动：选中跟随光标（Shift 扩展范围；keepSelection 只移光标，多选下 mod+方向键用）。
+   * 禁用行光标可以经过，但不会被选中。
+   */
+  function moveActive(id: string | null, { extend = false, keepSelection = false }: { extend?: boolean; keepSelection?: boolean } = {}) {
     if (!id) return
-    if (extend && selectionMode === "multiple" && anchorRef.current) selectRange(anchorRef.current, id)
-    else anchorRef.current = id
+    const anchor = anchorRef.current ?? resolvedActiveId
+    if (extend && selectionMode === "multiple" && anchor) {
+      anchorRef.current = anchor
+      selectRange(anchor, id)
+    } else {
+      anchorRef.current = id
+      if (!keepSelection && !rowsById.get(id)?.node.disabled) selectOnly(id)
+    }
     setActive(id)
     scrollRowIntoView(id)
+  }
+
+  function selectOnly(id: string) {
+    if (selectedArray.length === 1 && selectedArray[0] === id) return
+    commitSelected([id])
   }
 
   function selectRange(fromId: string, toId: string) {
@@ -318,11 +349,42 @@ function Tree({
     scrollRowIntoView(row.node.id)
   }
 
-  function startRename(row: FlatRow) {
-    if (!rename?.enabled || row.node.disabled) return
+  function handleRowDoubleClick(row: FlatRow, event: React.MouseEvent) {
+    if (row.node.disabled) return
+    // 多选下带 Shift/mod 的两次点击已经在做选择，不当作“打开”。
+    if (selectionMode === "multiple" && (event.shiftKey || isModPressed(event))) return
+    // 分组行的双击只负责展开/折叠；叶子行没有展开可做，双击才是“打开”。
+    if (row.hasChildren) toggleExpanded(row)
+    else onActivate?.(row.node)
+  }
+
+  // 不 preventDefault：外层的 ContextMenu 照常弹出，只是先让菜单作用于被右键的行。
+  function handleRowContextMenu(row: FlatRow) {
+    if (row.node.disabled) return
+    setActive(row.node.id)
+    anchorRef.current = row.node.id
+    if (!selectedSet.has(row.node.id)) commitSelected([row.node.id])
+  }
+
+  function startRename(row: FlatRow): boolean {
+    if (!rename?.enabled || row.node.disabled) return false
     setRenamingId(row.node.id)
     setRenameValue(textOf(row.node.label))
     setRenameError(null)
+    return true
+  }
+
+  function startRenameById(id: string | undefined) {
+    const row = rowsById.get(id ?? resolvedActiveId ?? "")
+    if (row && startRename(row)) scrollRowIntoView(row.node.id)
+  }
+
+  // 从菜单项触发重命名时，输入框挂载时的 focus() 会被菜单的焦点陷阱挡回去，菜单关闭后焦点又被还给树容器，
+  // 输入框就留在编辑态却没有焦点。编辑期间容器自己拿到焦点（不是点了别处——那会先让输入框失焦提交）时还给输入框。
+  function refocusRenameInput() {
+    const input = containerRef.current?.querySelector<HTMLInputElement>('[role="treeitem"] input')
+    input?.focus({ preventScroll: true })
+    input?.select()
   }
 
   function cancelRename() {
@@ -370,10 +432,11 @@ function Tree({
     const forward = rtl ? "ArrowLeft" : "ArrowRight"
     const backward = rtl ? "ArrowRight" : "ArrowLeft"
 
-    if (event.key === "ArrowDown") { event.preventDefault(); const next = flatRows[activeIndex + 1]; if (next) moveActive(next.node.id, { extend: event.shiftKey }); return }
-    if (event.key === "ArrowUp") { event.preventDefault(); const next = flatRows[activeIndex - 1]; if (next) moveActive(next.node.id, { extend: event.shiftKey }); return }
-    if (event.key === "Home") { event.preventDefault(); const first = flatRows[0]; if (first) moveActive(first.node.id, { extend: event.shiftKey }); return }
-    if (event.key === "End") { event.preventDefault(); const last = flatRows[flatRows.length - 1]; if (last) moveActive(last.node.id, { extend: event.shiftKey }); return }
+    const moveOptions = { extend: event.shiftKey, keepSelection: selectionMode === "multiple" && isModPressed(event) }
+    if (event.key === "ArrowDown") { event.preventDefault(); const next = flatRows[activeIndex + 1]; if (next) moveActive(next.node.id, moveOptions); return }
+    if (event.key === "ArrowUp") { event.preventDefault(); const next = flatRows[activeIndex - 1]; if (next) moveActive(next.node.id, moveOptions); return }
+    if (event.key === "Home") { event.preventDefault(); const first = flatRows[0]; if (first) moveActive(first.node.id, moveOptions); return }
+    if (event.key === "End") { event.preventDefault(); const last = flatRows[flatRows.length - 1]; if (last) moveActive(last.node.id, moveOptions); return }
     if (event.key === forward) {
       event.preventDefault()
       if (!activeRow) return
@@ -389,7 +452,12 @@ function Tree({
       return
     }
     if (event.key === "*") { event.preventDefault(); if (activeRow) expandSiblings(activeRow); return }
-    if (event.key === "Enter") { event.preventDefault(); if (activeRow && !activeRow.node.disabled) onActivate?.(activeRow.node); return }
+    if (event.key === "Enter") {
+      event.preventDefault()
+      // 与双击一致：分组行只切换展开，叶子行才“打开”。
+      if (activeRow && !activeRow.node.disabled) { if (activeRow.hasChildren) toggleExpanded(activeRow); else onActivate?.(activeRow.node) }
+      return
+    }
     if (event.key === "F2") { event.preventDefault(); if (activeRow) startRename(activeRow); return }
     if (event.key === " ") {
       event.preventDefault()
@@ -482,7 +550,9 @@ function Tree({
     click: (id, event) => { const row = rowsById.get(id); if (row) handleRowClick(row, event) },
     toggleExpand: id => { const row = rowsById.get(id); if (row) toggleExpanded(row) },
     retry: id => { const row = rowsById.get(id); if (row) retryLoad(row.node) },
-    startRename: id => { const row = rowsById.get(id); if (row) startRename(row) },
+    doubleClick: (id, event) => { const row = rowsById.get(id); if (row) handleRowDoubleClick(row, event) },
+    contextMenu: id => { const row = rowsById.get(id); if (row) handleRowContextMenu(row) },
+    startRenameById,
     commitRename: id => { const row = rowsById.get(id); if (row) commitRename(row) },
     cancelRename,
     autoExpand: id => { const row = rowsById.get(id); if (row?.hasChildren && !row.expanded) setExpanded(id, true) },
@@ -493,11 +563,16 @@ function Tree({
       return dndPositions.some(position => canDrop(dragNode, target, position))
     },
   }
+  React.useImperativeHandle(commandRef, () => ({
+    startRename: id => rowHandlersRef.current.startRenameById(id),
+  }), [])
+
   const rowActions = React.useMemo<RowActions>(() => ({
     onClick: (id, event) => rowHandlersRef.current.click(id, event),
     onToggleExpand: id => rowHandlersRef.current.toggleExpand(id),
     onRetry: id => rowHandlersRef.current.retry(id),
-    onDoubleClick: id => rowHandlersRef.current.startRename(id),
+    onDoubleClick: (id, event) => rowHandlersRef.current.doubleClick(id, event),
+    onContextMenu: id => rowHandlersRef.current.contextMenu(id),
     onRenameCommit: id => rowHandlersRef.current.commitRename(id),
     onRenameCancel: () => rowHandlersRef.current.cancelRename(),
     onAutoExpand: id => rowHandlersRef.current.autoExpand(id),
@@ -547,7 +622,8 @@ function Tree({
       tabIndex={flatRows.length ? 0 : -1}
       aria-activedescendant={resolvedActiveId ? `${treeId}-${resolvedActiveId}` : undefined}
       onKeyDown={handleKeyDown}
-      className={cn("relative overflow-auto text-xs outline-none", className)}
+      onFocus={event => { if (renamingId && event.target === event.currentTarget) refocusRenameInput() }}
+      className={cn("group/tree relative overflow-auto text-xs outline-none", className)}
       style={virtualEnabled ? { maxHeight: 320 } : undefined}
     >
       {virtualEnabled ? (
@@ -577,7 +653,8 @@ function Tree({
 /** 传给行的稳定回调集合（行 id 作参数），整个 Tree 生命周期内引用不变。 */
 interface RowActions {
   onClick: (id: string, event: React.MouseEvent) => void
-  onDoubleClick: (id: string) => void
+  onDoubleClick: (id: string, event: React.MouseEvent) => void
+  onContextMenu: (id: string) => void
   onToggleExpand: (id: string) => void
   onRetry: (id: string) => void
   onRenameCommit: (id: string) => void
@@ -591,9 +668,11 @@ interface RowActions {
 
 interface RowHandlers {
   click: (id: string, event: React.MouseEvent) => void
+  doubleClick: (id: string, event: React.MouseEvent) => void
+  contextMenu: (id: string) => void
   toggleExpand: (id: string) => void
   retry: (id: string) => void
-  startRename: (id: string) => void
+  startRenameById: (id: string | undefined) => void
   commitRename: (id: string) => void
   cancelRename: () => void
   autoExpand: (id: string) => void
@@ -693,7 +772,7 @@ function TreeRowView({
   renaming, renameValue, renameError, onRenameValueChange, actions, copy, renderRow, setNodeRef, dnd,
 }: TreeRowProps & { setNodeRef: (element: HTMLElement | null) => void; dnd?: RowDnd }) {
   const { node, depth, hasChildren, expanded, posinset, setsize } = row
-  const { onClick, onDoubleClick, onToggleExpand, onRetry, onRenameCommit, onRenameCancel } = actions
+  const { onClick, onDoubleClick, onContextMenu, onToggleExpand, onRetry, onRenameCommit, onRenameCancel } = actions
   const renameInputRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => { if (renaming) { renameInputRef.current?.focus(); renameInputRef.current?.select() } }, [renaming])
@@ -723,10 +802,12 @@ function TreeRowView({
     className={cn(
       "group/tree-row relative flex cursor-default select-none items-center gap-(--space-xs) rounded-sm pe-(--space-md) text-foreground",
       selected ? "bg-(--state-selected) text-(--state-selected-foreground)" : "hover:bg-(--state-hover)",
+      activeRing,
       node.disabled && "pointer-events-none opacity-(--state-disabled-opacity)",
     )}
     onClick={event => onClick(node.id, event)}
-    onDoubleClick={() => onDoubleClick(node.id)}
+    onDoubleClick={event => onDoubleClick(node.id, event)}
+    onContextMenu={() => onContextMenu(node.id)}
   >
 
     {indentGuides && Array.from({ length: depth }, (_, level) => (
@@ -742,6 +823,7 @@ function TreeRowView({
       {...dnd.listeners}
       tabIndex={active ? 0 : -1}
       onClick={event => event.stopPropagation()}
+      onDoubleClick={event => event.stopPropagation()}
     ><svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1.1" /><circle cx="5" cy="8" r="1.1" /><circle cx="5" cy="12" r="1.1" /><circle cx="11" cy="4" r="1.1" /><circle cx="11" cy="8" r="1.1" /><circle cx="11" cy="12" r="1.1" /></svg></button>}
 
     {loading ? <Spinner decorative className="size-3 shrink-0" /> : hasChildren ? (
@@ -750,6 +832,7 @@ function TreeRowView({
         tabIndex={-1}
         aria-label={expanded ? copy.collapse : copy.expand}
         onClick={event => { event.stopPropagation(); onToggleExpand(node.id) }}
+        onDoubleClick={event => event.stopPropagation()}
         className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
       ><ChevronRight aria-hidden="true" className={cn("size-3 transition-transform duration-(--motion-quick-in) ease-(--motion-ease)", expanded && "rotate-90", rtl && !expanded && "rotate-180")} /></button>
     ) : <span className="size-3.5 shrink-0" aria-hidden="true" />}
@@ -759,7 +842,7 @@ function TreeRowView({
         {node.icon && <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-3.5">{node.icon}</span>}
         <span className="min-w-0 flex-1 truncate">{node.label}</span>
         <span className="shrink-0 truncate text-destructive">{copy.loadError}</span>
-        <button type="button" onClick={event => { event.stopPropagation(); onRetry(node.id) }} className="inline-flex shrink-0 items-center gap-1 text-destructive underline underline-offset-2"><RotateCcw aria-hidden="true" className="size-3" />{copy.retry}</button>
+        <button type="button" onClick={event => { event.stopPropagation(); onRetry(node.id) }} onDoubleClick={event => event.stopPropagation()} className="inline-flex shrink-0 items-center gap-1 text-destructive underline underline-offset-2"><RotateCcw aria-hidden="true" className="size-3" />{copy.retry}</button>
       </span>
     ) : renaming ? (
       <span className="flex min-w-0 flex-1 flex-col">
@@ -770,6 +853,9 @@ function TreeRowView({
           aria-invalid={!!renameError}
           value={renameValue}
           onClick={event => event.stopPropagation()}
+          onDoubleClick={event => event.stopPropagation()}
+          // 输入框里右键应是原生的编辑菜单，不能冒泡去弹外层的树菜单（它会抢走焦点并触发失焦提交）。
+          onContextMenu={event => event.stopPropagation()}
           onChange={event => onRenameValueChange(event.target.value)}
           onKeyDown={event => {
             event.stopPropagation()

@@ -98,7 +98,6 @@ export const api: MpApi = {
     getHotkey: () => invoke("getHotkey"),
     setHotkey: (hotkey) => invoke("setHotkey", hotkey),
     listShortcuts: (refresh) => invoke("listShortcuts", refresh),
-    getFavicon: (domain) => invoke("getFavicon", domain),
     ptySpawn: (opts) => invoke("ptySpawn", opts),
     ptyWrite: (id, data) => invoke("ptyWrite", id, data),
     ptyResize: (id, cols, rows) => invoke("ptyResize", id, cols, rows),

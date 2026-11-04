@@ -108,16 +108,9 @@ export function LauncherTree({
         [groups, itemsOf, t],
     );
 
-    // 回车键：条目 = 打开；分组 = 切换展开（与箭头按钮对等的键盘路径）
+    // 回车键：条目 = 打开。分组行的回车与双击由 Tree 自己切换展开，不进这里
     function handleActivate(node: TreeNode) {
-        if (isItem(node.data)) {
-            onOpen(node.data);
-            return;
-        }
-        if (isGroup(node.data)) {
-            const id = nodeId.group(node.data.id);
-            setExpanded(id, !expandedIds.includes(id));
-        }
+        if (isItem(node.data)) onOpen(node.data);
     }
 
     function setExpanded(id: string, expanded: boolean) {

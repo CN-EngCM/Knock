@@ -24,7 +24,6 @@ export function ToolHome({ onOpen }: Props) {
                 <p className="mb-6 text-xs text-muted-foreground">{t("home.desc")}</p>
                 <div className="grid grid-cols-2 gap-x-4">
                     {TOOLS.map((tool) => {
-                        const Icon = tool.icon;
                         return (
                             <Item key={tool.id} asChild size="sm" className="min-h-[74px] border-0 p-0">
                                 <Button
@@ -32,8 +31,8 @@ export function ToolHome({ onOpen }: Props) {
                                     className="h-auto min-h-[74px] w-full justify-start gap-3 rounded-md border-b border-line px-2 py-3 text-left"
                                     onClick={() => onOpen(tool.id)}
                                 >
-                                    <ItemMedia variant="icon">
-                                        <Icon />
+                                    <ItemMedia variant="icon" className="[&_img]:size-[22px]">
+                                        <img src={tool.icon} alt="" />
                                     </ItemMedia>
                                     <ItemContent className="gap-0.5">
                                         <ItemTitle>{t(tool.nameKey)}</ItemTitle>

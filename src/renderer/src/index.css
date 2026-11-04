@@ -3,10 +3,10 @@
 @import "shadcn/tailwind.css";
 
 /* ─────────────────────────────────────────────────────────────
-   敲敲视觉体系：GaN.UI 中性灰（来源 D:\MyCode\GaN.UI v1.0.0，HEAD e7e52dc）
-   深色为默认主主题，浅色为 Darwin UI 取色的 GaN.UI 浅色基线。
-   只取 v1.0.0 默认深/浅两套配色与 regular 一档密度；11 套生成配色、compact/comfortable、
-   窗口失焦块、面板焦点块、.gan-surface-* 局部皮肤均不启用（见 GaN.UI-v1.0.0-组件升级方案.md）。
+   敲敲视觉体系：GaN.UI 中性灰（来源 D:\MyCode\GaN.UI v1.5.4，HEAD 0edf835）
+   深色为默认主主题（石墨），浅色固定薄雾（淡蓝灰底）。
+   只取两套配色与 regular 一档密度；上游其余配色、compact/comfortable、
+   窗口失焦块、面板焦点块、.gan-surface-* 局部皮肤均不启用（见 GaN.UI-组件同步基线.md）。
    字体沿用敲敲自带体系（Outfit + IBM Plex Mono，本地 woff2 内嵌），不引入 MiSans / Geist Mono。
    令牌值与 GaN.UI src/index.css 同源，仅追加敲敲应用层令牌（终端实色、悬停填充、行选中）。
    顺序固定：@theme 字体栈 → @theme static 字号档 → @theme inline 颜色/阴影映射 →
@@ -162,72 +162,74 @@
    表面阶梯为 窗口框架 < 页面 < 面板 < 卡片/画布 < 浮层 < 输入，纯白只留给聚焦的输入。 */
 :root {
     color-scheme: light;
-    --background: #eeeef1;
-    --foreground: #1d1d20;
-    --card: #f7f7f9;
-    --card-foreground: #1d1d20;
-    --popover: #fbfbfc;
-    --popover-foreground: #1d1d20;
-    --primary: #2563eb;
+    --background: #eaeff5;
+    --foreground: #1d1d1e;
+    --card: #f5f8fa;
+    --card-foreground: #1d1d1e;
+    --popover: #f9fbfe;
+    --popover-foreground: #1d1d1e;
+    --primary: #4f46e5;
     --primary-foreground: #ffffff;
-    --secondary: #dcdce1;
-    --secondary-foreground: #18181b;
-    --muted: #e7e7eb;
+    --secondary: #d7dde4;
+    --secondary-foreground: #181819;
+    --muted: #e2e8ef;
     --muted-foreground: rgb(0 0 0 / 60%);
-    --accent: #e1e1e6;
-    --accent-foreground: #18181b;
+    --accent: #dce2e9;
+    --accent-foreground: #181819;
     --destructive: #dc2626;
-    --border: rgb(20 20 40 / 13%);
-    --input: #e7e7eb;
-    --ring: color-mix(in srgb, #2563eb 60%, transparent);
+    --border: rgb(22 23 24 / 13%);
+    --input: #e2e8ef;
+    --ring: color-mix(in srgb, #4f46e5 60%, transparent);
     --chart-1: #3b82f6;
     --chart-2: #10b981;
     --chart-3: #f97316;
     --chart-4: #8b5cf6;
     --chart-5: #ec4899;
     --radius: 0.3125rem;
-    --sidebar: #e9e9ed;
-    --sidebar-foreground: #1d1d20;
-    --sidebar-primary: #2563eb;
+    --sidebar: #e4eaf1;
+    --sidebar-foreground: #1d1d1e;
+    --sidebar-primary: #4f46e5;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #dcdce2;
-    --sidebar-accent-foreground: #1d1d20;
-    --sidebar-border: rgb(20 20 40 / 12%);
-    --sidebar-ring: color-mix(in srgb, #2563eb 60%, transparent);
-    --panel: #f1f1f4;
-    --bar-top: #ececef;
-    --bar-bottom: #e2e2e6;
-    --well-top: #dfdfe4;
-    --well-bottom: #e6e6ea;
-    --window-border: rgb(20 20 40 / 15%);
+    --sidebar-accent: #d7dde4;
+    --sidebar-accent-foreground: #1d1d1e;
+    --sidebar-border: rgb(22 23 24 / 12%);
+    --sidebar-ring: color-mix(in srgb, #4f46e5 60%, transparent);
+    --panel: #eef2f6;
+    --bar-top: #e7edf3;
+    --bar-bottom: #dde3ea;
+    /* 标题栏搜索井：井自身的渐变方向与标题栏一致（向下变深），整体比标题栏低约 10 级明度，
+       否则井底会浅于所在位置的栏底、看上去和周围连成一片。 */
+    --well-top: #dbe1e9;
+    --well-bottom: #d5dbe3;
+    --window-border: rgb(22 23 24 / 15%);
     --window-control: rgb(0 0 0 / 35%);
-    --titlebar-foreground: #1d1d20;
-    --well: #e4e4e8;
-    --canvas: #f4f4f6;
-    --bar: #e6e6ea;
-    --line: rgb(20 20 40 / 8%);
+    --titlebar-foreground: #1d1d1e;
+    --well: #dfe5ec;
+    --canvas: #f1f5f8;
+    --bar: #e1e7ee;
+    --line: rgb(22 23 24 / 8%);
     --dim-foreground: rgb(0 0 0 / 40%);
     --text-selection: color-mix(in srgb, var(--primary) 20%, transparent);
     /* 桌面控件材质；浅色沿用本库结构，颜色取 Darwin 浅色基线。 */
-    --knob-rotation-top: #e8e8ea;
-    --knob-rotation-bottom: #d4d4d8;
-    --knob-audio-top: #f2f2f4;
-    --knob-audio-bottom: #dededf;
-    --control-indicator: #18181b;
-    --control-arc: #b9bac1;
-    --control-arc-track: #e4e4e7;
-    --menu-border: rgb(20 20 40 / 13%);
-    --menu-highlight: rgb(59 130 246 / 10%);
+    --knob-rotation-top: #e3e9f0;
+    --knob-rotation-bottom: #cfd5dc;
+    --knob-audio-top: #eff3f7;
+    --knob-audio-bottom: #d9dfe5;
+    --control-indicator: #181819;
+    --control-arc: #b6bbc1;
+    --control-arc-track: #dfe5ec;
+    --menu-border: rgb(22 23 24 / 13%);
+    --menu-highlight: rgb(92 106 241 / 10%);
     --meter-green: #047857;
     --control-chevron: rgb(0 0 0 / 45%);
     --slider-thumb-top: #ffffff;
-    --slider-thumb-bottom: #d4d4d8;
+    --slider-thumb-bottom: #cfd5dc;
     --slider-standard-thumb: #ffffff;
     --slider-hue: linear-gradient(90deg, #de6262, #d9c65c, #65ba72, #56bbbb, #6388d0, #ad70cf, #de6262);
     --slider-saturation: linear-gradient(90deg, #777777, #da6961);
     --slider-luminance: linear-gradient(90deg, #181818, #dddddd);
-    --disclosure-body: #ececf0;
-    --inspector-tabs: #e4e4e8;
+    --disclosure-body: #e8edf3;
+    --inspector-tabs: #dfe5ec;
     --inspector-label: rgb(0 0 0 / 60%);
     --inspector-value: var(--foreground);
     --statusbar-foreground: rgb(0 0 0 / 60%);
@@ -248,34 +250,34 @@
     --action-slider-track: #333333;
     --action-slider-well: #242424;
     --bar-slider-thumb: #ffffff;
-    --sub-slider-fill: #3f3f46;
+    --sub-slider-fill: #3f4041;
     --sub-slider-well: rgb(0 0 0 / 8%);
     --sub-slider-track: var(--control-selection);
     --bar-bottom-line: var(--window-border);
-    --toolbar-surface: linear-gradient(#ececef, #e2e2e6);
-    --toolbar-active: #d0d0d7;
+    --toolbar-surface: linear-gradient(#e7edf3, #dde3ea);
+    --toolbar-active: #ccd2d8;
     --toolbar-separator: rgb(0 0 0 / 10%);
-    --toolbar-search: #f7f7f9;
-    --scope-active: rgb(59 130 246 / 10%);
+    --toolbar-search: #f5f8fa;
+    --scope-active: rgb(92 106 241 / 10%);
     --action-record: #dc2626;
     --action-loop: #a16207;
-    --control-selection: #d0d0d7;
-    --slider-pointer: #52525b;
+    --control-selection: #ccd2d8;
+    --slider-pointer: #525355;
     --slider-pointer-border: rgb(255 255 255 / 70%);
-    --button-standard-secondary: #e1e1e6;
+    --button-standard-secondary: #dce2e9;
     --button-standard-destructive: #dc2626;
-    --button-standard-link: #1d4ed8;
-    --button-primary-pressed: #1d4ed8;
+    --button-standard-link: #462dd1;
+    --button-primary-pressed: #462dd1;
     --button-invalid: #dc2626;
     /* ActionBar 未传 theme 时跟随应用主题：浅色为浅色栏，暗色为同调石墨材质。 */
-    --action-auto-surface: linear-gradient(#ececef, #e2e2e6);
-    --action-auto-foreground: #18181b;
+    --action-auto-surface: linear-gradient(#e7edf3, #dde3ea);
+    --action-auto-foreground: #181819;
     --action-auto-control: rgb(0 0 0 / 4%);
     /* 已弃用，等同 --elevation-overlay。 */
     --shadow-toast: var(--elevation-overlay);
     /* 侧栏选中态与语义状态色（主题刷新新增）。 */
-    --sidebar-selected: #d4d4db;
-    --sidebar-selected-foreground: #1d1d20;
+    --sidebar-selected: #d0d6dc;
+    --sidebar-selected-foreground: #1d1d1e;
     --success: #15803d;
     --success-foreground: #ffffff;
     --warning: #b45309;
@@ -283,11 +285,12 @@
     --info: #2563eb;
     --info-foreground: #ffffff;
     /* 主题刷新第 2 步：替代组件内写死颜色的令牌。 */
-    --control-input-active: #e9e9ed;
-    --resize-grip: #b9bac1;
-    --file-button-top: #e1e1e6;
-    --file-button-bottom: #e1e1e6;
-    --file-button-edge: rgb(20 20 40 / 10%);
+    --control-input-active: #e4eaf1;
+    --resize-grip: #b6bbc1;
+    --file-button-top: #dce2e9;
+    --file-button-bottom: #dce2e9;
+    --file-button-edge: rgb(22 23 24 / 10%);
+    --switch-thumb: #ffffff;
 }
 
 /* 暗色令牌：冷调石墨中性色，明度阶梯为 井 < 画布 < 侧栏 < 页面 < 面板 < 卡片 < 浮层 < 栏；
@@ -420,6 +423,7 @@
     --file-button-top: #5c5e66;
     --file-button-bottom: #52545c;
     --file-button-edge: #2a2b30;
+    --switch-thumb: var(--foreground);
 }
 
 /* 与主题无关的令牌：动效档位、图标线宽、滚动条占位宽度。
@@ -577,20 +581,32 @@
 /* 停靠工作区皮肤的表面层次：标签栏与页签取色，供 DockLayout 使用；
    本项目暂未引入 dock-* 组件，令牌先随默认主题带过来，避免后续同步时再补。 */
 :root {
-    --dock-tabs: #e6e6ea;
-    --dock-tab-active: #f7f7f9;
-    --dock-tab-inactive: #dedee3;
+    --dock-tabs: #e1e7ee;
+    --dock-tab-active: #f5f8fa;
+    --dock-tab-inactive: #d9dfe6;
     --dock-tab-highlight: rgb(255 255 255 / 75%);
     --dock-tab-shade: rgb(0 0 0 / 3%);
     --dock-tab-edge: rgb(0 0 0 / 14%);
     --dock-tab-shadow: rgb(0 0 0 / 8%);
     /* 浮动窗口：与停靠区分层的边框与投影，标题栏拖动纹理与悬停提亮 */
-    --dock-float-border: rgb(20 20 40 / 38%);
+    --dock-float-border: rgb(22 23 24 / 38%);
     /* 已弃用，等同 --elevation-modal。 */
     --dock-float-shadow: var(--elevation-modal);
-    --dock-grip: rgb(20 20 40 / 36%);
-    --dock-grip-hover: rgb(20 20 40 / 66%);
+    --dock-grip: rgb(22 23 24 / 36%);
+    --dock-grip-hover: rgb(22 23 24 / 66%);
     --dock-float-titlebar-hover: rgb(0 0 0 / 5%);
+    --dock-gap: #d8dee5;
+    --dock-group-border: rgb(22 23 24 / 16%);
+    --dock-focus-tab: #212a36;
+    --dock-focus-tab-top: #323a47;
+    --dock-focus-tab-bottom: #27303d;
+    --dock-focus-fg: #e7e9ed;
+    --dock-focus-highlight: rgb(255 255 255 / 13%);
+    --dock-focus-edge: rgb(0 0 0 / 50%);
+    --dock-focus-top-line: rgb(255 255 255 / 13%);
+    --dock-focus-mark: transparent;
+    --dock-focus-seam: var(--window-border);
+    --dock-focus-lock: color-mix(in srgb, var(--primary) 60%, white);
 }
 .dark {
     --dock-tabs: #1f2024;
@@ -605,19 +621,31 @@
     --dock-grip: rgb(255 255 255 / 32%);
     --dock-grip-hover: rgb(255 255 255 / 70%);
     --dock-float-titlebar-hover: rgb(255 255 255 / 7%);
+    --dock-gap: #121316;
+    --dock-group-border: rgb(255 255 255 / 12%);
+    --dock-focus-tab: var(--dock-tab-active);
+    --dock-focus-tab-top: var(--bar-top);
+    --dock-focus-tab-bottom: var(--bar-bottom);
+    --dock-focus-fg: var(--foreground);
+    --dock-focus-highlight: var(--dock-tab-highlight);
+    --dock-focus-edge: var(--dock-tab-edge);
+    --dock-focus-top-line: var(--primary);
+    --dock-focus-mark: var(--primary);
+    --dock-focus-seam: transparent;
+    --dock-focus-lock: var(--primary);
 }
 
 /* 阶段3公开预览实测材质（输入/选择/开关/头像/提示描述）。 */
 :root {
-    --control-input-background: #fbfbfc;
+    --control-input-background: #f9fbfe;
     --control-input-focus-background: #ffffff;
     --control-input-edge: rgb(0 0 0 / 20%);
-    --control-select-background: #e9e9ed;
-    --control-neutral-selected: #d0d0d7;
-    --control-toggle-background: #dfdfe4;
-    --control-toggle-selected: #d0d0d7;
-    --avatar-background: #e1e1e6;
-    --avatar-fallback: #e9e9ed;
+    --control-select-background: #e4eaf1;
+    --control-neutral-selected: #ccd2d8;
+    --control-toggle-background: #dae0e7;
+    --control-toggle-selected: #ccd2d8;
+    --avatar-background: #dce2e9;
+    --avatar-fallback: #e4eaf1;
     --alert-description: rgb(0 0 0 / 60%);
 }
 .dark {
@@ -635,8 +663,8 @@
 
 /* 气泡：按公开气泡预览校准，随主题中性色阶与蓝色主色。 */
 :root {
-    --bubble-secondary: #e9e9ed;
-    --bubble-secondary-foreground: #09090b;
+    --bubble-secondary: #e4eaf1;
+    --bubble-secondary-foreground: #09090a;
     --bubble-tinted: color-mix(in srgb, var(--primary) 10%, var(--background));
 }
 .dark {
@@ -648,8 +676,8 @@
 /* 拖拽投放反馈令牌：上游 src/components/ui/drag.tsx 的 useDropTarget 设置 data-drop-state / data-insertion，
    颜色与插入线统一走令牌，深浅主题自动跟随。本项目暂未复制 drag.tsx，令牌先随默认主题带过来。 */
 :root {
-    --drop-target: rgb(37 99 235 / 10%);
-    --drop-target-border: rgb(37 99 235 / 45%);
+    --drop-target: rgb(79 70 229 / 10%);
+    --drop-target-border: rgb(79 70 229 / 45%);
     --drop-target-line: var(--primary);
     --drop-target-invalid: rgb(220 38 38 / 12%);
 }

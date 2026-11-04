@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FunctionComponent } from "react"
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type FunctionComponent } from "react"
 import { Pin, X } from "lucide-react"
 import { DockviewReact, type IDockviewReactProps } from "dockview-react"
 import type {
@@ -8,7 +8,6 @@ import type {
   DockviewHeaderPosition,
   DockviewTheme,
   GetTabContextMenuItemsParams,
-  IDockviewHeaderActionsProps,
   IDockviewPanelHeaderProps,
   IWatermarkPanelProps,
   ReactContextMenuItemConfig,
@@ -87,26 +86,17 @@ const PanelLockContext = createContext<{
 /** 菜单项的 DOM 标识只需在页面内唯一，用于 aria-activedescendant 指向当前项 */
 let menuSeq = 0
 
-function PanelLockButton({ id, title }: { id: string; title: string }) {
+/** 固定状态标记：只在固定时出现，不可点击；固定与取消固定走标签右键菜单 */
+function PanelLockMark({ id }: { id: string }) {
   const locks = useContext(PanelLockContext)
-  if (!locks) return null
-  const locked = locks.lockedPanels.has(id)
-  const label = `${locked ? "解锁" : "固定"}${title}`
-  return <button
-    type="button"
-    className="gan-panel-lock"
-    aria-label={label}
-    aria-pressed={locked}
-    title={label}
-    onPointerDown={event => event.preventDefault()}
-    onClick={event => { event.preventDefault(); locks.toggle(id) }}
-  ><Pin aria-hidden="true" /></button>
+  if (!locks?.lockedPanels.has(id)) return null
+  return <span className="gan-panel-lock" role="img" aria-label="已固定" title="已固定"><Pin aria-hidden="true" /></span>
 }
 
 /**
- * 默认标签：标题、固定与关闭按钮，继承官方标签的显隐与焦点行为。
+ * 默认标签：标题、固定状态标记与关闭按钮，继承官方标签的显隐与焦点行为。
  * 关闭按钮是真实按钮，提供中文可访问名与键盘激活；中键点击标签关闭；
- * 组内只剩一个面板时由皮肤隐藏标签内按钮，关闭入口由组标题栏右端承担。
+ * 固定与取消固定在标签右键菜单里，标签上只在固定时显示一个不可点击的图钉。
  */
 export function GanDockviewTab({ api }: IDockviewPanelHeaderProps) {
   const title = usePanelTitle(api)
@@ -134,37 +124,13 @@ export function GanDockviewTab({ api }: IDockviewPanelHeaderProps) {
       onPointerLeave={() => { middleButtonPressed.current = false }}
     >
       <span className="dv-default-tab-content">{title}</span>
-      <PanelLockButton id={api.id} title={title} />
+      <PanelLockMark id={api.id} />
       <button
         type="button"
         className="dv-default-tab-action gan-tab-close"
         aria-label={`关闭${title}`}
         onPointerDown={event => event.preventDefault()}
         onClick={closePanel}
-      >
-        <X aria-hidden="true" className="gan-tab-close-icon" />
-      </button>
-    </div>
-  )
-}
-
-/**
- * 组标题栏右端操作：单面板组在此显示唯一关闭入口，标题与中间留白保持
- * 连续拖动区域；多面板组的固定与关闭入口在各标签上。
- */
-export function GanDockviewHeaderActions({ panels, activePanel }: IDockviewHeaderActionsProps) {
-  if (panels.length !== 1) return null
-  const panel = activePanel ?? panels[0]
-  const title = panel.title ?? panel.id
-  return (
-    <div className="gan-group-actions">
-      <PanelLockButton id={panel.id} title={title} />
-      <button
-        type="button"
-        className="gan-group-close"
-        aria-label={`关闭${title}`}
-        onPointerDown={event => event.preventDefault()}
-        onClick={() => panel.api.close()}
       >
         <X aria-hidden="true" className="gan-tab-close-icon" />
       </button>
@@ -255,7 +221,7 @@ function getMainGridview(api: DockviewApi): GridviewInternal | null {
  * 平均分配。这里改为按原尺寸比例分配空出的空间，剩余组之间的比例保持不变。
  * 只拦截主网格的平均分配移除；浮动窗口内网格与其他尺寸策略保持官方行为。
  * 内部结构不符时不做任何改动。返回值用于还原。
- * 依赖 dockview-core 8.6.1 的内部结构，升级后重跑 tests/dock-layout.spec.ts 的空白分组用例与 tests/dock-layout-shell.spec.ts。
+ * 依赖 dockview-core 8.6.2 的内部结构，升级后重跑 tests/dock-layout.spec.ts 的空白分组用例与 tests/dock-layout-shell.spec.ts。
  */
 function keepProportionsOnRemoval(api: DockviewApi): () => void {
   const gridview = getMainGridview(api)
@@ -287,7 +253,15 @@ function keepProportionsOnRemoval(api: DockviewApi): () => void {
   return () => { gridview.removeView = removeView }
 }
 
-type TabMenuItem = BuiltInContextMenuItem | ReactContextMenuItemConfig
+/** 标签右键菜单的一项：官方内置项名称、分隔线，或自定义项 */
+export type DockLayoutTabMenuItem = BuiltInContextMenuItem | ReactContextMenuItemConfig
+type TabMenuItem = DockLayoutTabMenuItem
+
+/** `extendTabContextMenu` 的上下文 */
+export interface DockLayoutTabMenuContext {
+  /** 面板是否已固定；读取的是实时状态，返回的函数引用稳定，可以保存起来在菜单之外查询 */
+  isPanelLocked(panelId: string): boolean
+}
 
 /** 关闭当前组内的目标快照；逐个确认面板仍存在，避免批量关闭时操作已释放对象 */
 function closePanels(api: DockviewApi, panels: readonly { id: string; api: { close(): void } }[]) {
@@ -297,6 +271,7 @@ function closePanels(api: DockviewApi, panels: readonly { id: string; api: { clo
 function buildDefaultTabMenu(
   params: GetTabContextMenuItemsParams,
   isLocked: (panelId: string) => boolean,
+  toggleLock: (panelId: string) => void,
   onHeaderPositionChange?: (event: DockLayoutHeaderPositionChangeEvent) => void,
 ): TabMenuItem[] {
   const { panel, group, api } = params
@@ -337,6 +312,10 @@ function buildDefaultTabMenu(
     { label: "关闭此组全部标签", action: () => closePanels(api, panels) },
     "separator",
     {
+      label: locked ? "取消固定此面板" : "固定此面板",
+      action: () => toggleLock(panel.id),
+    },
+    {
       label: maximized ? "恢复最大化" : "最大化",
       action: () => { if (maximized) panel.api.exitMaximized(); else panel.api.maximize() },
       disabled: !maximized && !isGridGroup,
@@ -366,12 +345,36 @@ export type DockLayoutProps = IDockviewReactProps & {
    */
   hideGroupHeader?: (group: DockviewGroupPanel) => boolean
   /**
+   * 圆角（像素，默认 0）。
+   * - 标签：只圆朝外的两个角，贴着内容的两个角保持直角；有没有组间距都生效。
+   * - 组（含工作台侧栏组）：四个角都圆，面板内容的角被裁掉，只在 `groupGap > 0` 时生效，没有缝时组保持直角。
+   * - 浮动窗口：四个角都圆（外框、标题栏、内部组），有没有组间距都生效。
+   * - 拖放落点高亮框跟着组的圆角走；右键菜单、隐藏标签列表、工作台落点方块保持各自的小圆角。
+   * 写入停靠区外层容器的 `--dock-radius`；不传时也可以直接在样式里给 `.gan-dockview` 或其祖先设置该变量。
+   */
+  cornerRadius?: number
+  /**
+   * 组与组之间的间距（像素，默认 0，负数按 0 处理）。大于 0 时组之间露出 `--dock-gap` 颜色的缝，
+   * 最外圈的组与停靠区边缘之间也留同宽的缝；静止分隔线由缝取代，分割条的悬停与拖动高亮仍显示在缝里；
+   * 每个组带一圈 1px 淡色边框（`--dock-group-border`），活动组仍只靠活动标签上的主色线标记。
+   * 浮动窗口内部、工作台侧栏沿用同一个间距。间距参与布局计算，只能通过本属性设置，
+   * 不能只靠样式改（直接改 CSS 变量不会重新布局）。不传时沿用传入 `theme` 里的 `gap`（内置皮肤为 0）。
+   */
+  groupGap?: number
+  /**
    * 移除网格组时是否按原尺寸比例分配空出的空间（默认 true）。
    * 官方固定把空间在同一分割内的剩余组之间平均分配，本组件默认改为按比例；
    * 宿主自己负责移除后的尺寸时（如 DockWorkbench 在优先级可用时）传 false，
    * 避免先比例重分、再被宿主覆盖的重复布局。传 false 即官方行为，运行期变化会即时安装或还原。
    */
   keepProportionsOnGroupRemoval?: boolean
+  /**
+   * 标签右键菜单的二次加工：每次弹出菜单前，收到当前菜单项（默认菜单，或 `getTabContextMenuItems` 的返回值）
+   * 与被右键的标签，返回最终菜单项。用来在默认菜单上追加或删减，不必整份重写；
+   * 基础菜单为空数组（调用方用它关闭菜单）时不会调用，保持无菜单。工作台用它追加「自动收起此组」。
+   * 返回空数组则不弹出菜单。
+   */
+  extendTabContextMenu?: (items: DockLayoutTabMenuItem[], params: GetTabContextMenuItemsParams, context: DockLayoutTabMenuContext) => DockLayoutTabMenuItem[]
   /** 空白分组的内容，默认 GanDockviewEmptyGroup（提示与关闭入口） */
   emptyGroupComponent?: FunctionComponent<DockEmptyGroupProps>
   /**
@@ -385,21 +388,23 @@ export type DockLayoutProps = IDockviewReactProps & {
 /**
  * 停靠工作区容器，封装 DockviewReact 的统一主题与容器约束。
  * 面板内容、onReady 初始化与事件用法保持官方 API；父容器需提供明确高度。
- * 未传 theme 时跟随应用外观并在切换时即时更新；默认标签、组标题栏右端
- * 操作、中文右键菜单、溢出列表可访问名称与单标签铺满模式使用 GaN.UI 约定，
- * 均可通过同名 props 覆盖。
+ * 未传 theme 时跟随应用外观并在切换时即时更新；默认标签、中文右键菜单与
+ * 溢出列表可访问名称使用 GaN.UI 约定，均可通过同名 props 覆盖。
+ * 单面板组沿用官方紧凑单标签（`singleTabMode` 默认 "default"），外观与多面板组一致；
+ * 标签栏在上方时（含浮动窗口）单个标签铺满整行。圆角由 `cornerRadius` 设置、组间距由 `groupGap` 设置，默认都是 0（直角、无缝）。
  * 组内最后一个面板关闭或移走后组保留为空白分组（`closeEmptyGroups` 默认 false），
  * 其他组尺寸不变；空白分组被主动关闭时，空间按比例分给同一分割内的其余组。
  */
 export function DockLayout({
   theme,
   dndStrategy = "pointer",
-  singleTabMode = "fullwidth",
   defaultTabComponent = GanDockviewTab,
-  rightHeaderActionsComponent = GanDockviewHeaderActions,
   getTabContextMenuItems,
+  extendTabContextMenu,
   onHeaderPositionChange,
   hideGroupHeader,
+  cornerRadius,
+  groupGap,
   keepProportionsOnGroupRemoval = true,
   closeEmptyGroups = false,
   watermarkComponent,
@@ -410,7 +415,14 @@ export function DockLayout({
   ...props
 }: DockLayoutProps) {
   const applicationDark = useApplicationDark()
-  const resolvedTheme = theme ?? (applicationDark ? ganDockviewThemeDark : ganDockviewThemeLight)
+  const baseTheme = theme ?? (applicationDark ? ganDockviewThemeDark : ganDockviewThemeLight)
+  // 间距交给官方主题的 gap：它同时写进主网格、浮动窗口内部网格与边缘组（工作台侧栏）。
+  // 合并后的主题对象保持引用稳定，避免每次渲染都触发官方 updateTheme。
+  const effectiveGap = Math.max(0, groupGap ?? baseTheme.gap ?? 0) || 0
+  const resolvedTheme = useMemo<DockviewTheme>(
+    () => baseTheme.gap === effectiveGap ? baseTheme : { ...baseTheme, gap: effectiveGap },
+    [baseTheme, effectiveGap],
+  )
   const rootRef = useRef<HTMLDivElement>(null)
   const [api, setApi] = useState<DockviewApi | null>(null)
   const [lockedPanels, setLockedPanels] = useState<ReadonlySet<string>>(() => new Set())
@@ -421,6 +433,8 @@ export function DockLayout({
   const hideGroupHeaderRef = useRef(hideGroupHeader)
   hideGroupHeaderRef.current = hideGroupHeader
   const contextMenuPanelRef = useRef<string | null>(null)
+  // 标签栏方向变化不一定触发布局事件，方向观察器据此通知覆盖层圆角重新计算
+  const overlayCornersRef = useRef<(() => void) | null>(null)
   const resolveFloatingDockTargetRef = useRef(resolveFloatingDockTarget)
   resolveFloatingDockTargetRef.current = resolveFloatingDockTarget
   const toggle = useCallback((id: string) => {
@@ -438,16 +452,21 @@ export function DockLayout({
   }, [])
 
   const defaultTabMenu = useCallback((params: GetTabContextMenuItemsParams) => {
-    return buildDefaultTabMenu(params, id => lockedPanelsRef.current.has(id), notifyHeaderPosition)
-  }, [notifyHeaderPosition])
+    return buildDefaultTabMenu(params, id => lockedPanelsRef.current.has(id), toggle, notifyHeaderPosition)
+  }, [notifyHeaderPosition, toggle])
 
   // 调用方菜单完整覆盖默认项；只有真的会弹出菜单时才记录被右键的标签，
   // 供关闭菜单后回焦。返回空数组抑制菜单时不能留下错误的回焦目标。
+  const extendTabContextMenuRef = useRef(extendTabContextMenu)
+  extendTabContextMenuRef.current = extendTabContextMenu
+  const menuContext = useMemo<DockLayoutTabMenuContext>(() => ({ isPanelLocked: id => lockedPanelsRef.current.has(id) }), [])
   const resolveTabMenu = useCallback((params: GetTabContextMenuItemsParams) => {
-    const items = getTabContextMenuItems ? getTabContextMenuItems(params) : defaultTabMenu(params)
+    const base = getTabContextMenuItems ? getTabContextMenuItems(params) : defaultTabMenu(params)
+    const extend = extendTabContextMenuRef.current
+    const items = extend && base.length > 0 ? extend(base, params, menuContext) : base
     if (items.length > 0) contextMenuPanelRef.current = params.panel.id
     return items
-  }, [defaultTabMenu, getTabContextMenuItems])
+  }, [defaultTabMenu, getTabContextMenuItems, menuContext])
 
   useEffect(() => {
     if (!api) return
@@ -645,6 +664,10 @@ export function DockLayout({
       menu.dataset.ganMenuReady = "true"
       menu.tabIndex = -1
       menu.setAttribute("aria-label", "标签菜单")
+      // 官方在下一帧把菜单推回停靠区内（上下各留 10px）；菜单比停靠区还高时顶部会被推出去裁掉。
+      // 这里先按停靠区高度限制菜单，超出部分在菜单内滚动。
+      const area = menu.closest(".dv-popover-anchor")?.parentElement
+      if (area) menu.style.setProperty("--gan-menu-room", `${Math.max(area.clientHeight - 20, 120)}px`)
       const items = Array.from(menu.querySelectorAll<HTMLElement>(".dv-context-menu-item"))
         .filter(item => item.getAttribute("aria-disabled") !== "true")
       items.forEach((item, index) => {
@@ -738,7 +761,10 @@ export function DockLayout({
         activeDropdown = null
       }
       countChanged.forEach(updateLabel)
-      if (headerChanged) syncAll()
+      if (headerChanged) {
+        syncAll()
+        overlayCornersRef.current?.()
+      }
     })
     observer.observe(root, { childList: true, attributes: true, attributeFilter: ["class"], subtree: true })
     const subscriptions = [
@@ -751,11 +777,110 @@ export function DockLayout({
     }
   }, [api])
 
+  // renderer: "always" 的面板内容画在组之外的 .dv-render-overlay 上，不受组与浮动窗口圆角的裁切。
+  // 这里标出覆盖层与组（有间距时）或浮动窗口重合的角，样式按标记给这些角加圆角；
+  // 内容区与标签栏相接的两个角必须保持直角，所以不能四角一起圆。
+  // 只比较内容区与外框的几何位置，不依赖标签栏方向，四个方向与组内标签栏隐藏时都成立。
+  // 面板到覆盖层的对应关系取自 dockview-core 8.6.2 的内部结构（panel.view.content.element 的父节点），
+  // 结构不符时找不到覆盖层，不加圆角也不报错；升级后重跑 tests/dock-layout.spec.ts 的覆盖层贴角用例。
+  useEffect(() => {
+    const root = rootRef.current
+    const shell = root?.querySelector(".dv-shell")
+    if (!api || !root || !shell) return
+    let frame = 0
+    const overlayOf = (panel: DockviewGroupPanel["panels"][number]) => {
+      const content = (panel as unknown as { view?: { content?: { element?: HTMLElement } } }).view?.content?.element
+      const overlay = content?.parentElement
+      return overlay?.classList.contains("dv-render-overlay") ? overlay : null
+    }
+    const sync = () => {
+      frame = 0
+      if (!shell.querySelector(":scope > .dv-render-overlay")) return
+      const spaced = root.hasAttribute("data-group-gap")
+      for (const group of api.groups) {
+        const overlays = group.panels.map(overlayOf).filter((overlay): overlay is HTMLElement => overlay !== null)
+        if (overlays.length === 0) continue
+        const clips: DOMRect[] = []
+        if (spaced) clips.push(group.element.getBoundingClientRect())
+        const floating = group.element.closest(".dv-resize-container")
+        if (floating) clips.push(floating.getBoundingClientRect())
+        const content = group.element.querySelector(":scope > .dv-content-container")?.getBoundingClientRect()
+        const corners = new Set<string>()
+        if (content && content.width > 0 && content.height > 0) {
+          // 窗口外框带 1px 边框，内容区的角比外框内缩 1px，留 2px 容差
+          const near = (a: number, b: number) => Math.abs(a - b) <= 2
+          for (const clip of clips) {
+            if (near(content.left, clip.left) && near(content.top, clip.top)) corners.add("tl")
+            if (near(content.right, clip.right) && near(content.top, clip.top)) corners.add("tr")
+            if (near(content.right, clip.right) && near(content.bottom, clip.bottom)) corners.add("br")
+            if (near(content.left, clip.left) && near(content.bottom, clip.bottom)) corners.add("bl")
+          }
+        }
+        const value = Array.from(corners).join(" ")
+        for (const overlay of overlays) {
+          if (value) {
+            if (overlay.getAttribute("data-gan-corners") !== value) overlay.setAttribute("data-gan-corners", value)
+          } else overlay.removeAttribute("data-gan-corners")
+        }
+      }
+    }
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(sync) }
+    overlayCornersRef.current = schedule
+    // 浮动窗口与新增面板的最终尺寸由官方在后续帧里布局，布局事件到达时内容区可能还没到位；
+    // 覆盖层的尺寸是官方按内容区量出来写入的，它一变就重新计算。
+    const resizeObserver = new ResizeObserver(schedule)
+    shell.querySelectorAll(":scope > .dv-render-overlay").forEach(overlay => resizeObserver.observe(overlay))
+    schedule()
+    // 覆盖层直接挂在停靠区根节点下，只观察它的直接子节点，面板内容的变化不会进来
+    const observer = new MutationObserver(records => {
+      for (const record of records) {
+        record.addedNodes.forEach(node => { if (node instanceof Element && node.matches(".dv-render-overlay")) resizeObserver.observe(node) })
+        record.removedNodes.forEach(node => { if (node instanceof Element) resizeObserver.unobserve(node) })
+      }
+      schedule()
+    })
+    observer.observe(shell, { childList: true })
+    const subscriptions = [
+      api.onDidLayoutChange(schedule),
+      api.onDidAddPanel(schedule),
+      api.onDidMovePanel(schedule),
+    ]
+    return () => {
+      overlayCornersRef.current = null
+      if (frame) cancelAnimationFrame(frame)
+      observer.disconnect()
+      resizeObserver.disconnect()
+      subscriptions.forEach(subscription => subscription.dispose())
+    }
+  }, [api, effectiveGap])
+
+  // 布局前写入，首帧即按指定圆角绘制；不传时移除，交给样式里的 --dock-radius（默认 0）。
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    if (cornerRadius === undefined) root.style.removeProperty("--dock-radius")
+    else root.style.setProperty("--dock-radius", `${Math.max(0, cornerRadius)}px`)
+  }, [cornerRadius])
+
+  // 有间距时在外层容器上打标记并写入间距值：样式据此切换外观（单个组没有拆分时官方不会加 has-margin 类），
+  // 并用同样宽度的内边距在最外圈留缝。写在布局之前，缝的宽度与官方 gap 同一帧生效。
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    if (effectiveGap > 0) {
+      root.setAttribute("data-group-gap", "")
+      root.style.setProperty("--dock-gap-size", `${effectiveGap}px`)
+    } else {
+      root.removeAttribute("data-group-gap")
+      root.style.removeProperty("--dock-gap-size")
+    }
+  }, [effectiveGap])
+
   const surface = useMemo(
     () => ({ watermark: watermarkComponent, emptyGroup: emptyGroupComponent }),
     [watermarkComponent, emptyGroupComponent],
   )
-  // 值引用稳定：宿主每次渲染（工作台里页面会高频更新）都不应让所有页签与固定按钮跟着重渲染。
+  // 值引用稳定：宿主每次渲染（工作台里页面会高频更新）都不应让所有页签与固定标记跟着重渲染。
   const locks = useMemo(() => ({ lockedPanels, toggle }), [lockedPanels, toggle])
 
   return (
@@ -765,11 +890,9 @@ export function DockLayout({
           ref={rootRef}
           theme={resolvedTheme}
           dndStrategy={dndStrategy}
-          singleTabMode={singleTabMode}
           closeEmptyGroups={closeEmptyGroups}
           watermarkComponent={DockWatermarkHost}
           defaultTabComponent={defaultTabComponent}
-          rightHeaderActionsComponent={rightHeaderActionsComponent}
           getTabContextMenuItems={resolveTabMenu}
           className={cn("min-h-0 min-w-0", className)}
           {...props}

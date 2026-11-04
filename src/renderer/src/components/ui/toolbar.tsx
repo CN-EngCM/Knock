@@ -88,7 +88,7 @@ function ToolbarSearch({ className, ...props }: React.InputHTMLAttributes<HTMLIn
         type="search"
         aria-label={props["aria-label"] ?? "Search"}
         placeholder="Search"
-        className="h-full min-w-0 flex-1 border-0 bg-transparent px-(--space-md) text-xs outline-none placeholder:text-muted-foreground"
+        className="h-full min-w-0 flex-1 border-0 bg-transparent px-(--space-md) text-xs outline-none placeholder:text-dim-foreground"
         {...props}
       />
     </label>

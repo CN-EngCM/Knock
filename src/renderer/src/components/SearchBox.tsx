@@ -1,5 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, FileText, FolderOpen, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import botIcon from "@/assets/icons/bot.svg";
+import fileIcon from "@/assets/icons/file.svg";
+import folderOpenIcon from "@/assets/icons/folder-open.svg";
 import { TOOLS, type ToolId } from "@/tools/registry";
 import { api, type Expert, type Group, type Item, type ToolAliases } from "@/api/client";
 import { KindIcon } from "@/lib/kindIcon";
@@ -34,19 +37,15 @@ type Candidate =
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
     | { kind: "path"; label: "open" | "goto"; target: string };
 
-/** 候选行首图标：条目按类型（书签走 favicon），工具用注册表图标，专家与路径动作各配 Lucide 图标 */
+/** 候选行首图标：条目与工具取拟物图，专家和路径动作各配一张 */
 function candidateIcon(c: Candidate): React.ReactNode {
     if (c.kind === "item") return <KindIcon item={c.item} />;
     if (c.kind === "tool") {
-        const Icon = TOOLS.find((x) => x.id === c.id)?.icon;
-        return Icon ? <Icon className="size-4 text-muted-foreground" aria-hidden /> : null;
+        const icon = TOOLS.find((x) => x.id === c.id)?.icon;
+        return icon ? <img src={icon} alt="" className="size-[18px]" /> : null;
     }
-    if (c.kind === "expert") return <Bot className="size-4 text-muted-foreground" aria-hidden />;
-    return c.label === "open" ? (
-        <FileText className="size-4 text-muted-foreground" aria-hidden />
-    ) : (
-        <FolderOpen className="size-4 text-muted-foreground" aria-hidden />
-    );
+    if (c.kind === "expert") return <img src={botIcon} alt="" className="size-[18px]" />;
+    return <img src={c.label === "open" ? fileIcon : folderOpenIcon} alt="" className="size-[18px]" />;
 }
 
 type Props = {
@@ -358,7 +357,9 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                         sel ? "bg-(--state-selected) text-foreground" : "text-muted-foreground"
                                     }`}
                                 >
-                                    <span className="grid w-4 flex-none place-items-center">{candidateIcon(c)}</span>
+                                    <span className="grid w-[18px] flex-none place-items-center">
+                                        {candidateIcon(c)}
+                                    </span>
                                     <span className="min-w-0 flex-1 truncate">{title}</span>
                                     <span
                                         className={`max-w-[40%] flex-none truncate text-[10.5px] ${sel ? "text-muted-foreground" : "text-dim-foreground"}`}

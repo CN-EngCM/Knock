@@ -620,7 +620,7 @@ const STAGING_NAME = "knock-gallery-candidates";
 const PAGE_TIMEOUT_MS = 15000;
 // 页面 HTML 响应体上限（正常页面 <2MB，8MB 已很宽裕）：无界 res.text() 读超大页会撑内存
 const PAGE_MAX_BYTES = 8 * 1024 * 1024;
-// 伪装常规浏览器 UA：不少站点对非浏览器 UA 直接 403（favicon 取器名会被拦）
+// 伪装常规浏览器 UA：不少站点对非浏览器 UA 直接 403（自报取器名会被拦）
 const BROWSER_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const PAGE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
@@ -701,7 +701,7 @@ export function collectDiscard(): ApiResult<null> {
 // fromPartition 幂等：与隐藏渲染窗口、chromeLogin 里的写入方共享同一个 session 实例
 const importSession = session.fromPartition(IMPORT_PARTITION);
 
-/** 带超时与防盗链头的 GET（超时模式抄 favicon.ts：AbortController + finally 清定时器）。
+/** 带超时与防盗链头的 GET（AbortController + finally 清定时器）。
  *  Accept 区分页面/图片：CDN 按 Accept 做内容协商，图片请求带浏览器式的值才拿得到一致变体。
  *  Cookie 从抓取分区取（cookies.get({url}) 的 domain/path/secure 匹配即浏览器语义），
  *  没同步过登录态就是空——行为与匿名抓取完全一致。

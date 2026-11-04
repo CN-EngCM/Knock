@@ -193,7 +193,7 @@ export const zh = {
     "search.gotoFolder": "前往文件夹",
 
     // ── v2.2：工具区 / 终端区 ──
-    "tools.menu": "工具",
+    "tools.menu": "工具集",
     "tools.opened": "已打开",
     "tool.json.name": "json",
     "tool.json.desc": "JSON 格式化 / 压缩",
@@ -361,6 +361,7 @@ export const zh = {
     "gallery.tags.batchTitle": "批量添加标签",
     "gallery.tags.batchHint": "将添加到 {m} 张图片",
     "gallery.tags.placeholder": "输入标签，Enter / 逗号提交…",
+    "gallery.tags.noMatch": "没有匹配的标签，回车直接新建",
     "gallery.view.prev": "上一张",
     "gallery.view.next": "下一张",
     "gallery.view.zoomIn": "放大",

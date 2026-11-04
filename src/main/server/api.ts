@@ -6,7 +6,6 @@ import { autostartStatus, disableAutostart, enableAutostart } from "./autostart"
 import { parseNetscapeBookmarks } from "./bookmarks";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { searchSpotlight } from "./spotlight";
-import { loadFavicon } from "./favicon";
 import { applyHotkey, currentHotkey } from "../hotkey";
 import { launchItem } from "./launcher";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
@@ -152,7 +151,7 @@ import {
 
 export type ApiError =
     | { kind: "bad-request" } // 入参校验失败
-    | { kind: "not-found" } // 目标分组/条目/专家不存在，或 favicon、AI 模型配置未命中
+    | { kind: "not-found" } // 目标分组/条目/专家不存在，或 AI 模型配置未命中
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
     | { kind: "unauthorized" } // macOS 辅助功能未授权：双击热键的键盘钩子无法启动（主进程已弹引导）
     | { kind: "missing"; path: string } // 启动目标路径不存在
@@ -190,8 +189,6 @@ export interface MpApi {
     getHotkey(): Promise<ApiResult<{ hotkey: HotkeyId; presets: readonly HotkeyId[] }>>;
     setHotkey(hotkey: HotkeyId): Promise<ApiResult<{ hotkey: HotkeyId }>>;
     listShortcuts(refresh: boolean): Promise<ApiResult<{ shortcuts: Shortcut[] }>>;
-    /** favicon 二进制：bytes 经 IPC 结构化克隆传回，渲染进程拼 Blob */
-    getFavicon(domain: string): Promise<ApiResult<{ mime: string; bytes: Uint8Array<ArrayBuffer> }>>;
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
     // opts 供终端命令条目传入 cwd/label；不传时 cwd 缺省主目录、label 用 shell 标签。
     // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
@@ -520,16 +517,6 @@ export const apiHandlers: ApiHandlers = {
     listShortcuts: async (refresh) => {
         const shortcuts: Shortcut[] = await scanShortcuts(refresh === true);
         return { ok: true, data: { shortcuts } };
-    },
-
-    // ── favicon（书签图标）：首次请求时抓取并落盘缓存，之后直接回本地文件 ──
-    // 域名参数只放行 [a-z0-9.-]，杜绝路径穿越。
-    getFavicon: async (domain) => {
-        const d = domain.toLowerCase();
-        if (!/^[a-z0-9.-]+$/.test(d)) return badRequest;
-        const icon = await loadFavicon(d);
-        if (!icon) return notFound;
-        return { ok: true, data: { mime: icon.mime, bytes: new Uint8Array(icon.buf) } };
     },
 
     // ── 终端会话：spawn 失败（shell 丢失等）按 not-found 语义返回；
