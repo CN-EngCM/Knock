@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, session, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } from "electron";
 import { join } from "node:path";
 // 纯工具模块（不开库、不触 settings），可在引导前静态 import
 import { nativeDialogOpen } from "./server/util/nativeDialog";
@@ -67,7 +67,7 @@ app.setAppUserModelId("com.knock.app"); // Windows 托盘/任务栏分组标识
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
-    app.whenReady().then(async () => {
+    const booted = app.whenReady().then(async () => {
         // 1) 开库前先确定数据目录：无指针弹首次引导，指针失效走恢复流程（可能重启/退出）
         await resolveDataDirOnBoot();
 
@@ -174,6 +174,7 @@ if (!app.requestSingleInstanceLock()) {
         );
         initHotkey(toggleWindow);
     });
+    booted.catch(showBootFailure);
 
     app.on("before-quit", () => {
         quitting = true;
@@ -183,6 +184,23 @@ if (!app.requestSingleInstanceLock()) {
 
     // 窗口被隐藏而非关闭，永远不会全部关闭；不退出（macOS 惯例同样处理）
     app.on("window-all-closed", () => {});
+}
+
+// ── 启动失败 ──
+// 开库、建表、迁移都在启动链上。任何一步出错时进程不会自己退出：没有窗口也没有托盘，
+// 还占着单实例锁，用户再双击也只是把启动请求交给这个看不见的进程，表现为「打不开」。
+// 所以必须明确提示并退出。文案内联双语，理由同 dataBoot.ts（主进程不引渲染层的 i18n）。
+function showBootFailure(e: unknown): void {
+    console.error("[boot] failed:", e);
+    const zh = app.getLocale().startsWith("zh");
+    const reason = e instanceof Error ? e.message : String(e);
+    dialog.showErrorBox(
+        zh ? "敲敲启动失败" : "Knock failed to start",
+        zh
+            ? `${reason}\n\n如果刚换过程序版本，请改用最新版本。`
+            : `${reason}\n\nIf you recently switched versions, use the latest one.`,
+    );
+    app.exit(1);
 }
 
 // ── 界面主题（GaN.UI 深浅双主题）──
