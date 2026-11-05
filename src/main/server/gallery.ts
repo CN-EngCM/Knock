@@ -1101,7 +1101,7 @@ export async function renderPage(url: string): Promise<ApiResult<GalleryPageResu
 
 /** 魔数嗅探真实格式：CDN 在 .jpg URL 下按 Chrome UA 内容协商回 webp 是常态，
  *  按 URL 扩展名定格式会让 mime 说谎，浏览器拒解码 → 无缩略图。认不出返回空串 */
-function sniffFormat(buf: Buffer): string {
+export function sniffFormat(buf: Buffer): string {
     if (buf.length >= 12) {
         if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpg";
         if (

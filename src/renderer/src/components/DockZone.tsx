@@ -19,6 +19,7 @@ import { cleanTermTitle, TERM_TITLE_MAX } from "@/lib/termTitle";
 import { useI18n } from "@/i18n/useI18n";
 import { ConfirmDialog } from "./dialogs/ConfirmDialog";
 import { FormRow } from "./dialogs/settings/shared";
+import { ToolWorkspaceContext } from "@/tools/toolInput";
 import { ToolHome } from "./ToolHome";
 
 const DockTerm = lazy(() => import("./DockTerm").then((m) => ({ default: m.DockTerm })));
@@ -97,7 +98,8 @@ export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSett
     const components = useMemo(
         () => ({
             tool: ({ params }: IDockviewPanelProps) => {
-                const meta = toolMeta((params as { toolId: ToolId }).toolId);
+                const { toolId, workspaceId } = params as { toolId: ToolId; workspaceId: number };
+                const meta = toolMeta(toolId);
                 const C = meta.Component;
                 if (!C) return null;
                 return (
@@ -109,7 +111,10 @@ export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSett
                                 </div>
                             }
                         >
-                            <C openSettings={onOpenSettings} />
+                            {/* 面板所在工作区：素材与聚焦信号按它投递（见 tools/toolInput.ts） */}
+                            <ToolWorkspaceContext.Provider value={workspaceId}>
+                                <C openSettings={onOpenSettings} />
+                            </ToolWorkspaceContext.Provider>
                         </Suspense>
                     </div>
                 );

@@ -7,6 +7,8 @@ import type { ThemeId } from "../../../main/server/schemas";
 export type {
     Item,
     Workspace,
+    Note,
+    NoteImage,
     Kind,
     HotkeyId,
     CreateItemInput,
@@ -171,6 +173,12 @@ export const api: MpApi = {
     galleryChromeLogin: (url) => invoke("galleryChromeLogin", url),
     galleryChromeSync: (url) => invoke("galleryChromeSync", url),
     galleryChromeClear: () => invoke("galleryChromeClear"),
+    notesList: (workspaceId) => invoke("notesList", workspaceId),
+    notesCount: (workspaceId) => invoke("notesCount", workspaceId),
+    noteCreate: (input) => invoke("noteCreate", input),
+    noteUpdate: (input) => invoke("noteUpdate", input),
+    noteDelete: (id) => invoke("noteDelete", id),
+    noteOpenImage: (imageId) => invoke("noteOpenImage", imageId),
 };
 
 /** 终端输出流订阅（preload 事件通道，不走 MpApi 的请求-响应契约）；返回退订函数 */

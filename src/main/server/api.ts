@@ -18,6 +18,7 @@ import {
     DB_NAME,
     FAVICONS_NAME,
     GALLERY_NAME,
+    NOTES_NAME,
     canAcceptAsDataDir,
     defaultDataRoot,
     removeDbArtifacts,
@@ -35,6 +36,7 @@ import {
     setActiveWorkspace,
     updateWorkspaceFolder,
 } from "./workspaces";
+import { countNotes, createNote, deleteNote, listNotes, openImage as noteOpenImage, updateNote } from "./notes";
 import {
     addTagsToImages as galleryAddTagsToImages,
     allTags as galleryAllTags,
@@ -88,6 +90,10 @@ import {
     createExpertSchema,
     createItemSchema,
     createWorkspaceSchema,
+    noteCreateSchema,
+    noteIdArgSchema,
+    noteUpdateSchema,
+    noteWorkspaceSchema,
     galleryGroupSchema,
     galleryIdsSchema,
     galleryImportSchema,
@@ -150,6 +156,7 @@ import {
     type TranslateConfigPatch,
     type TranslateInput,
     type UpdateItemInput,
+    type Note,
     type Workspace,
 } from "./schemas";
 
@@ -330,6 +337,23 @@ export interface MpApi {
     galleryChromeSync(url: string): Promise<ApiResult<{ count: number }>>;
     /** 清除登录态：关专用 Chrome、删其 profile、清抓取分区 cookie */
     galleryChromeClear(): Promise<ApiResult<null>>;
+
+    // ── 便签（工具 notes）：按工作区隔离；图片字节落数据目录 notes/，经 mpimg://note/<图片id> 读取 ──
+    /** 该工作区全部便签（创建时间倒序，含图片列表，不分页） */
+    notesList(workspaceId: number): Promise<ApiResult<Note[]>>;
+    /** 删除工作区确认框用 */
+    notesCount(workspaceId: number): Promise<ApiResult<number>>;
+    noteCreate(input: { workspaceId: number; text: string; images: Uint8Array[] }): Promise<ApiResult<Note>>;
+    /** 保留的图片按 keepImageIds 顺序在前，新图追加在后 */
+    noteUpdate(input: {
+        id: number;
+        text: string;
+        keepImageIds: number[];
+        newImages: Uint8Array[];
+    }): Promise<ApiResult<null>>;
+    noteDelete(id: number): Promise<ApiResult<null>>;
+    /** 用系统默认程序打开便签图片 */
+    noteOpenImage(imageId: number): Promise<ApiResult<null>>;
 }
 
 /** 处理器表类型：与 MpApi 逐方法对齐（参数与返回值都进入编译期检查） */
@@ -712,6 +736,10 @@ export const apiHandlers: ApiHandlers = {
             if (existsSync(join(oldDir, GALLERY_NAME))) {
                 await cp(join(oldDir, GALLERY_NAME), join(dest, GALLERY_NAME), { recursive: true });
             }
+            // 便签图片同款：行在 db 里跟着走，文件不搬就全成了裂图
+            if (existsSync(join(oldDir, NOTES_NAME))) {
+                await cp(join(oldDir, NOTES_NAME), join(dest, NOTES_NAME), { recursive: true });
+            }
 
             // 校验副本可整库读，并顺手把当前窗口状态写进副本：旧库稍后会被删除，
             // 而窗口 move/resize 是 500ms 防抖落库，最后一段状态多半还没写盘——不补
@@ -991,6 +1019,38 @@ export const apiHandlers: ApiHandlers = {
         return galleryChromeSync(v.url);
     },
     galleryChromeClear: async () => galleryChromeClear(),
+
+    // ── 便签：入口只做 zod 校验与转发，业务在 server/notes.ts ──
+    notesList: async (workspaceId) => {
+        const v = guard(noteWorkspaceSchema, { workspaceId });
+        if (!v) return badRequest;
+        return listNotes(v.workspaceId);
+    },
+    notesCount: async (workspaceId) => {
+        const v = guard(noteWorkspaceSchema, { workspaceId });
+        if (!v) return badRequest;
+        return countNotes(v.workspaceId);
+    },
+    noteCreate: async (input) => {
+        const v = guard(noteCreateSchema, input);
+        if (!v) return badRequest;
+        return createNote(v.workspaceId, v.text, v.images);
+    },
+    noteUpdate: async (input) => {
+        const v = guard(noteUpdateSchema, input);
+        if (!v) return badRequest;
+        return updateNote(v.id, v.text, v.keepImageIds, v.newImages);
+    },
+    noteDelete: async (id) => {
+        const v = guard(noteIdArgSchema, { id });
+        if (!v) return badRequest;
+        return deleteNote(v.id);
+    },
+    noteOpenImage: async (imageId) => {
+        const v = guard(noteIdArgSchema, { id: imageId });
+        if (!v) return badRequest;
+        return noteOpenImage(v.id);
+    },
 };
 
 // 别名读回：只返回有值的键（未设置/被清空的工具不出现）

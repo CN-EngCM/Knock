@@ -36,6 +36,14 @@
 - `workspaces`：工作区（名字、文件夹、排序、builtin 标记；临时工作区 folder 为空串）。
 - `items`：`workspace_id` 记条目归属，空 = 左侧快捷启动，数字 = 该工作区的工具栏；删除工作区时外键级联删条目。旧库只加列不回填，已有条目全部留在左侧。
 - `gallery_groups` / `gallery_images` / `gallery_tags` / `gallery_wall`：图库（工具 gallery）的分组、图片元数据、图片 tag、图片墙。
+- `notes` / `note_images`：便签（工具 notes）。`notes.workspace_id` 外键级联到 `workspaces`，`created_at` / `updated_at` 是毫秒时间戳；`note_images` 存格式（jpg/png/gif/webp/bmp，主进程按文件头判定）与顺序，外键级联到 `notes`。`note_images.id` 用 `AUTOINCREMENT` 不复用，这样 `mpimg://note/<id>` 不会命中旧图缓存，别改掉。文字不 trim 原样存，全是空白时存空串。
+
+## 便签文件
+
+- 图片字节原样写进数据目录 `notes/<图片id>.<format>`，与图库完全分开，经 `mpimg://note/<图片id>` 读取，不走 IPC 传字节（`mpimg` 的 host 除 `orig|thumb|cand` 外多一个 `note`）。
+- 为什么这样存：放项目文件夹的话，临时工作区没有文件夹，改工作区文件夹后便签会「丢」，密钥还可能被误提交进 git；放图库会混进分组和去重规则，删除互相牵扯；图片放 SQLite 的话，一条能有多张图，库涨得快，读写也都压在主进程上。
+- 外键级联只删行不删文件，所以删便签、删工作区时代码先查出文件再删行、之后尽力删文件，删失败不报错。保存失败不留半截：先写行再写文件，文件写失败就删掉本次的行和已写文件。
+- `notes/` 与 `gallery/`、favicons 同在改数据目录的三处：`util/dataLocation.ts` 的 `migrateDataFiles`、`removeDbArtifacts`，和 `api.ts` 的 `changeDataDir`（它自己单独复制 favicons、gallery、notes，新增数据目录别漏）。
 
 ## 图库文件
 

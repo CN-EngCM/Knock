@@ -9,6 +9,7 @@ import { apiHandlers } from "./server/api";
 import { killAllSessions, setPtySink } from "./server/pty";
 import { setAiSink } from "./server/ai";
 import { serveCandidate, serveImage } from "./server/gallery";
+import { serveNoteImage } from "./server/notes";
 import { freshClipboardText, startClipWatch } from "./clipWatch";
 import { initHotkey, shutdownHotkey, unlockForeground } from "./hotkey";
 import { loadWindowState, trackWindowState } from "./windowState";
@@ -58,8 +59,8 @@ export function startApp(): void {
         win.setBackgroundColor(THEME_BG[currentTheme]);
     });
 
-    // ── mpimg 协议：mpimg://<orig|thumb>/<id>（库内图）与 mpimg://cand/<n>（网址导入候选），
-    //    图片直读不走 IPC 字节。host 只认三个 kind，path 段必须纯数字，其余一律 404；
+    // ── mpimg 协议：mpimg://<orig|thumb>/<id>（库内图）、mpimg://cand/<n>（网址导入候选）
+    //    与 mpimg://note/<图片id>（便签图片），图片直读不走 IPC 字节。host 只认四个 kind，path 段必须纯数字，其余一律 404；
     //    必须在数据目录引导完成后注册（serveImage 要读指针目录下的库）──
     // 响应一律带 access-control-allow-origin: *（含 404：CORS 下缺这个头，页面看到的是网络错误而不是 404，
     // 缩略图 Worker 就分不清「还没生成」和「请求失败」）。放 * 是安全的：协议只注册在默认 session，
@@ -69,11 +70,15 @@ export function startApp(): void {
         const cors = { "access-control-allow-origin": "*" };
         const { host, pathname } = new URL(request.url);
         const id = pathname.slice(1);
-        if ((host !== "orig" && host !== "thumb" && host !== "cand") || !/^\d+$/.test(id)) {
+        if ((host !== "orig" && host !== "thumb" && host !== "cand" && host !== "note") || !/^\d+$/.test(id)) {
             return new Response(null, { status: 404, headers: cors });
         }
         const hit =
-            host === "cand" ? await serveCandidate(Number(id)) : await serveImage(host as "orig" | "thumb", Number(id));
+            host === "cand"
+                ? await serveCandidate(Number(id))
+                : host === "note"
+                  ? await serveNoteImage(Number(id))
+                  : await serveImage(host, Number(id));
         if (!hit) return new Response(null, { status: 404, headers: cors });
         return new Response(new Uint8Array(hit.buf), { headers: { ...cors, "content-type": hit.mime } });
     });

@@ -40,7 +40,7 @@ import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { disposeTerm, setTermFont } from "./components/termStore";
 import type { DockviewApi } from "@/components/ui/dock-layout";
 import { toolMeta, type ToolId } from "./tools/registry";
-import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
+import { clearToolInput, dispatchToolFocus, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
 import { NameDialog } from "./components/dialogs/NameDialog";
 import { WorkspaceDialog } from "./components/dialogs/WorkspaceDialog";
@@ -525,11 +525,14 @@ export default function App() {
                     id: `tool:${id}`,
                     component: "tool",
                     title: t(toolMeta(id).nameKey),
-                    params: { toolId: id },
+                    params: { toolId: id, workspaceId: ws },
                 });
         });
-        if (input != null || expertId != null) dispatchToolInput({ tool: id, text: input ?? "", expertId });
-        else clearToolInput(id);
+        // 素材与聚焦信号都带上工作区 id：只有这个工作区里的面板会收到
+        if (input != null || expertId != null)
+            dispatchToolInput({ tool: id, text: input ?? "", expertId, workspaceId: ws });
+        else clearToolInput(id, ws);
+        dispatchToolFocus(id, ws);
     }
 
     // ── 终端会话生命周期：每个会话一块 dock 面板（term:<会话号>）──
@@ -705,6 +708,20 @@ export default function App() {
     // 删除工作区前的条目数：确认框据此说明会连带删掉多少快捷启动
     const deletingWorkspaceItemCount =
         dialog.kind === "ws-delete" ? items.filter((item) => item.workspaceId === dialog.workspace.id).length : 0;
+    // 便签不在前端全量数据里，确认框打开时现查一次条数
+    const [deletingNoteCount, setDeletingNoteCount] = useState(0);
+    const deletingWorkspaceId = dialog.kind === "ws-delete" ? dialog.workspace.id : null;
+    useEffect(() => {
+        setDeletingNoteCount(0);
+        if (deletingWorkspaceId === null) return;
+        let alive = true;
+        void api.notesCount(deletingWorkspaceId).then((r) => {
+            if (alive && r.ok) setDeletingNoteCount(r.data);
+        });
+        return () => {
+            alive = false;
+        };
+    }, [deletingWorkspaceId]);
 
     return (
         <TooltipProvider>
@@ -1037,9 +1054,17 @@ export default function App() {
                     }
                     description={
                         dialog.kind === "ws-delete"
-                            ? deletingWorkspaceItemCount > 0
-                                ? `${t("ws.deleteHint")} ${t("ws.deleteItemsPrefix")}${deletingWorkspaceItemCount}${t("ws.deleteItemsSuffix")}`
-                                : t("ws.deleteHint")
+                            ? [
+                                  t("ws.deleteHint"),
+                                  deletingWorkspaceItemCount > 0
+                                      ? `${t("ws.deleteItemsPrefix")}${deletingWorkspaceItemCount}${t("ws.deleteItemsSuffix")}`
+                                      : "",
+                                  deletingNoteCount > 0
+                                      ? `${t("ws.deleteItemsPrefix")}${deletingNoteCount}${t("ws.deleteNotesSuffix")}`
+                                      : "",
+                              ]
+                                  .filter(Boolean)
+                                  .join(" ")
                             : undefined
                     }
                     onClose={() => setDialog({ kind: "none" })}

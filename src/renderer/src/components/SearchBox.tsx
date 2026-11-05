@@ -22,6 +22,9 @@ import { useI18n } from "@/i18n/useI18n";
 //   Enter 即注入，保住「复制 → 呼出 → Enter」的素材流契约。
 // 注入契约：只要从推荐工具进入，一律注入「chip ?? 手打 query」，
 //   没有旧的「无命中升格为素材」隐形规则。
+// 工具名完全一致（用户决策，对所有工具一样）：没有素材 chip、且打的字等于某工具的显示名 / id / 别名时，
+//   该工具排在搜索结果第一位（吃文本的工具平时不进搜索结果，只有这种情况才进），选它只打开、不带入文字；
+//   推荐区不受影响，所以同一个工具可能出现两次，选哪一行都只打开。选其他工具的推荐行仍照常带入。
 // 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query。
 // 本地路径直达：输入像绝对路径且真实存在时，命中区顶部多一组「── 路径 ──」
 //   动作行（文件 = 打开文件 + 前往所在目录；文件夹 = 前往），纯手打时 Enter 直接落第一行。
@@ -29,10 +32,12 @@ import { useI18n } from "@/i18n/useI18n";
 const MAX_CANDIDATES = 9;
 const CHIP_MAX_CHARS = 32;
 const PATH_PROBE_DEBOUNCE_MS = 200;
+/** 推荐区基础顺序里排最前的工具（便签）；不动 TOOLS 数组，工具首页与工具集菜单的顺序另算 */
+const REC_FIRST: ToolId = "notes";
 
 type Candidate =
     | { kind: "item"; item: Item }
-    | { kind: "tool"; id: ToolId; name: string; desc: MessageKey }
+    | { kind: "tool"; id: ToolId; name: string; desc: MessageKey; exact?: boolean }
     /** 勾了「推荐到搜索栏」的 AI 专家：进推荐区一行 */
     | { kind: "expert"; expert: Expert }
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
@@ -83,6 +88,11 @@ function parentDir(p: string): string {
     return p.match(/^.*[\\/]/)?.[0] ?? p;
 }
 
+/** 工具的别名列表（设置页存成空格/逗号分隔的串） */
+function aliasesOf(aliases: ToolAliases, id: ToolId): string[] {
+    return (aliases[id] ?? "").split(/[\s,，]+/).filter(Boolean);
+}
+
 /** chip 单行展示：空白折叠 + 按码点截断；剪贴板可能是几 MB 的文本，先粗截再处理 */
 function chipLabel(text: string): string {
     const flat = text.slice(0, 256).replace(/\s+/g, " ").trim();
@@ -126,7 +136,7 @@ export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPa
                 if (out.length >= MAX_CANDIDATES) break;
                 const name = t(tool.nameKey);
                 const desc = tool.descKey;
-                const aliases = (toolAliases[tool.id] ?? "").split(/[\s,，]+/).filter(Boolean);
+                const aliases = aliasesOf(toolAliases, tool.id);
                 const hit =
                     name.toLowerCase().includes(q) ||
                     tool.id.includes(q) ||
@@ -138,15 +148,41 @@ export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPa
         return { matches: out };
     }, [q, items, t, toolAliases]);
 
-    // 命中区：条目 + 不吃素材的工具；能吃素材的工具恒住推荐区，不在命中区重复出现
-    const hits = useMemo(
-        () => matches.filter((m) => m.kind !== "tool" || !TOOLS.find((x) => x.id === m.id)?.acceptsText),
-        [matches],
-    );
+    // 工具名完全一致：只在没有素材 chip 时生效（有 chip 时「带复制内容」优先，见文件头注释）
+    const exactTool = useMemo(() => {
+        const typed = query.trim().toLowerCase();
+        if (clip !== null || !typed) return null;
+        return (
+            TOOLS.find(
+                (tool) =>
+                    t(tool.nameKey).toLowerCase() === typed ||
+                    tool.id === typed ||
+                    aliasesOf(toolAliases, tool.id).some((a) => a.toLowerCase() === typed),
+            ) ?? null
+        );
+    }, [clip, query, t, toolAliases]);
 
-    // 推荐工具：能吃文本素材的工具，按嗅探结果置顶
+    // 命中区：条目 + 不吃素材的工具；能吃素材的工具恒住推荐区，不在命中区重复出现。
+    // 唯一例外是工具名完全一致的那个工具：排在命中区第一位，压在同名快捷启动前面
+    const hits = useMemo(() => {
+        const rest = matches.filter(
+            (m) => m.kind !== "tool" || (m.id !== exactTool?.id && !TOOLS.find((x) => x.id === m.id)?.acceptsText),
+        );
+        if (!exactTool) return rest;
+        const exactRow: Candidate = {
+            kind: "tool",
+            id: exactTool.id,
+            name: t(exactTool.nameKey),
+            desc: exactTool.descKey,
+            exact: true,
+        };
+        return [exactRow, ...rest];
+    }, [matches, exactTool, t]);
+
+    // 推荐工具：能吃文本素材的工具，基础顺序便签在前，再按嗅探结果把命中项置顶（其余相对顺序不变）
     const recTools = useMemo(() => {
-        const list = TOOLS.filter((x) => x.acceptsText);
+        const accepting = TOOLS.filter((x) => x.acceptsText);
+        const list = [...accepting.filter((x) => x.id === REC_FIRST), ...accepting.filter((x) => x.id !== REC_FIRST)];
         const top = sniffTop((clip ?? query).trim());
         return top ? [...list].sort((a, b) => (a.id === top ? -1 : b.id === top ? 1 : 0)) : list;
     }, [clip, query]);
@@ -218,7 +254,8 @@ export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPa
             onOpenItem(c.item);
         } else if (c.kind === "tool") {
             const accepts = TOOLS.find((x) => x.id === c.id)?.acceptsText;
-            onOpenTool(c.id, accepts ? injectSource : null);
+            // 工具名完全一致时选哪一行（命中区或推荐区）都只打开，不带入打的字
+            onOpenTool(c.id, accepts && c.id !== exactTool?.id ? injectSource : null);
         } else if (c.kind === "expert") {
             // 专家行：素材 chip ?? query 一起交给 ai（没有则 null——只切到该专家正常打开）
             onOpenTool("ai", injectSource, c.expert.id);
@@ -322,7 +359,7 @@ export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPa
                                     c.kind === "item"
                                         ? `i${c.item.id}`
                                         : c.kind === "tool"
-                                          ? `t${c.id}`
+                                          ? `t${c.id}${c.exact ? "-hit" : ""}`
                                           : c.kind === "expert"
                                             ? `e${c.expert.id}`
                                             : `p${c.label}${c.target}`

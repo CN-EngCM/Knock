@@ -1,5 +1,6 @@
 import db from "./db";
 import { existsSync, statSync } from "node:fs";
+import { imagesOfWorkspace, removeNoteFiles } from "./notes";
 import { getSetting, setSetting } from "./util/settings";
 import type { Workspace } from "./schemas";
 // type-only import 编译期擦除，不构成运行时循环依赖
@@ -75,12 +76,15 @@ export function updateWorkspaceFolder(id: number, folder: string): ApiResult<nul
     return { ok: true, data: null };
 }
 
-// 只删工作区行：停靠区面板是运行时状态，由渲染端先逐个关闭；条目由外键 ON DELETE CASCADE 一起删
+// 只删工作区行：停靠区面板是运行时状态，由渲染端先逐个关闭；条目与便签行由外键 ON DELETE CASCADE 一起删，
+// 便签图片文件级联管不到，所以先取出文件清单，删行后尽力删文件（删失败不报错）
 export function deleteWorkspace(id: number): ApiResult<null> {
     const row = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(id) as { builtin: number } | undefined;
     if (!row) return { ok: false, error: { kind: "not-found" } };
     if (row.builtin !== 0) return { ok: false, error: { kind: "bad-request" } };
+    const noteImages = imagesOfWorkspace(id);
     db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+    void removeNoteFiles(noteImages);
     return { ok: true, data: null };
 }
 

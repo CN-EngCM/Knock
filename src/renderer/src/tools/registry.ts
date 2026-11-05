@@ -8,6 +8,7 @@ import bracesIcon from "@/assets/icons/braces.svg";
 import fileSearchIcon from "@/assets/icons/file-search.svg";
 import imagesIcon from "@/assets/icons/images.svg";
 import languageIcon from "@/assets/icons/language.svg";
+import notesIcon from "@/assets/icons/notes.svg";
 import qrCodeIcon from "@/assets/icons/qr-code.svg";
 import scanIcon from "@/assets/icons/scan.svg";
 import sparklesIcon from "@/assets/icons/sparkles.svg";
@@ -95,6 +96,15 @@ export const TOOLS: readonly ToolMeta[] = [
         descKey: "tool.terminal.desc",
         icon: terminalIcon,
         Component: null,
+    },
+    {
+        id: "notes",
+        nameKey: "tool.notes.name",
+        descKey: "tool.notes.desc",
+        icon: notesIcon,
+        // 排在数组末尾是为了不改工具首页与工具集菜单的顺序；搜索框推荐区把它排第一是 SearchBox 的事
+        acceptsText: true,
+        Component: lazy(() => import("./NotesTool")),
     },
 ];
 

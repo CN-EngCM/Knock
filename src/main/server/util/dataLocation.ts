@@ -14,6 +14,8 @@ import { join, resolve } from "node:path";
 export const DB_NAME = "mypage.db";
 export const FAVICONS_NAME = "favicons";
 export const GALLERY_NAME = "gallery";
+// 便签图片目录（server/notes.ts）
+export const NOTES_NAME = "notes";
 // 受限站登录态（专用 Chrome 实例的持久 profile，见 server/chromeLogin.ts）
 export const CHROME_PROFILE_NAME = "chrome-profile";
 
@@ -118,6 +120,8 @@ export function migrateDataFiles(from: string, target: string): void {
     const hasFavicons = existsSync(faviconsSrc);
     const gallerySrc = join(from, GALLERY_NAME);
     const hasGallery = existsSync(gallerySrc);
+    const notesSrc = join(from, NOTES_NAME);
+    const hasNotes = existsSync(notesSrc);
     const chromeSrc = join(from, CHROME_PROFILE_NAME);
     const hasChrome = existsSync(chromeSrc);
 
@@ -125,6 +129,7 @@ export function migrateDataFiles(from: string, target: string): void {
     for (const [src, dst] of dbFiles) cpSync(src, dst);
     if (hasFavicons) cpSync(faviconsSrc, join(target, FAVICONS_NAME), { recursive: true });
     if (hasGallery) cpSync(gallerySrc, join(target, GALLERY_NAME), { recursive: true });
+    if (hasNotes) cpSync(notesSrc, join(target, NOTES_NAME), { recursive: true });
     if (hasChrome) cpSync(chromeSrc, join(target, CHROME_PROFILE_NAME), { recursive: true });
 
     // 校验：复制的文件齐全，且主库大小与源一致（不一致 = 复制中途出错，库不完整）
@@ -176,13 +181,14 @@ export function upgradeLegacyData(): boolean {
     return false;
 }
 
-/** 删某目录下的库文件、图标缓存与图库（只删具名路径，目录里其他东西一概不碰） */
+/** 删某目录下的库文件、图标缓存、图库与便签图片（只删具名路径，目录里其他东西一概不碰） */
 export function removeDbArtifacts(dir: string): void {
     for (const name of [DB_NAME, `${DB_NAME}-wal`, `${DB_NAME}-shm`]) {
         rmSync(join(dir, name), { force: true });
     }
     rmSync(join(dir, FAVICONS_NAME), { recursive: true, force: true });
     rmSync(join(dir, GALLERY_NAME), { recursive: true, force: true });
+    rmSync(join(dir, NOTES_NAME), { recursive: true, force: true });
     // Chrome profile 可能正被专用实例锁着（迁移前用户没关）：残留不挡迁移，
     // 下次 chromeClear 或手动清理；其余具名数据此刻没有进程持有
     try {

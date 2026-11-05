@@ -113,7 +113,7 @@ export type FontConfig = { uiFont: string; monoFont: string };
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/renderer/src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai", "gallery", "terminal"] as const;
+export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai", "gallery", "terminal", "notes"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配
@@ -417,6 +417,31 @@ export type Expert = {
     position: number;
 };
 
+// ── 便签（工具 notes）──
+// 上限常量渲染端手工复制一份（src/renderer/src/tools/notes/limits.ts）；这里是主进程的硬兜底。
+export const NOTE_FORMATS = ["jpg", "png", "gif", "webp", "bmp"] as const;
+export const NOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+export const NOTE_MAX_IMAGES = 20;
+export const NOTE_TEXT_MAX_CHARS = 100_000;
+
+const noteTextSchema = z.string().max(NOTE_TEXT_MAX_CHARS);
+const noteImageBytesSchema = z.instanceof(Uint8Array).refine((b) => b.length > 0 && b.length <= NOTE_IMAGE_MAX_BYTES);
+const noteIdSchema = z.number().int().positive();
+
+export const noteWorkspaceSchema = z.object({ workspaceId: noteIdSchema });
+export const noteCreateSchema = z.object({
+    workspaceId: noteIdSchema,
+    text: noteTextSchema,
+    images: z.array(noteImageBytesSchema).max(NOTE_MAX_IMAGES),
+});
+export const noteUpdateSchema = z.object({
+    id: noteIdSchema,
+    text: noteTextSchema,
+    keepImageIds: z.array(noteIdSchema).max(NOTE_MAX_IMAGES),
+    newImages: z.array(noteImageBytesSchema).max(NOTE_MAX_IMAGES),
+});
+export const noteIdArgSchema = z.object({ id: noteIdSchema });
+
 // ── 图库行类型（与 SQLite 查询结果/SQL 别名一一对应，前端经类型化 RPC 复用）──
 
 export type GalleryGroup = {
@@ -456,4 +481,20 @@ export type GalleryOverview = {
     tags: string[];
     hasPassword: boolean;
     wallCount: number;
+};
+
+// ── 便签行类型 ──
+
+export type NoteImage = {
+    id: number;
+    /** jpg/png/gif/webp/bmp，由主进程按文件头判定 */
+    format: string;
+};
+
+export type Note = {
+    id: number;
+    text: string;
+    /** 创建时间戳 ms（列表按它倒序） */
+    createdAt: number;
+    images: NoteImage[];
 };

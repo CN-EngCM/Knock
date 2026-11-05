@@ -22,7 +22,7 @@
 2. `src/renderer/src/tools/registry.ts`：`TOOLS` 数组追加一条 `ToolMeta`（必填 `icon`：Lucide 图标组件，工具首页卡片与工具菜单共用）。
 3. `src/renderer/src/i18n/zh.ts` 与 `en.ts` **同时**补 `tool.<id>.name` / `tool.<id>.desc`（en 用 `Record<MessageKey, string>` 强制对齐）。
 
-`acceptsText` 只给「能吃文本素材」的工具标（见 §4）。
+`acceptsText` 只给「能吃文本素材」的工具标（见 §4）。新工具要排进搜索框推荐区的特定位置时，在 `SearchBox.tsx` 里排，不要为此挪 `TOOLS` 数组（它决定工具首页和工具集菜单的顺序，便签就是追加在数组末尾）。
 
 ## 3. 组件契约（src/renderer/src/tools/）
 
@@ -31,6 +31,7 @@
   - `openSettings` 由 App → DockZone 透传，供「缺配置」类状态直达设置页；用不上的工具不接。
 - 组件在 registry 里一律 `lazy(() => import(...))`；工具的重依赖在组件文件里**静态 import** 即可——chunk 本身就是懒加载的，关闭即整体卸载。
 - 生命周期铁律：**关闭 tab = 卸载组件**，状态与代码库一起释放，重开回初始态；切换 tab 是 `display:none` 保活，草稿不丢。禁止做「重开还原上次内容」——每次启动从空开始是用户决策。
+- 面板所在的工作区 id 经 `ToolWorkspaceContext`（`toolInput.ts`）提供：`App.openTool` 把它放进面板 `params`，`DockZone` 用 context 包住工具组件。工具代码不用感知，`useToolInput` 与 `useToolFocus` 自己从 context 读。
 - 终端是可多开的工具：注册表只提供入口信息，`Component` 为 `null`，由 App 每次新建独立会话，开成独立 dock 面板（xterm 实例归 termStore，见 components/DockTerm.tsx）。工具菜单、首页卡片和工具搜索共用该入口；关闭面板结束对应会话。
 - 唯一例外（同为用户决策，2026-08）：AI 助手的会话经模块级内存 store（`src/renderer/src/tools/aiSessions.ts`）在关 tab 后保留、流继续推进、重开恢复；应用重启仍从空开始（不落盘）。
 
@@ -39,7 +40,12 @@
 搜索框推荐区会把呼出时限内复制的文本注入工具。约定：
 
 - 文本输入框的值一律来自 `useToolInput(id, initialInput)`（toolInput.ts），它把「挂载吃 pending」与「实时事件」两条通道对组件透明。**不要**自己监听 `TOOL_INPUT_EVENT` 或读模块级 pending——那两个通道的时序坑已经收口在 hook 里。
-- `initialInput` 只是 props 契约的一部分（兼容直接挂载的场景），正常链路下素材走 pending 通道；组件只管把它透传给 `useToolInput` 第二参。
+- **素材按工作区投递**：每个工作区一套独立的停靠区，同一个工具可以在多个工作区同时开着。`ToolInputDetail` 带 `workspaceId`，挂载消费和实时事件两条通道都要比对，素材只给投递时当前工作区里的面板，别的工作区开着同一工具也收不到、更抢不走。
+- **挂载通道的读和清分开**：渲染必须是纯的，React 可能把一次渲染丢掉重来；在渲染里就清 pending，重来的那次就拿不到素材（懒加载 chunk 首次下载时实测会丢）。所以 hook 在渲染里只读（`peekToolInput`），提交后的 effect 才清。
+- **聚焦事件**：面板已开着时再被「打开」，组件不会重新挂载，也收不到 dockview 的激活事件。`App.openTool` 每次都会发一个按工作区投递的聚焦事件（`dispatchToolFocus`），要在这时聚焦的工具用 `useToolFocus` 接收（目前只有便签）。
+- **搜索框的工具名规则**：没有复制内容、打的字等于某工具的显示名、id 或别名时，选这个工具只打开、不带入文字，其他工具的推荐行仍带入。规则对所有工具一样，详见 `docs/spec/ui.md` 的「搜索框」。
+- 便签（`NotesTool.tsx`）是「把草稿和注入管道分开」的先例：像 AiTool 一样用 `seq` 边沿追加到草稿，`handledSeq` 避开 StrictMode 重复执行；已有草稿时换行追加，不覆盖。
+- `initialInput` 只是 props 契约的一部分（兼容直接挂载的场景），正常链路下素材走 pending 通道；组件只管把它透传给 `useToolInput` 第二参。没有素材时要显示默认内容就用第三参 `fallback`（qrcode 的 `https://`），不要塞进第二参：第二参非 null 会跳过挂载通道，首次打开就收不到素材。
 
 ## 5. 状态分层（三层，别放错层）
 

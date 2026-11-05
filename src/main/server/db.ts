@@ -100,6 +100,25 @@ db.exec(`
     added_at INTEGER NOT NULL
   );
 
+  -- 便签（工具 notes）：每个工作区一份，删工作区时外键级联删行（图片文件由 server/notes.ts 另行清理）。
+  -- 图片文件在数据目录 notes/<图片id>.<format>，与图库完全分开，经 mpimg://note/<图片id> 读取
+  CREATE TABLE IF NOT EXISTS notes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    text         TEXT    NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_notes_ws ON notes(workspace_id, created_at DESC, id DESC);
+
+  CREATE TABLE IF NOT EXISTS note_images (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,  -- 不复用 id：mpimg://note/<id> 不会命中旧图缓存
+    note_id  INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    format   TEXT    NOT NULL,                  -- jpg/png/gif/webp/bmp，由主进程按文件头判定
+    position INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_note_images_note ON note_images(note_id, position);
+
   -- 分组级 tag 已随功能移除：旧库顺手清表（幂等），新库不再创建
   DROP TABLE IF EXISTS gallery_group_tags;
 `);
