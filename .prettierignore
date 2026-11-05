@@ -10,13 +10,18 @@ release2/
 docs/
 prototypes/
 
+# 测试产物随时可删；测试素材要原样保留（可能故意构造成格式错误）
+test-output/
+.playwright-cli/
+tests/fixtures/
+
 # pnpm 生成的锁文件
 pnpm-lock.yaml
 
 # 字符画生成器的中间产物
 scripts/art-*.txt
 
-# GaN.UI 上游原样文件（同步自 v1.0.0，HEAD e7e52dc）：保持 2 空格无分号的上游字节，
+# GaN.UI 上游原样文件（同步基线见 docs/spec/ui.md）：保持 2 空格无分号的上游字节，
 # 不被 prettier 重排，否则下次同步会变成整文件 diff。
 src/renderer/src/components/ui
 src/renderer/src/lib/platform.tsx

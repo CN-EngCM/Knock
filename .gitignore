@@ -8,3 +8,5 @@ release2/
 scripts/art-*.txt
 scripts/art-debug.png
 ai keys.txt
+test-output/
+.playwright-cli/

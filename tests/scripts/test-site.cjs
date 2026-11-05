@@ -1,9 +1,10 @@
-// 本地测试站：两页 HTML（含翻页）+ 多张图片（不同尺寸/格式），供从网址导入的端到端测试
+// 本地测试站：两页 HTML（含翻页）+ 多张图片（不同尺寸/格式），供图库「从网址导入」手测。
+// 运行：node tests/scripts/test-site.cjs，然后在图库里导入 http://127.0.0.1:37191/p1.html
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const PNG = fs.readFileSync(path.join(__dirname, "assets", "icon.png")); // 256x256
+const PNG = fs.readFileSync(path.join(__dirname, "..", "..", "assets", "icon.png")); // 256x256
 const SVG = Buffer.from(
     '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect width="100" height="80" fill="red"/></svg>',
 );

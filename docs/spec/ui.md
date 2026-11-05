@@ -1,0 +1,108 @@
+# 界面与交互规格
+
+长期规格，描述界面现在应该是什么样、为什么这样定。改界面行为时在同一次改动里更新这里；工作规则和命令见 [AGENTS.md](../../AGENTS.md)，内置工具见 [TOOL_SPEC.md](../../src/renderer/src/tools/TOOL_SPEC.md)。
+
+主结构：顶栏 + 左侧栏（工作区块 + 快捷启动列表）+ 右侧工作区（工作区工具栏 + 停靠区）。
+
+## 视觉与主题
+
+- 界面为 GaN.UI 中性灰体系：来源仓库 `D:\MyCode\GaN.UI`，源码基线 v1.5.4（提交 `0edf835`），组件复制于 `src/renderer/src/components/ui/`，令牌与材质全在 `src/renderer/src/index.css`。
+- 深浅双主题：深色默认（冷调石墨），浅色为「薄雾」（淡蓝灰底，色系经上游承自 Darwin 取色）。强调色：深 `#0a84ff` / 浅 `#4f46e5`。
+- 字体：Outfit（可变）+ IBM Plex Mono，woff2 内嵌于 `src/renderer/src/assets/fonts/`。**不引入 MiSans，不引入 Geist。**
+- 主题唯一权威来源是 settings 表 `theme` 键（dark/light）：
+  - 主进程开窗前直读，定窗口 `backgroundColor`。
+  - 渲染端 `index.html` 内联脚本经 preload 的 sendSync 同步桥（`getThemeSync`）在首帧前给 `<html>` 套 `.dark` 类。
+  - 切换时顶栏和设置里的分段控件即点即换，并经 `mp:set-theme` 通知主进程更新窗口外观。
+
+## GaN.UI 同步
+
+`components/ui/` 与上游支撑模块（`lib/platform|shortcut|density|scroll`、`hooks/use-overlay-density|use-size-token|use-virtual-rows`）保持上游原样（2 空格、无分号），`.prettierignore` 已排除，改它们等于放弃下次整文件 diff。这些文件注释里提到的 `docs/design.md` 指上游仓库的文档，不是本仓库的。
+
+本地只有三处差异，别的都要么回上游、要么放业务层：
+
+1. `lib/utils.ts` 用 `extendTailwindMerge` 把 `micro/caption/small/control/readout/display` 登记进 font-size 组（替代上游的 `cn` 包，未引入 cn 包）。
+2. `index.css` 同时定义 `gan-drag`/`gan-no-drag` 与项目现有的 `app-drag`/`app-no-drag`。
+3. `dialog.tsx` 保留 `onInteractOutside` 阻断（防误触丢表单草稿）。
+
+AI 会话区的 `MessageScroller` 经 `hooks/use-virtual-rows` 依赖 `@tanstack/react-virtual`，停靠区经 `ui/dock-layout` 依赖 `dockview-react`（按上游钉死 `8.6.2`），标签编辑经 `ui/combobox` 依赖 `@base-ui/react`，均为 devDependency。`tw-animate-css` 与 `shadcn`（只取其 `shadcn/tailwind.css` 自定义变体）是 GaN.UI 样式的必要依赖。
+
+## 窗口与顶栏
+
+- 启动链上任何一步出错（开库、建表、迁移等）都弹错误框显示原因并退出，不留看不见的后台进程。
+- 窗口**无边框**（`frame:false`），窗口边缘圆角与描边全归 OS，不自画。
+- 拖拽区覆盖整个顶栏的品牌和空白区域；搜索框、按钮和弹出内容保留 `app-no-drag`，才能正常接收输入事件。
+- 顶栏内容：品牌拖拽区、搜索，以及常驻的工具集菜单、钉住、置顶、侧栏开关、主题切换、设置。
+- 搜索候选只收全局条目，工作区条目只在工具栏出现。
+- 钉住：失焦不自动隐藏，双击 Ctrl 不再收起，跨重启保持。
+- 置顶：钉住下的子状态，仅本次运行有效；未钉住时置顶按钮禁用。
+
+## 左侧栏
+
+宽度固定 246px，与工具区直接相邻。自身不带右边线，由停靠区描边兼任（见「停靠区 · 外观」）。
+
+### 工作区块
+
+在快捷启动列表上方，标题行带新建按钮，行高 32px 单行。
+
+- **高度**：可拖拽并记住，默认 192px（六行）、最小一行、上限为侧栏高度的 70%，双击拖拽条复位，高度存 localStorage，超出就在区块内部滚动。
+- **配色**：每行左侧一道竖色条。普通工作区按 id 取固定调色板，自带的「临时工作区」取中性灰。当前行另铺同色低透明度底色，并套上/左/下三边 1px 同色内描边（右边不画，避免与停靠区左描边并成双线）。配色与描边强度只在 `lib/workspaceColor.ts` 和 index.css 的 `--ws-stroke` 令牌里定义。
+- **行内容**：工作区名与该工作区停靠区里的窗口数（工具＋终端面板总数，悬停提示完整说法）。行悬停提示里带完整文件夹路径。
+- **普通工作区**：创建时必须选一个现存文件夹；右键菜单为重命名/修改文件夹/删除。
+- **临时工作区**：没有文件夹，不可改名删除，不给右键菜单。
+
+### 快捷启动列表
+
+- 只显示 `workspace_id` 为空的全局条目。
+- 标题行右侧一个「＋」直接打开添加条目弹窗，没有添加菜单与排序开关。
+- 主体为扁平列表（`LauncherList`，`role="listbox"` + `aria-activedescendant`，焦点常驻容器，↑↓/Home/End/Enter 导航，不依赖 GaN.UI Tree）；无分组，无拖拽。
+- 行高 26px 单行，类型图标＋标题，target 走悬停提示。
+- **顺序固定**：网页收藏 → 应用 → 文件/文件夹 → 终端命令，同类型按标题升序（中文按拼音、忽略大小写）。规则只在 `lib/itemOrder.ts` 定义，侧栏与搜索候选共用，新增条目按规则归位而非追加末尾。
+- **打开**：单击即启动（500ms 同条目防抖，吞掉连点与双击），回车同打开。
+- **右键菜单**：打开/编辑/移动到工作区/删除，目录条目另给「在此打开终端」。无多选，改名一律走弹窗。
+
+## 工作区工具栏
+
+`WorkspaceToolbar`，只在普通工作区、停靠区上方渲染，高 36px 横贯；临时工作区不渲染。
+
+- 条目是该工作区专属的快捷启动（`items.workspace_id` = 工作区 id），排序与左栏共用 `sortItems`。
+- 条目最前面有一个固定的「打开当前文件夹」（工作区 folder 非空时显示，不进 items 表）。
+- 图标＋标题横向排列，放不下横向滚动，「＋」固定右端，没有条目时只留「＋」。
+- 单击行为与左栏一致；右键菜单含打开/在此打开终端/编辑/移动到工作区/删除。
+
+## 停靠区
+
+GaN.UI `DockLayout`，业务封装 `DockZone.tsx`，底座 dockview-react。
+
+### 实例与面板
+
+- 每个工作区一套独立的 `DockLayout` 实例，同一时刻只显示当前工作区那套，其余留在 DOM 里以 `display:none` 隐藏（切换不结束任何终端进程，不丢 xterm 回滚缓冲）。
+- 工具与终端会话都是停靠面板，id 约定 `tool:<ToolId>`（单实例）与 `term:<会话号>`（多实例）。唯一性只在各自实例内成立，不同工作区出现同 id 不冲突。
+- 激活权威是 dockview api：App 经 `whenDockApi` 命令桥开/关/激活，队列按工作区分开，桥在该工作区实例就绪前排队。
+- dock 随首个面板打开懒加载并常驻。从未开过面板或面板清空时显示 `ToolHome`（前者在 dock 外直渲染，避免加载 dockview；后者作水印组件）。
+- 布局不持久化。
+- **删除工作区时先逐个关闭该实例里的面板，再删数据行。** 反过来面板移除善后不触发，pty 会变成没人管的孤儿进程。
+
+### 操作
+
+- 拖标签自由分屏成组、浮动、最大化，带中文右键菜单。
+- 批量关闭直接执行。终端面板关闭即结束 pty 并释放 xterm 实例；终端标签的 × 与中键关闭先弹确认，右键菜单关闭不确认。
+- 组头不挂动作区：开工具走顶栏「工具集」菜单，关面板走标签上的 × 与标签右键菜单。
+
+### 外观
+
+- 整个停靠区四周有一圈当前工作区标识色的 1px 描边；侧栏原来那条右边线由它兼任，aside 不再自带 `border-r`。
+- 活动标签朝外那侧的标识线在深色主题下也取同一颜色（main 上覆盖 `--dock-focus-top-line` / `--dock-focus-mark`），浅色主题保持原有的白色高光。
+- 停靠区铺满工作区，不外套留白与细边框卡片。形状与层次归 dock 皮肤：组间距 `groupGap={4}`，缝色取 `--dock-gap`，组描边取 `--dock-group-border`。
+- 深浅主题经 `DockLayout` 自带的 html 类监听自动跟随。
+
+## 终端会话
+
+- 终端工具入口 id 为 `terminal`（属于 ToolId），每个终端会话使用独立数字 id，开成独立 dock 面板（`term:<会话号>`）与其他工具并列。
+- **工作目录**：
+  - 终端工具在工作区里打开时取该工作区文件夹。
+  - 工作区里的终端命令条目工作目录留空时同样继承工作区文件夹，显式填了就用填的。
+  - 左侧命令条目留空仍走主目录。
+  - 改工作区文件夹只影响之后新开的会话。
+- **环境变量**：新建会话将 `TERM` 设为 `xterm-256color`、`COLORTERM` 设为 `truecolor`，并清除继承的 `NO_COLOR`，避免启动环境禁用彩色输出。
+- **xterm 实例归 `termStore.ts`**，与面板生命周期解耦：面板拖动重组只重挂 DOM，不丢回滚缓冲；会话结束才 dispose；实例未就绪前的 pty 输出由它缓冲回放。
+- 主题切换经 html 类监听热更新 xterm 配色，不重建进程，不清缓冲。
