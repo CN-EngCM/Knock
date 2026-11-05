@@ -17,13 +17,11 @@ import {
     onPtyEvent,
     type ApiError,
     type ApiResult,
-    type AiModelConfig,
     type FontPatch,
     type Item,
     type TermPatch,
     type ThemeId,
     type ToolAliasPatch,
-    type TranslateConfigPatch,
     type Workspace,
 } from "./api/client";
 import { Button } from "@/components/ui/button";
@@ -122,7 +120,7 @@ export default function App() {
     const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
     const [platform, setPlatform] = useState("");
     const [layout, setLayout] = useState<Layout>(loadLayout);
-    // 界面主题：初始值来自 main.tsx 首帧前套好的 <html> 类；切换经 settings 表持久化
+    // 界面主题：初始值来自 index.html 首帧前套好的 <html> 类；切换经 settings 表持久化
     const [theme, setTheme] = useState<ThemeId>(currentTheme);
     // ── 工作区：每个工作区一套独立的停靠区实例，同一时刻只显示当前那个 ──
     // 数据以服务端为准（activeId 落库在 settings 表）：切换成功后重拉，界面不自留副本
@@ -343,17 +341,6 @@ export default function App() {
     // 工具别名启动时拉一次：喂 SearchBox 参与候选匹配
     const [toolAliases, setToolAliases] = useRpcValue(api.getToolAliases);
 
-    // 剪贴板素材时限（主进程每次呼出直接读库，这里的值只喂设置页展示）
-    const [clipPaste, setClipPaste] = useRpcValue(api.getClipPaste);
-    const clipSec = clipPaste?.seconds ?? null;
-
-    // 翻译密钥（有道）：只喂设置页编辑态；翻译请求由主进程现读库，不经这里
-    const [translateCfg, setTranslateCfg] = useRpcValue(api.getTranslateConfig);
-
-    // AI 模型配置（整表）：设置页编辑态 + 工具内「有无可配模型」判断均来自这里；
-    // 对话请求由主进程现读库，不经这里
-    const [aiModels, setAiModels] = useRpcValue(api.getAiModels);
-
     // 设置页各分项提交的公共路径：失败统一 toast 并返回 false（弹窗内自行回滚），成功交给 apply 回填。
     // 现状没有 memo 需求，普通闭包定义即可（要吃到 i18n 文案，故放在组件内）
     async function patchSetting<T>(call: () => Promise<ApiResult<T>>, apply: (data: T) => void): Promise<boolean> {
@@ -366,14 +353,6 @@ export default function App() {
             toast.error(t("toast.error"));
             return false;
         }
-    }
-
-    // 设置页提交剪贴板时限（秒）
-    function patchClipSec(s: number): Promise<boolean> {
-        return patchSetting(
-            () => api.setClipPaste(s),
-            (d) => setClipPaste(d),
-        );
     }
 
     // 设置页提交终端设置：成功回填配置（字号经 termFont 即时作用到终端实例）
@@ -394,19 +373,6 @@ export default function App() {
     // 设置页提交工具别名：成功回填（SearchBox 的候选匹配随 props 即时生效）
     function patchToolAlias(p: ToolAliasPatch): Promise<boolean> {
         return patchSetting(() => api.setToolAliases(p), setToolAliases);
-    }
-
-    // 设置页提交翻译密钥：成功回填编辑态
-    function patchTranslate(p: TranslateConfigPatch): Promise<boolean> {
-        return patchSetting(() => api.setTranslateConfig(p), setTranslateCfg);
-    }
-
-    // 设置页提交 AI 模型配置（整表替换）：成功回填；对话/测试请求由主进程现读库即生效
-    function patchAiModels(list: AiModelConfig[]): Promise<boolean> {
-        return patchSetting(
-            () => api.setAiModels(list),
-            () => setAiModels(list),
-        );
     }
 
     // ── 变更操作：成功后重拉数据并轻提示，失败统一 toast ──
@@ -710,6 +676,19 @@ export default function App() {
         setDialog({ kind: "settings", section: (toolId && TOOL_SETTINGS_SECTION[toolId]) || "translate" });
     }
 
+    // 传给 DockZone 的回调与工作区 id 列表必须引用稳定：DockZone 用它们 useMemo 出面板组件表和
+    // 水印，引用一变 dockview 就整区重渲染、水印里的 ToolHome 也被卸载重建。
+    // 两个函数闭包里要读最新状态（当前工作区、语言），所以最新值放 ref、外面包空依赖的 useCallback。
+    const openToolRef = useRef(openTool);
+    openToolRef.current = openTool;
+    const openSettingsRef = useRef(openSettingsForActiveTool);
+    openSettingsRef.current = openSettingsForActiveTool;
+    const dockOpenTool = useCallback((id: ToolId, input?: string | null, expertId?: number) => {
+        openToolRef.current(id, input, expertId);
+    }, []);
+    const dockOpenSettings = useCallback(() => openSettingsRef.current(), []);
+    const workspaceIds = useMemo(() => (wsData?.workspaces ?? []).map((w) => w.id), [wsData]);
+
     // 条目弹窗的归属：新建时取弹窗选的（左侧 null / 工具栏当前工作区），编辑时取条目自己的。
     // 归属决定新建默认类型与工作目录提示；弹窗关闭时这些值不参与渲染
     const itemDialogWorkspaceId =
@@ -974,11 +953,11 @@ export default function App() {
                                     }
                                 >
                                     <DockZone
-                                        workspaces={wsData.workspaces.map((w) => w.id)}
+                                        workspaces={workspaceIds}
                                         activeId={wsData.activeId}
                                         onReady={handleDockReady}
-                                        onOpenTool={openTool}
-                                        onOpenSettings={openSettingsForActiveTool}
+                                        onOpenTool={dockOpenTool}
+                                        onOpenSettings={dockOpenSettings}
                                     />
                                 </Suspense>
                             ) : (
@@ -1045,12 +1024,6 @@ export default function App() {
                     onFontPatch={patchFont}
                     toolAliases={toolAliases}
                     onToolAlias={patchToolAlias}
-                    clipSec={clipSec}
-                    onClipSec={patchClipSec}
-                    translateCfg={translateCfg}
-                    onTranslateCfg={patchTranslate}
-                    aiModels={aiModels}
-                    onAiModels={patchAiModels}
                 />
 
                 <ConfirmDialog

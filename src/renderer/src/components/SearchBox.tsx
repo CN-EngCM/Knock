@@ -83,9 +83,9 @@ function parentDir(p: string): string {
     return p.match(/^.*[\\/]/)?.[0] ?? p;
 }
 
-/** chip 单行展示：空白折叠 + 按码点截断 */
+/** chip 单行展示：空白折叠 + 按码点截断；剪贴板可能是几 MB 的文本，先粗截再处理 */
 function chipLabel(text: string): string {
-    const flat = text.replace(/\s+/g, " ").trim();
+    const flat = text.slice(0, 256).replace(/\s+/g, " ").trim();
     const chars = [...flat];
     return chars.length > CHIP_MAX_CHARS ? chars.slice(0, CHIP_MAX_CHARS).join("") + "…" : flat;
 }

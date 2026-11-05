@@ -9,15 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, type AiModelConfig, type AiProviderId } from "@/api/client";
+import { saveAiModels, useAiModels } from "@/lib/aiModels";
 import { aiErrKey } from "@/tools/aiErr";
 import { useI18n } from "@/i18n/useI18n";
 import { FormRow } from "./shared";
-
-type Props = {
-    /** AI 模型配置整表：提交走 onAiModels（App 负责落库与回填） */
-    aiModels: AiModelConfig[] | null;
-    onAiModels: (list: AiModelConfig[]) => Promise<boolean>;
-};
 
 // 供应商词汇表：须与 server/schemas.AI_PROVIDER_IDS 手工对齐（渲染进程禁止运行时
 // import server/ 的值，zod 在主进程仍会兜底校验）；键为下拉展示名。
@@ -41,9 +36,11 @@ function complete(cfg: AiModelConfig): boolean {
     return cfg.id !== "" && cfg.model.trim() !== "" && cfg.apiKey.trim() !== "";
 }
 
-/** AI 分节：多套模型配置增删改 + 逐卡测试连接。挂载即持有整表编辑态，关闭即丢 */
-export function AiSection({ aiModels, onAiModels }: Props) {
+/** AI 分节：多套模型配置增删改 + 逐卡测试连接。挂载即持有整表编辑态，关闭即丢；
+ *  模型表来自共享 store，保存后 AiTool 立即看到新值 */
+export function AiSection() {
     const { t } = useI18n();
+    const aiModels = useAiModels();
     // 整表编辑态（id 是本地标识 UUID，新增时生成）
     const [list, setList] = useState<AiModelConfig[]>([]);
     // 测试状态按卡片隔离（key=配置 id）
@@ -87,9 +84,10 @@ export function AiSection({ aiModels, onAiModels }: Props) {
     async function save(): Promise<void> {
         if (!list.every(complete)) return; // 有半成品行时按钮已禁用，双保险
         setSaving(true);
-        const ok = await onAiModels(list);
+        const ok = await saveAiModels(list);
         setSaving(false);
         if (ok) toast.success(t("toast.saved"));
+        else toast.error(t("toast.error"));
     }
 
     // 配置未就绪时不渲染任何行（外壳的分节容器保持空态）

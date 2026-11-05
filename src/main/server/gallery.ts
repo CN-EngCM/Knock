@@ -1,21 +1,11 @@
 import { createHash } from "node:crypto";
-import { execSync } from "node:child_process";
-import {
-    existsSync,
-    mkdirSync,
-    readdirSync,
-    readFileSync,
-    renameSync,
-    rmdirSync,
-    rmSync,
-    statSync,
-    writeFileSync,
-} from "node:fs";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
-import { BrowserWindow, clipboard, dialog, nativeImage, session, shell } from "electron";
-import type { NativeImage } from "electron";
-import { fetch as undiciFetch, ProxyAgent } from "undici";
+import { promisify } from "node:util";
+import { BrowserWindow, clipboard, dialog, session, shell } from "electron";
 import db from "./db";
 import { IMPORT_PARTITION } from "./chromeLogin";
 import { dataDir } from "./util/dataDir";
@@ -30,6 +20,7 @@ import {
     type GalleryImage,
     type GalleryImportCandidatesInput,
     type GalleryImportStats,
+    type GalleryOverview,
     type GalleryPageResult,
     type GalleryQueryInput,
 } from "./schemas";
@@ -39,12 +30,9 @@ import type { ApiResult } from "./api";
 // ── 图库（工具 gallery 的后端）：图片字节级复制进数据目录 gallery/<组文件夹>/，行里只存元数据 ──
 // 去重以 sha256 为准（同内容全库只收一份，一图一行一组，故按分组落子目录无共享冲突）；
 // file 列存「组文件夹/文件名」相对路径（分隔符固定 /，join 拼接自动适配平台），组文件夹名由
-// 组名清洗而来。缩略图按需生成落盘 .thumbs/（按 id 寻址，不分目录），经 mpimg:// 协议按
-// id 直读（注册见 src/main/index.ts）。文件名只作显示与磁盘名，不参与寻址——协议按整数
+// 组名清洗而来。缩略图由渲染端 Worker 生成、经 gallerySaveThumb 落盘到 .thumbs/（按 id
+// 寻址，不分目录），主进程只读写字节不解码；经 mpimg:// 协议按 id 直读（注册见 src/main/app.ts）。文件名只作显示与磁盘名，不参与寻址——协议按整数
 // id 找行，文件夹名写入前已清洗非法字符，行内相对路径不会逃出 gallery/。
-
-// 缩略图长边上限：网格里看足够清晰，原图再大也不浪费磁盘
-const THUMB_EDGE = 320;
 
 const MIME: Record<string, string> = {
     jpg: "image/jpeg",
@@ -58,16 +46,25 @@ const MIME: Record<string, string> = {
 const notFound = { ok: false, error: { kind: "not-found" } } as const;
 const badRequest = { ok: false, error: { kind: "bad-request" } } as const;
 
+// 目录只算一次、只 mkdir 一次：数据目录运行期不变（改目录后会重启），而每张图的
+// 每次读写都要取这两个路径，反复 mkdir 是白花的同步 IO
+let galleryDirCache: string | undefined;
+let thumbsDirCache: string | undefined;
+
 function galleryDir(): string {
-    const dir = join(dataDir(), GALLERY_NAME);
-    mkdirSync(dir, { recursive: true });
-    return dir;
+    if (!galleryDirCache) {
+        galleryDirCache = join(dataDir(), GALLERY_NAME);
+        mkdirSync(galleryDirCache, { recursive: true });
+    }
+    return galleryDirCache;
 }
 
 function thumbsDir(): string {
-    const dir = join(galleryDir(), ".thumbs");
-    mkdirSync(dir, { recursive: true });
-    return dir;
+    if (!thumbsDirCache) {
+        thumbsDirCache = join(galleryDir(), ".thumbs");
+        mkdirSync(thumbsDirCache, { recursive: true });
+    }
+    return thumbsDirCache;
 }
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界断言成行类型（同 api.ts 的 as* 约定）。
@@ -141,7 +138,8 @@ function groupFolder(groupId: number): string {
     return computeGroupFolder(groupId);
 }
 
-/** 一次性归位迁移（模块加载即执行，幂等可重跑）：
+/** 一次性归位迁移（模块加载即执行，幂等可重跑；全部行归位后写 galleryFoldersMigrated
+ *  标记，之后每次启动直接跳过，不再全表扫描 + 逐行 stat）：
  *  - 平级旧行（file 不含 /）：rename 进组文件夹并回写相对路径；
  *  - 坏行（含 / 但前缀在磁盘上不是目录）：首版迁移 bug 的善后——当时把组内第一张图的
  *    文件名当成了组文件夹写进 file，rename 全部 ENOENT、磁盘未动，文件其实还在
@@ -150,6 +148,7 @@ function groupFolder(groupId: number): string {
  *  rename 失败时：源文件确实没了（ENOENT）照常回写行（与「磁盘文件被外部删→404」
  *  既有语义一致）；被占用等暂时性失败跳过该行不回写，下次启动仍会重试 */
 (function migrateFlatToGroupFolders(): void {
+    if (getSetting("galleryFoldersMigrated", "") === "1") return;
     const rows = db.prepare("SELECT id, file, group_id FROM gallery_images ORDER BY group_id, id").all() as {
         id: number;
         file: string;
@@ -159,6 +158,7 @@ function groupFolder(groupId: number): string {
     // 组 → 已确认的文件夹名：好行的前缀 / 本组首张归位后的名字，同组后续行直接沿用
     const folders = new Map<number, string>();
     let moved = 0;
+    let skippedRows = 0;
     for (const r of rows) {
         let base = r.file;
         if (r.file.includes("/")) {
@@ -181,20 +181,24 @@ function groupFolder(groupId: number): string {
         try {
             renameSync(join(galleryDir(), base), join(galleryDir(), rel));
         } catch (e) {
-            if ((e as NodeJS.ErrnoException).code !== "ENOENT") continue;
+            if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+                skippedRows++; // 暂时性失败：这次不算归位，不写标记，下次启动重试
+                continue;
+            }
         }
         upd.run(rel, r.id);
         moved++;
     }
     if (moved > 0) console.log(`[gallery] 归位迁移 ${moved} 张图片进组文件夹`);
+    if (skippedRows === 0) setSetting("galleryFoldersMigrated", "1");
 })();
 
 /** 删原图与缩略图（缩略图按源格式定名：jpg 存 .jpg，其余 .png，svg 不生成）。
  *  rm 失败只当垃圾残留不报错——行已删/将删，磁盘孤儿不是错误源（同 changeDataDir 清理哲学） */
-function removeImageFiles(id: number, file: string, format: string): void {
+async function removeImageFiles(id: number, file: string, format: string): Promise<void> {
     try {
-        rmSync(join(galleryDir(), file), { force: true });
-        if (format !== "svg") rmSync(join(thumbsDir(), format === "jpg" ? `${id}.jpg` : `${id}.png`), { force: true });
+        await rm(join(galleryDir(), file), { force: true });
+        if (format !== "svg") await rm(thumbPath(id, format), { force: true });
     } catch {
         /* 残留文件不挡流程 */
     }
@@ -314,7 +318,7 @@ export function renameGroup(id: number, name: string): ApiResult<null> {
     return { ok: true, data: null };
 }
 
-export function deleteGroup(id: number): ApiResult<null> {
+export async function deleteGroup(id: number): Promise<ApiResult<null>> {
     const row = getGroup(id);
     if (!row) return notFound;
     if (row.inbox !== 0) return badRequest;
@@ -326,11 +330,11 @@ export function deleteGroup(id: number): ApiResult<null> {
         format: string;
     }[];
     db.prepare("DELETE FROM gallery_groups WHERE id = ?").run(id);
-    for (const img of images) removeImageFiles(img.id, img.file, img.format);
+    for (const img of images) await removeImageFiles(img.id, img.file, img.format);
     // 组目录收尾：文件都删净了顺手移走空目录；非空（个别文件删失败/异常残留）留着当垃圾
     if (images.length > 0) {
         try {
-            rmdirSync(join(galleryDir(), images[0].file.split("/")[0]));
+            await rmdir(join(galleryDir(), images[0].file.split("/")[0]));
         } catch {
             /* 非空/被占用：残留不挡流程 */
         }
@@ -379,7 +383,7 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
     }
     if (input.search) {
         where.push("title LIKE ? ESCAPE '\\'");
-        params.push(escapeLike(input.search));
+        params.push(`%${escapeLike(input.search)}%`);
     }
     if (input.tags.length > 0) {
         // 多标签交集（AND）：同图须命中全部所选 tag 才进结果。入参先去重——重复词会让
@@ -436,7 +440,7 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
 // 图片删除/分组删除时 FK ON DELETE CASCADE 自动移出画廊（foreign_keys 已开，见 db.ts）。
 
 /** 画廊可见计数（侧栏行）：锁定视角剔除私密组的图——与画廊查询同一隔离边界 */
-export function wallCount(password?: string): ApiResult<{ count: number }> {
+function wallCount(password?: string): ApiResult<{ count: number }> {
     const privateFilter = unlockedView(password)
         ? ""
         : " AND group_id NOT IN (SELECT id FROM gallery_groups WHERE private = 1)";
@@ -527,10 +531,26 @@ const stmtInsertImage = db.prepare(
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 );
 
-/** 落盘 + 落库（import 与 paste 共用的收尾路径）；buf 已经过 hash 去重判定。
- *  size 由「已探过尺寸的调用方」（网址导入候选）传入免二次解码；缺省现解手上的
- *  buf（纯内存，不读回磁盘）——webp nativeImage 解不了，走 webpSize 头解析兜底 */
-function saveImage(
+/** 在组文件夹里新建文件并返回相对路径：用 wx（已存在就失败）独占创建。
+ *  uniqueName 的存在性检查与真正写入之间隔着 await，并发导入可能挑中同一个名字，
+ *  不独占的话后写的会悄悄盖掉先写的 */
+async function writeNewFile(folder: string, original: string, buf: Buffer): Promise<string> {
+    for (;;) {
+        const rel = uniqueName(folder, original);
+        try {
+            await writeFile(join(galleryDir(), rel), buf, { flag: "wx" });
+            return rel;
+        } catch (e) {
+            if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+        }
+    }
+}
+
+/** 落库（import 与 paste 共用的收尾路径）；文件已写好，buf 已经过 hash 去重判定。
+ *  size 由「已探过尺寸的调用方」（网址导入候选）传入，缺省读文件头取（不解码）。
+ *  异步写文件之后可能有并发导入抢先入库同一内容（sha256 或 file 列 UNIQUE 冲突）：
+ *  入库失败就把刚写的文件删掉，返回 false 由调用方计入跳过 */
+async function saveImage(
     groupId: number,
     title: string,
     file: string,
@@ -538,33 +558,35 @@ function saveImage(
     buf: Buffer,
     sourcePath: string,
     size?: { width: number; height: number },
-): void {
-    // svg / 解不动的图存 0×0，前端按无尺寸处理
-    let s = size;
-    if (!s) {
-        const img = nativeImage.createFromBuffer(buf);
-        s = img.isEmpty() ? (webpSize(buf) ?? { width: 0, height: 0 }) : img.getSize();
+): Promise<boolean> {
+    const s = size ?? imageSize(buf);
+    try {
+        stmtInsertImage.run(
+            groupId,
+            title,
+            file,
+            sha,
+            buf.length,
+            s.width,
+            s.height,
+            normalizeExt(file),
+            sourcePath,
+            Date.now(),
+        );
+        return true;
+    } catch {
+        await rm(join(galleryDir(), file), { force: true }).catch(() => {});
+        return false;
     }
-    stmtInsertImage.run(
-        groupId,
-        title,
-        file,
-        sha,
-        buf.length,
-        s.width,
-        s.height,
-        normalizeExt(file),
-        sourcePath,
-        Date.now(),
-    );
 }
 
-export function importFiles(files: string[], groupId: number): ApiResult<GalleryImportStats> {
+export async function importFiles(files: string[], groupId: number): Promise<ApiResult<GalleryImportStats>> {
     ensureInbox();
     if (!getGroup(groupId)) return notFound;
     const folder = groupFolder(groupId);
     let imported = 0;
     let skipped = 0;
+    // 一张一张顺序 await：同时读多张大图会把内存和磁盘都顶满
     for (const f of files) {
         const ext = normalizeExt(f);
         if (!(GALLERY_FORMATS as readonly string[]).includes(ext)) {
@@ -573,7 +595,7 @@ export function importFiles(files: string[], groupId: number): ApiResult<Gallery
         }
         let buf: Buffer;
         try {
-            buf = readFileSync(f);
+            buf = await readFile(f);
         } catch {
             skipped++; // 读不到（已删除/无权限）不算错误，计入跳过
             continue;
@@ -583,10 +605,9 @@ export function importFiles(files: string[], groupId: number): ApiResult<Gallery
             skipped++; // 内容去重：同内容全库只收一份
             continue;
         }
-        const name = uniqueName(folder, basename(f));
-        writeFileSync(join(galleryDir(), name), buf);
-        saveImage(groupId, basename(f), name, sha, buf, f);
-        imported++;
+        const name = await writeNewFile(folder, basename(f), buf);
+        if (await saveImage(groupId, basename(f), name, sha, buf, f)) imported++;
+        else skipped++;
     }
     return { ok: true, data: { imported, skipped } };
 }
@@ -598,69 +619,97 @@ function pasteName(): string {
     return `paste-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
 }
 
-export function pasteFromClipboard(groupId: number): ApiResult<GalleryImportStats> {
+export async function pasteFromClipboard(groupId: number): Promise<ApiResult<GalleryImportStats>> {
     const img = clipboard.readImage();
     if (img.isEmpty()) return { ok: false, error: { kind: "gallery", code: "no-image" } };
     if (!getGroup(groupId)) return notFound;
     const buf = img.toPNG();
     const sha = createHash("sha256").update(buf).digest("hex");
     if (shaExists(sha)) return { ok: true, data: { imported: 0, skipped: 1 } };
-    const name = uniqueName(groupFolder(groupId), pasteName());
-    writeFileSync(join(galleryDir(), name), buf);
-    saveImage(groupId, pasteName(), name, sha, buf, "");
-    return { ok: true, data: { imported: 1, skipped: 0 } };
+    const original = pasteName();
+    const name = await writeNewFile(groupFolder(groupId), original, buf);
+    return (await saveImage(groupId, original, name, sha, buf, ""))
+        ? { ok: true, data: { imported: 1, skipped: 0 } }
+        : { ok: true, data: { imported: 0, skipped: 1 } };
 }
 
 // ── 从网址导入 ──
 // 三段式 RPC（开始/抓页+下载/入库）由渲染端驱动：主进程只维护一个暂存会话——
 // 候选字节落 os.tmpdir() 固定子目录（编号命名），确认入库才进 gallery/ 目录，
-// 关闭/取消由渲染端调 collectDiscard 清场，异常残留等下次 collectStart 兜底清。
+// 开始前与关闭/取消时由渲染端调 collectReset 清场（暂存 + 隐藏窗口），异常残留等下次清。
 
 const STAGING_NAME = "knock-gallery-candidates";
 const PAGE_TIMEOUT_MS = 15000;
-// 页面 HTML 响应体上限（正常页面 <2MB，8MB 已很宽裕）：无界 res.text() 读超大页会撑内存
-const PAGE_MAX_BYTES = 8 * 1024 * 1024;
+const STABLE_MS = 2000; // 页面加载完后再等多久，让 JS/字体与视口附近图片的布局稳定
+const COLLECT_RESERVE_MS = 1500; // 总时限里留给 DOM 采集脚本本身的时间
+const RENDER_IDLE_MS = 30000; // 隐藏窗口空闲多久自动销毁
 // 伪装常规浏览器 UA：不少站点对非浏览器 UA 直接 403（自报取器名会被拦）
 const BROWSER_UA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const PAGE_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 const IMAGE_ACCEPT = "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
 
-// ── 系统代理（注册表，仅 win；mac 无对应注册表恒直连，个人工具够用）──
-// 要处理的核心场景：代理客户端在跑但「系统代理」开关没开（ProxyEnable=0）——浏览器
-// 走插件代理能上网，而 Node fetch 与隐藏渲染窗口（Chromium 读系统设置=直连）都撞墙
-// （典型：pixiv 直连超时）。策略：ProxyEnable=1 直接代理优先；否则先直连，网络层
-// 失败再回退注册表里的 ProxyServer，回退成功后本进程固定走代理（避免每请求先超时一次）
-let proxyState: { server: string | null; agent: ProxyAgent | null } | undefined;
-let preferProxy = false;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function ensureProxyState(): void {
-    if (proxyState) return;
-    let server: string | null = null;
-    let enabled = false;
-    if (process.platform === "win32") {
+// 受限站登录态所在的抓取会话分区（cookie 由 server/chromeLogin.ts 从专用 Chrome 同步进来）。
+// fromPartition 幂等：与隐藏渲染窗口、chromeLogin 里的写入方共享同一个 session 实例，
+// 所以不在模块顶层持有，用到时再取（不用就不创建）
+const importSession = () => session.fromPartition(IMPORT_PARTITION);
+
+// ── 代理回退（仅 win 读注册表；mac 无对应注册表恒直连，个人工具够用）──
+// 要处理的核心场景：代理客户端在跑但「系统代理」开关没开（ProxyEnable=0）——浏览器走插件
+// 代理能上网，而 Chromium 默认读系统设置=直连，撞墙（典型：pixiv 直连超时）。ProxyEnable=1
+// 时 session 默认就走系统代理，不用处理。所以只管「直连失败」：读注册表 ProxyServer，给抓取
+// 分区 setProxy 后重试一次。规则对 session.fetch 和同分区的隐藏窗口同时生效；
+// 重试成功后固定走代理（免得每个请求先超时一次），重试也失败就还原，不让死站拖累后续
+
+const execFileAsync = promisify(execFile);
+let proxyConfirmed = false; // 走代理已确认能通：固定下来
+let proxyTrial: Promise<void> | null = null; // 试用中的 setProxy，并发失败的请求共用这一次
+let proxyTrialRuns = 0; // 正在用代理重试的请求数
+
+/** 注册表里的 ProxyServer（语法与 Chromium proxyRules 同源，原样传）；没配/非 win 返回 null */
+async function registryProxyServer(): Promise<string | null> {
+    if (process.platform !== "win32") return null;
+    try {
+        const { stdout } = await execFileAsync(
+            "reg",
+            ["query", "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings", "/v", "ProxyServer"],
+            { encoding: "utf8", windowsHide: true },
+        );
+        return /ProxyServer\s+REG_SZ\s+(\S+)/.exec(stdout)?.[1] ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/** 先直连跑一次；抛错就换注册表代理再跑一次（fetch 与隐藏窗口加载共用） */
+async function withProxyFallback<T>(run: () => Promise<T>): Promise<T> {
+    try {
+        return await run();
+    } catch (e) {
+        if (proxyConfirmed) throw e;
+        const server = await registryProxyServer();
+        if (!server) throw e;
+        const ses = importSession();
+        // 代理规则是整个分区共用的：并发下载同时失败时只设一次，最后一个重试结束才决定要不要还原。
+        // 各还原各的话，一张坏图的重试失败会撤掉别的请求正在试用、甚至已确认能通的代理
+        proxyTrial ??= ses.setProxy({ proxyRules: server });
+        proxyTrialRuns++;
         try {
-            const out = execSync('reg query "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Internet Settings"', {
-                encoding: "utf8",
-            });
-            server = /ProxyServer\s+REG_SZ\s+(\S+)/.exec(out)?.[1] ?? null;
-            enabled = /ProxyEnable\s+REG_DWORD\s+0x1/.test(out);
+            await proxyTrial;
+            const result = await run();
+            proxyConfirmed = true;
+            return result;
         } catch {
-            /* 没配代理 */
+            throw e;
+        } finally {
+            if (--proxyTrialRuns === 0) {
+                proxyTrial = null;
+                if (!proxyConfirmed) await ses.setProxy({ mode: "system" });
+            }
         }
     }
-    // ProxyAgent 要 URI：注册值是 "host:port" 或 "http=…;https=…" 列表，取 https 段优先（抓取全是 https）
-    let agent: ProxyAgent | null = null;
-    if (server) {
-        let hp = server;
-        if (server.includes("=")) {
-            const seg = server.split(";").find((s) => s.trim().startsWith("https=")) ?? server.split(";")[0];
-            hp = seg.trim().replace(/^\w+=/, "");
-        }
-        if (/^[\w.-]+:\d+$/.test(hp)) agent = new ProxyAgent(`http://${hp}`);
-    }
-    proxyState = { server, agent };
-    preferProxy = enabled && agent != null;
 }
 
 /** 暂存记录：编号 → 来源与探得的元数据（入库与缩略图寻址都靠它） */
@@ -687,167 +736,97 @@ function wipeStaging(): void {
     }
 }
 
-export function collectStart(): ApiResult<null> {
+/** 会话清场：清暂存 + 销毁隐藏窗口（会话开始前、关闭、取消、入库完成都调） */
+export function collectReset(): ApiResult<null> {
     wipeStaging();
+    destroyRenderWin();
     return { ok: true, data: null };
 }
 
-export function collectDiscard(): ApiResult<null> {
-    wipeStaging();
-    return { ok: true, data: null };
+/** 带超时、防盗链头与分区 cookie 的 GET，read 在超时覆盖范围内读响应（响应体读完才清定时器，
+ *  否则中途挂住的下载会永远卡着）。走 session.fetch：和隐藏窗口同一个 Chromium 网络栈，
+ *  cookie/代理都自动共用。Accept 区分页面/图片：CDN 按 Accept 做内容协商。
+ *  实测要点：res.url 恒为空串不可用；referrerPolicy 不传 unsafe-url 时 https 来源请求
+ *  http 目标会被拦（ERR_BLOCKED_BY_CLIENT）；没同步过登录态就是匿名请求 */
+async function getWithTimeout<T>(
+    url: string,
+    timeoutMs: number,
+    referer: string,
+    accept: string,
+    read: (res: Response) => Promise<T>,
+): Promise<T> {
+    // 每次尝试（直连、代理重试）各自重新计时；定时器留到 read 读完才清。
+    // 代理回退只包 fetch：连接阶段失败换代理才有意义，响应已经来了、读体时挂住换代理也没用
+    let timer: NodeJS.Timeout | undefined;
+    let controller: AbortController | undefined;
+    const attempt = () => {
+        clearTimeout(timer);
+        controller = new AbortController();
+        const { signal } = controller;
+        timer = setTimeout(() => controller?.abort(), timeoutMs);
+        return importSession().fetch(url, {
+            signal,
+            credentials: "include",
+            redirect: "follow",
+            referrerPolicy: "unsafe-url",
+            headers: { "user-agent": BROWSER_UA, accept, ...(referer ? { referer } : {}) },
+        });
+    };
+    try {
+        return await read(await withProxyFallback(attempt));
+    } finally {
+        clearTimeout(timer);
+        // 读完后 abort 是空操作；提前返回（超限、只看响应头）时靠它真正断开连接——
+        // 实测 reader.cancel() 不会关连接，服务端会一直往一个没人读的连接里写
+        controller?.abort();
+    }
 }
 
-// 受限站登录态所在的抓取会话分区（cookie 由 server/chromeLogin.ts 从专用 Chrome 同步进来）。
-// fromPartition 幂等：与隐藏渲染窗口、chromeLogin 里的写入方共享同一个 session 实例
-const importSession = session.fromPartition(IMPORT_PARTITION);
-
-/** 带超时与防盗链头的 GET（AbortController + finally 清定时器）。
- *  Accept 区分页面/图片：CDN 按 Accept 做内容协商，图片请求带浏览器式的值才拿得到一致变体。
- *  Cookie 从抓取分区取（cookies.get({url}) 的 domain/path/secure 匹配即浏览器语义），
- *  没同步过登录态就是空——行为与匿名抓取完全一致。
- *  代理回退见上方代理块：undici fetch（Node 全局 fetch 的本体，dispatcher 是它
- *  的扩展选项，DOM RequestInit 类型没有，走 Object.assign 绕开字面量多余属性检查） */
-async function fetchWithTimeout(url: string, timeoutMs: number, referer: string, accept: string): Promise<Response> {
-    ensureProxyState();
-    let cookie = "";
+/** 探测 URL 本身是不是图片直链：只看响应头的 content-type，不读响应体（返回后由 getWithTimeout 断开连接）。
+ *  失败不算大事（渲染端照样走渲染收集），但分清「探测失败」与「不是图片」 */
+export async function probeUrl(url: string): Promise<ApiResult<{ isImage: boolean }>> {
     try {
-        cookie = (await importSession.cookies.get({ url })).map((c) => `${c.name}=${c.value}`).join("; ");
+        const isImage = await getWithTimeout(
+            url,
+            PAGE_TIMEOUT_MS,
+            "",
+            PAGE_ACCEPT,
+            async (res) => res.ok && (res.headers.get("content-type") ?? "").startsWith("image/"),
+        );
+        return { ok: true, data: { isImage } };
     } catch {
-        /* 拿不到就匿名请求 */
-    }
-    const headers = {
-        "user-agent": BROWSER_UA,
-        accept,
-        ...(referer ? { referer } : {}),
-        ...(cookie ? { cookie } : {}),
-    };
-    const attempt = (agent?: ProxyAgent): Promise<Response> => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        const init = { signal: controller.signal, redirect: "follow" as const, headers };
-        if (agent) Object.assign(init, { dispatcher: agent });
-        return undiciFetch(url, init).finally(() => clearTimeout(timer)) as unknown as Promise<Response>;
-    };
-    const agent = proxyState?.agent ?? null;
-    if (!agent) return attempt();
-    if (preferProxy) return attempt(agent);
-    try {
-        return await attempt();
-    } catch (e) {
-        // 直连网络层失败：换注册表代理重试一次，成了以后本进程直接走代理
-        const res = await attempt(agent);
-        preferProxy = true;
-        return res;
+        return { ok: false, error: { kind: "gallery", code: "fetch" } };
     }
 }
 
-// ── 页面解析（正则实现，不引 HTML 解析库：覆盖 <img>/srcset/懒加载/直链 <a> 够用）──
-
-const IMG_EXT_RE = /\.(?:jpe?g|png|gif|webp|bmp|svg)(?:$|[?#])/i;
-// 词与箭头可组合（「下一页 ›」「next →」都是常见写法），也认单箭头锚文本
-const NEXT_TEXT_RE = /^(?:(?:下一页|下页|后一页|next page|next)\s*[›»→]?|[›»→])$/i;
-
-/** 取标签属性值：覆盖双引号/单引号/裸值三种形态，并解码常见实体——
- *  src 里的「?a=1&amp;b=2」若保留 &amp;，与 DOM 侧 img.src 的「&」不一致，
- *  显示尺寸表就永远配不上对。名字前锚定空白，防「src=」误中「data-src=」的尾巴 */
-function attrValue(tag: string, name: string): string | null {
-    const m = new RegExp(`(?:^|\\s)${name}(?:\\s*=\\s*)(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
-    const v = m ? (m[1] ?? m[2] ?? m[3] ?? null) : null;
-    if (v == null) return null;
-    return v.replace(/&(amp|lt|gt|quot|#39);/g, (_, e: string) =>
-        e === "amp" ? "&" : e === "lt" ? "<" : e === "gt" ? ">" : e === "quot" ? '"' : "'",
-    );
+/** 下载一张图的字节。体积上限：先看 content-length，缺失/说谎时边读边累计，超限立刻
+ *  返回（不把超大文件读完，连接由 getWithTimeout 断开）。失败原因返回字符串，成功返回字节与 Content-Type */
+async function downloadBytes(
+    url: string,
+    timeoutMs: number,
+    referer: string,
+    maxBytes: number,
+): Promise<{ buf: Buffer; mime: string } | "fetch" | "too-large"> {
+    return getWithTimeout(url, timeoutMs, referer, IMAGE_ACCEPT, async (res) => {
+        if (!res.ok) return "fetch";
+        if (Number(res.headers.get("content-length") ?? 0) > maxBytes) return "too-large";
+        const chunks: Buffer[] = [];
+        let total = 0;
+        const reader = res.body?.getReader();
+        while (reader) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.length;
+            if (total > maxBytes) return "too-large";
+            chunks.push(Buffer.from(value.buffer, value.byteOffset, value.length));
+        }
+        const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+        return { buf: Buffer.concat(chunks), mime };
+    });
 }
 
-function resolveUrl(href: string, base: string): string | null {
-    try {
-        const u = new URL(href, base);
-        return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
-    } catch {
-        return null;
-    }
-}
-
-/** 页面里的图片地址（绝对化 + 去重，按出现顺序）：
- *  <img> 的 src / srcset / data-src / data-original（懒加载占位），外加 <a href> 指向图片扩展名 */
-function collectImageUrls(html: string, base: string): string[] {
-    const out = new Set<string>();
-    for (const tag of html.match(/<img\b[^>]*>/gi) ?? []) {
-        for (const attr of ["src", "data-src", "data-original"]) {
-            const v = attrValue(tag, attr);
-            if (v) {
-                const abs = resolveUrl(v, base);
-                if (abs) out.add(abs);
-            }
-        }
-        // srcset：逗号分隔的「URL 描述」列表，每段取第一个空白前的 URL（多档分辨率全收，下载后按尺寸筛）
-        const ss = attrValue(tag, "srcset");
-        if (ss) {
-            for (const part of ss.split(",")) {
-                const u = part.trim().split(/\s+/)[0];
-                if (u) {
-                    const abs = resolveUrl(u, base);
-                    if (abs) out.add(abs);
-                }
-            }
-        }
-    }
-    for (const m of html.matchAll(/<a\b[^>]*>/gi)) {
-        const href = attrValue(m[0], "href");
-        if (href && IMG_EXT_RE.test(href)) {
-            const abs = resolveUrl(href, base);
-            if (abs) out.add(abs);
-        }
-    }
-    return [...out];
-}
-
-/** 「下一页」链接：rel=next（link/a）优先，其次锚文本整体匹配常见字样（去内嵌标签，
- *  防正文里出现「下一页」三个字误中）。只认同 host 目标——跨 host 的多半是推荐位/广告 */
-function findNextUrl(html: string, base: string): string | null {
-    const sameHost = (href: string): string | null => {
-        try {
-            const u = new URL(href, base);
-            if ((u.protocol !== "http:" && u.protocol !== "https:") || u.host !== new URL(base).host) return null;
-            return u.href;
-        } catch {
-            return null;
-        }
-    };
-    for (const m of html.matchAll(/<(?:link|a)\b[^>]*>/gi)) {
-        const rel = attrValue(m[0], "rel");
-        if (rel && rel.split(/\s+/).some((v) => v.toLowerCase() === "next")) {
-            const href = attrValue(m[0], "href");
-            if (href) {
-                const abs = sameHost(href);
-                if (abs) return abs;
-            }
-        }
-    }
-    for (const m of html.matchAll(/<a\b[^>]*href\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>([\s\S]*?)<\/a>/gi)) {
-        const text = (m[1] ?? "")
-            .replace(/<[^>]*>/g, "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .toLowerCase();
-        if (!NEXT_TEXT_RE.test(text)) continue;
-        const href = attrValue(m[0], "href");
-        if (href) {
-            const abs = sameHost(href);
-            if (abs) return abs;
-        }
-    }
-    return null;
-}
-
-/** <title> 文本：去内嵌标签、压空白、解码常见实体，截断 50（对齐分组名 schema 上限）；
+/** 渲染侧 document.title 的清洗：去内嵌标签、压空白、解码常见实体，截断 50（对齐分组名 schema 上限）；
  *  网址导入单独成组的组名首选 */
-function pageTitle(html: string): string | null {
-    const m = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-    return m ? cleanTitle(m[1]) : null;
-}
-
-/** 渲染侧 document.title 与静态 <title> 共用的清洗（同上规则） */
 function cleanTitle(raw: string): string | null {
     const s = raw
         .replace(/<[^>]*>/g, "")
@@ -863,40 +842,6 @@ function cleanTitle(raw: string): string | null {
     return s || null;
 }
 
-export async function fetchPage(url: string): Promise<ApiResult<GalleryPageResult>> {
-    let html = "";
-    try {
-        const res = await fetchWithTimeout(url, PAGE_TIMEOUT_MS, "", PAGE_ACCEPT);
-        if (!res.ok) return { ok: false, error: { kind: "gallery", code: "fetch" } };
-        const mime = res.headers.get("content-type") ?? "";
-        // 直链兼容：URL 本身就是图片 → 单张候选，无翻页语义
-        if (mime.startsWith("image/"))
-            return { ok: true, data: { imageUrls: [res.url], nextUrl: null, isImage: true, title: null } };
-        if (!/text\/html|application\/xhtml/.test(mime)) {
-            return { ok: false, error: { kind: "gallery", code: "fetch" } };
-        }
-        // 响应体上限（与 downloadCandidates 的 maxBytes 同哲学）：先看 content-length，
-        // 缺失/说谎时读后再兜一刀（字符数近似字节数，作上限够用）
-        if (Number(res.headers.get("content-length") ?? 0) > PAGE_MAX_BYTES) {
-            return { ok: false, error: { kind: "gallery", code: "fetch" } };
-        }
-        html = await res.text();
-        if (html.length > PAGE_MAX_BYTES) return { ok: false, error: { kind: "gallery", code: "fetch" } };
-        // res.url 是重定向后的最终地址，相对路径以它为基准
-        return {
-            ok: true,
-            data: {
-                imageUrls: collectImageUrls(html, res.url),
-                nextUrl: findNextUrl(html, res.url),
-                isImage: false,
-                title: pageTitle(html),
-            },
-        };
-    } catch {
-        return { ok: false, error: { kind: "gallery", code: "fetch" } };
-    }
-}
-
 /** Content-Type → 格式（与 MIME 表互逆；octet-stream 等不在此列，靠魔数/URL 扩展名兜底） */
 const MIME_TO_FORMAT: Record<string, string> = {
     "image/jpeg": "jpg",
@@ -907,26 +852,70 @@ const MIME_TO_FORMAT: Record<string, string> = {
     "image/svg+xml": "svg",
 };
 
-// 隐藏窗口渲染的并发上限：每次调用开一个独立渲染进程（BrowserWindow），翻页收集时
-// 渲染端逐页并行触发，不限流 N 页就是同时 N 个隐藏 Chromium 进程（内存峰值）
-const RENDER_LIMIT = 3;
-let renderRunning = 0;
-const renderWaiting: (() => void)[] = [];
+// ── 隐藏渲染窗口：模块级只留一个，翻页之间复用，空闲 RENDER_IDLE_MS 自动销毁 ──
 
-/** 简易信号量：超限的调用排队等前一个收尾（渲染再慢也有 15s 超时上限，槽位必然归还） */
-async function withRenderSlot<T>(job: () => Promise<T>): Promise<T> {
-    if (renderRunning >= RENDER_LIMIT) await new Promise<void>((r) => renderWaiting.push(r));
-    renderRunning++;
-    try {
-        return await job();
-    } finally {
-        renderRunning--;
-        renderWaiting.shift()?.();
+let renderWin: BrowserWindow | null = null;
+let renderIdleTimer: NodeJS.Timeout | undefined;
+
+function getRenderWin(): BrowserWindow {
+    clearTimeout(renderIdleTimer);
+    if (!renderWin || renderWin.isDestroyed()) {
+        renderWin = new BrowserWindow({
+            show: false,
+            width: 1280,
+            height: 900,
+            // 挂抓取分区：受限站在隐藏渲染里也带登录态（同步过 cookie 时），与 fetch 链路同源
+            webPreferences: { nodeIntegration: false, contextIsolation: true, partition: IMPORT_PARTITION },
+        });
+        renderWin.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // 页面脚本不得借隐藏窗口弹任何窗
     }
+    return renderWin;
 }
 
-export function renderPage(url: string): Promise<ApiResult<GalleryPageResult>> {
-    return withRenderSlot(() => renderPageInfo(url));
+/** 销毁隐藏窗口（默认当前这个）；传入的若已不是当前窗口，只销毁它自己，不动新建的 */
+function destroyRenderWin(win: BrowserWindow | null = renderWin): void {
+    if (renderWin === win) {
+        clearTimeout(renderIdleTimer);
+        renderWin = null;
+    }
+    if (win && !win.isDestroyed()) win.destroy();
+}
+
+/** 加载页面，等到 dom-ready 就算成功。不用 loadURL 的 Promise：它等 did-finish-load 才兑现，
+ *  图多/有永不返回的图的页面会一直挂着。真正的导航失败（DNS、连接被拒等）靠 did-fail-load
+ *  的主框架失败报出；-3（ERR_ABORTED）是被新导航打断或转成下载，不算失败 */
+function loadUntilDomReady(win: BrowserWindow, url: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const wc = win.webContents;
+        const onReady = () => {
+            wc.off("did-fail-load", onFail);
+            resolve();
+        };
+        const onFail = (_e: unknown, code: number, desc: string, _url: string, isMainFrame: boolean) => {
+            if (!isMainFrame || code === -3) return;
+            wc.off("dom-ready", onReady);
+            wc.off("did-fail-load", onFail);
+            reject(new Error(`${desc} (${code})`));
+        };
+        wc.once("dom-ready", onReady);
+        wc.on("did-fail-load", onFail);
+        win.loadURL(url, { userAgent: BROWSER_UA }).catch(() => {}); // 失败由 did-fail-load 报告
+    });
+}
+
+/** 等页面停止加载（成功或失败都算），最多等 ms 毫秒；慢页面等不到就直接往下走 */
+function waitStopLoading(win: BrowserWindow, ms: number): Promise<void> {
+    const wc = win.webContents;
+    if (!wc.isLoading()) return Promise.resolve();
+    return new Promise((resolve) => {
+        const done = () => {
+            clearTimeout(timer);
+            wc.off("did-stop-loading", done);
+            resolve();
+        };
+        const timer = setTimeout(done, ms);
+        wc.once("did-stop-loading", done);
+    });
 }
 
 /** 渲染收集页面：隐藏窗口真实加载后，从 DOM 一次性收「图片 URL 全集 + 各 URL 的实际
@@ -939,29 +928,29 @@ export function renderPage(url: string): Promise<ApiResult<GalleryPageResult>> {
  *    撑盒（属性即网站声明的显示意图），两者都正确；带宽代价只有视口附近的少量图。
  *  - 未加载图的高度若仍是属性原值而宽度被 CSS 改过，按属性纵横比折算（未加载图高度不缩）。
  *  - 矮盒（h<60）一律按未知丢弃：图标、真细横条、以及任何布局残迹。
- *  - <img> 的 srcset 各档共享同一布局盒（正则侧收全档候选，currentSrc 只选一档，
- *    不补齐则其余档永远配不上显示尺寸）；全部绝对化后再当键。
+ *  - <img> 的 srcset 各档共享同一布局盒（currentSrc 只选一档，不补齐则其余档
+ *    永远配不上显示尺寸）；全部绝对化后再当键。
  *  - <a> 包着的 <img>：缩略图的显示尺寸归给链接目标（大图直链的「显示尺寸」就是它缩略图的）。
  *  - 同一 URL 出现多处取最大显示尺寸（既是缩略图又是正文大图 = 算显示过大的）。
- *  - 页面脚本真实执行：nodeIntegration 关、弹窗全拦，用完即销毁；失败/超时返回 fetch
- *    错误（渲染端降级用静态解析结果），细节写主进程控制台，pnpm dev 终端可排查。 */
-async function renderPageInfo(url: string): Promise<ApiResult<GalleryPageResult>> {
-    const win = new BrowserWindow({
-        show: false,
-        width: 1280,
-        height: 900,
-        // 挂抓取分区：受限站在隐藏渲染里也带登录态（同步过 cookie 时），与 fetch 链路同源
-        webPreferences: { nodeIntegration: false, contextIsolation: true, partition: IMPORT_PARTITION },
-    });
-    win.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // 页面脚本不得借隐藏窗口弹任何窗
+ *  - 页面脚本真实执行：nodeIntegration 关、弹窗全拦。窗口翻页间复用、空闲销毁，失败/超时
+ *    先销毁再返回 fetch 错误，细节写主进程控制台，pnpm dev 终端可排查。
+ *  - 总时限 PAGE_TIMEOUT_MS：只等 dom-ready，到点用已加载的 DOM 收集，慢页面不报错。 */
+export async function renderPage(url: string): Promise<ApiResult<GalleryPageResult>> {
+    const win = getRenderWin();
     try {
         // 整段（加载 + 布局稳定 + DOM 采集）统一 15s 上限：页面挂死不泄漏窗口，输了的 Promise 由 race 吞掉
-        const raw = await Promise.race([
-            (async () => {
-                await loadWithProxyFallback(win, url);
-                await new Promise((r) => setTimeout(r, 2000)); // 等 JS/字体与视口附近的图片布局稳定（SPA 插图稍慢）
-                // 脚本 async 化后 stringify 必须在函数体内做（对 Promise 同步 stringify 得 undefined）
-                return (await win.webContents.executeJavaScript(`(async () => {
+        const started = Date.now();
+        const work = (async () => {
+            // 只等 dom-ready 就往下走：图多的页面等 did-finish-load 常超时，到点用已加载的 DOM 收集即可
+            await withProxyFallback(() => loadUntilDomReady(win, url));
+            // 等 JS/字体与视口附近的图片布局稳定（SPA 插图稍慢）：先等页面加载完（最多等到截止前留出采集时间），
+            // 加载完再多等 2 秒；慢页面等不到加载完就用已有的 DOM
+            const left = (reserve: number) => Math.max(0, PAGE_TIMEOUT_MS - reserve - (Date.now() - started));
+            await waitStopLoading(win, left(COLLECT_RESERVE_MS + STABLE_MS));
+            await sleep(Math.min(STABLE_MS, left(COLLECT_RESERVE_MS)));
+            // 必须走 mainFrame：webContents.executeJavaScript 会等页面加载完成，慢页面会一直等下去。
+            // 脚本 async 化后 stringify 必须在函数体内做（对 Promise 同步 stringify 得 undefined）
+            return (await win.webContents.mainFrame.executeJavaScript(`(async () => {
                     const IMG_RE = /\\.(?:jpe?g|png|gif|webp|bmp|svg)(?:$|[?#])/i;
                     const abs = (u) => {
                         try {
@@ -1022,7 +1011,7 @@ async function renderPageInfo(url: string): Promise<ApiResult<GalleryPageResult>
                             return (u.protocol === "http:" || u.protocol === "https:") && u.host === location.host ? u.href : "";
                         } catch { return ""; }
                     };
-                    // 翻页：rel=next 优先，其次锚文本整体匹配常见字样（对齐静态侧 findNextUrl；只认同 host）
+                    // 翻页：rel=next 优先，其次锚文本整体匹配常见字样（只认同 host：跨 host 的多半是推荐位/广告）
                     let nextUrl = "";
                     for (const el of document.querySelectorAll("a[rel=next], link[rel=next]")) {
                         const h = sameHost(el.getAttribute("href") || "");
@@ -1072,10 +1061,14 @@ async function renderPageInfo(url: string): Promise<ApiResult<GalleryPageResult>
                         title: document.title,
                     });
                 })()`)) as string;
-            })(),
-            new Promise<string | null>((r) => setTimeout(() => r(null), PAGE_TIMEOUT_MS)),
-        ]);
-        if (!raw) return { ok: false, error: { kind: "gallery", code: "fetch" } };
+        })();
+        work.catch(() => {}); // 输了竞速后窗口被销毁，它随后的报错没人接，吞掉免得变成未处理的拒绝
+        const raw = await Promise.race([work, new Promise<null>((r) => setTimeout(() => r(null), PAGE_TIMEOUT_MS))]);
+        if (!raw) {
+            console.warn(`[gallery] 渲染收集超时 ${url}`);
+            destroyRenderWin(win); // 超时的窗口状态不明，下次重建
+            return { ok: false, error: { kind: "gallery", code: "fetch" } };
+        }
         const data = JSON.parse(raw) as {
             urls: string[];
             sizes: { src: string; w: number; h: number }[];
@@ -1093,29 +1086,16 @@ async function renderPageInfo(url: string): Promise<ApiResult<GalleryPageResult>
             data: {
                 imageUrls: data.urls,
                 nextUrl: data.nextUrl || null,
-                isImage: false,
                 title: cleanTitle(data.title || ""),
             },
         };
     } catch (e) {
-        console.warn(`[gallery] 渲染收集失败（渲染端降级走静态解析） ${url}:`, e);
+        console.warn(`[gallery] 渲染收集失败 ${url}:`, e);
+        destroyRenderWin(win);
         return { ok: false, error: { kind: "gallery", code: "fetch" } };
     } finally {
-        win.destroy();
-    }
-}
-
-/** loadURL 直连失败（代理客户端在跑但系统代理开关没开等）：给抓取分区按注册表代理
- *  显式 setProxy 后再试一次（ProxyServer 串与 Chromium proxyRules 语法同源，原样传）。
- *  显式规则生效到进程退出为止——个人工具可接受的取舍 */
-async function loadWithProxyFallback(win: BrowserWindow, url: string): Promise<void> {
-    try {
-        await win.loadURL(url, { userAgent: BROWSER_UA });
-    } catch (e) {
-        ensureProxyState();
-        if (!proxyState?.server) throw e;
-        await importSession.setProxy({ proxyRules: proxyState.server });
-        await win.loadURL(url, { userAgent: BROWSER_UA });
+        // 成功时留着窗口给下一页复用；空闲到点自动销毁（失败路径已销毁，这里什么都不会留）
+        if (renderWin === win) renderIdleTimer = setTimeout(() => destroyRenderWin(win), RENDER_IDLE_MS);
     }
 }
 
@@ -1144,7 +1124,7 @@ function sniffFormat(buf: Buffer): string {
     return "";
 }
 
-/** webp 尺寸解析（nativeImage 解不了 webp）：按 RIFF chunk 走到 VP8X / VP8 / VP8L 读画布尺寸。
+/** webp 尺寸解析：按 RIFF chunk 走到 VP8X / VP8 / VP8L 读画布尺寸。
  *  手工按位拼，避免 32 位位运算截断（VP8L 的字段跨 4 字节边界） */
 function webpSize(buf: Buffer): { width: number; height: number } | null {
     let off = 12; // 跳过 RIFF 头 + WEBP 标识
@@ -1174,6 +1154,53 @@ function webpSize(buf: Buffer): { width: number; height: number } | null {
     return null;
 }
 
+/** 读文件头取图片宽高（入库只要尺寸，不必把整张图解码）。按魔数嗅出的格式分派；
+ *  svg 是矢量、读不出或文件截断的一律 0×0（前端按无尺寸处理）。
+ *  已知取舍：JPEG 的 EXIF 方向不处理，竖拍照片存的是传感器的横向尺寸 */
+function imageSize(buf: Buffer): { width: number; height: number } {
+    const none = { width: 0, height: 0 };
+    try {
+        switch (sniffFormat(buf)) {
+            case "jpg": {
+                // 逐段扫到 SOF（帧头）：段 = 0xFF + 标记 + 2 字节长度。C4/C8/CC 不是 SOF 但落在同一区间
+                let off = 2;
+                while (off + 4 <= buf.length) {
+                    if (buf[off] !== 0xff) {
+                        off++;
+                        continue;
+                    }
+                    const m = buf[off + 1];
+                    if (m === 0xff) {
+                        off++; // 填充字节
+                    } else if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) {
+                        off += 2; // 无长度的独立标记
+                    } else if (m === 0xda) {
+                        return none; // 到了图像数据还没见 SOF：坏文件
+                    } else if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+                        return { height: buf.readUInt16BE(off + 5), width: buf.readUInt16BE(off + 7) };
+                    } else {
+                        off += 2 + buf.readUInt16BE(off + 2);
+                    }
+                }
+                return none;
+            }
+            case "png":
+                return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+            case "gif":
+                return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+            case "bmp":
+                // BMP 高度为负表示自上而下存储，取绝对值
+                return { width: buf.readInt32LE(18), height: Math.abs(buf.readInt32LE(22)) };
+            case "webp":
+                return webpSize(buf) ?? none;
+            default:
+                return none;
+        }
+    } catch {
+        return none; // 读越界 = 文件头被截断
+    }
+}
+
 /** 简单并发池：结果保持输入顺序（个人工具不引 p-limit） */
 async function pooled<T, R>(items: readonly T[], limit: number, job: (item: T) => Promise<R>): Promise<R[]> {
     const results = new Array<R>(items.length);
@@ -1193,12 +1220,10 @@ export async function downloadCandidates(
 ): Promise<ApiResult<{ items: GalleryCandidate[] }>> {
     const items = await pooled(input.urls, input.concurrency, async (url): Promise<GalleryCandidate> => {
         try {
-            const res = await fetchWithTimeout(url, input.timeoutMs, input.referer, IMAGE_ACCEPT);
-            if (!res.ok) return { ok: false, url, reason: "fetch" };
-            const buf = Buffer.from(await res.arrayBuffer());
+            const got = await downloadBytes(url, input.timeoutMs, input.referer, input.maxBytes);
+            if (got === "fetch" || got === "too-large") return { ok: false, url, reason: got };
+            const { buf, mime } = got;
             if (buf.length === 0) return { ok: false, url, reason: "not-image" };
-            if (buf.length > input.maxBytes) return { ok: false, url, reason: "too-large" };
-            const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
             let pathname = "";
             try {
                 pathname = new URL(url).pathname;
@@ -1212,11 +1237,8 @@ export async function downloadCandidates(
                 ((GALLERY_FORMATS as readonly string[]).includes(ext) ? ext : "") ||
                 (MIME_TO_FORMAT[mime] ?? "");
             if (!format) return { ok: false, url, reason: "not-image" };
-            // 尺寸优先走 Electron 解码器；webp 解不了用头解析兜底（参与尺寸过滤的关键）
-            const img = nativeImage.createFromBuffer(buf);
-            let size = { width: 0, height: 0 };
-            if (!img.isEmpty()) size = img.getSize();
-            else if (format === "webp") size = webpSize(buf) ?? size;
+            // 尺寸读文件头（参与尺寸过滤的关键），不解码
+            const size = imageSize(buf);
             // 显示尺寸合理性校验：盒子的宽高比与文件真实宽高比差 3 倍以上（如 467×24 对
             // 2505×1536）按未知处理——布局残迹逃过矮盒防线时在此兜底；真实 CSS 裁切
             // （方图网格等）落在宽容带内不受影响。文件尺寸未知（svg 等）时显示盒是唯一依据，照收
@@ -1238,7 +1260,7 @@ export async function downloadCandidates(
             }
             const inLibrary = shaExists(createHash("sha256").update(buf).digest("hex"));
             const n = ++stagingSeq;
-            writeFileSync(join(stagingDir(), `${n}.${format}`), buf);
+            await writeFile(join(stagingDir(), `${n}.${format}`), buf);
             staged.set(n, { url, format, width: size.width, height: size.height });
             return {
                 ok: true,
@@ -1282,7 +1304,7 @@ function nameFromUrl(url: string, format: string): string {
     return `${stem || "image"}.${format}`;
 }
 
-export function importCandidates(input: GalleryImportCandidatesInput): ApiResult<GalleryImportStats> {
+export async function importCandidates(input: GalleryImportCandidatesInput): Promise<ApiResult<GalleryImportStats>> {
     if (!getGroup(input.groupId)) return notFound;
     const folder = groupFolder(input.groupId);
     let imported = 0;
@@ -1295,7 +1317,7 @@ export function importCandidates(input: GalleryImportCandidatesInput): ApiResult
         }
         let buf: Buffer;
         try {
-            buf = readFileSync(join(stagingDir(), `${n}.${rec.format}`));
+            buf = await readFile(join(stagingDir(), `${n}.${rec.format}`));
         } catch {
             skipped++; // 暂存文件丢失
             continue;
@@ -1306,13 +1328,13 @@ export function importCandidates(input: GalleryImportCandidatesInput): ApiResult
             continue;
         }
         const original = nameFromUrl(rec.url, rec.format);
-        const name = uniqueName(folder, original);
-        writeFileSync(join(galleryDir(), name), buf);
-        saveImage(input.groupId, original, name, sha, buf, rec.url, {
+        const name = await writeNewFile(folder, original, buf);
+        const saved = await saveImage(input.groupId, original, name, sha, buf, rec.url, {
             width: rec.width,
             height: rec.height,
         });
-        imported++;
+        if (saved) imported++;
+        else skipped++;
     }
     return { ok: true, data: { imported, skipped } };
 }
@@ -1356,7 +1378,7 @@ export function deleteTag(tag: string): ApiResult<null> {
  *  无需动——按 id 寻址）。目标相对路径经 uniqueName 避让目标组已有文件；逐行处理不包
  *  大事务——先物理 rename 再改行（同 renameGroup 的顺序约定），rename 被占用等暂时性
  *  失败则跳过该行（图留在原组，可重试），源文件确实没了（ENOENT）照常改行（404 兜底） */
-export function moveImages(ids: number[], groupId: number): ApiResult<null> {
+export async function moveImages(ids: number[], groupId: number): Promise<ApiResult<null>> {
     if (!getGroup(groupId)) return notFound;
     const folder = groupFolder(groupId);
     const selFile = db.prepare("SELECT file FROM gallery_images WHERE id = ?");
@@ -1366,7 +1388,7 @@ export function moveImages(ids: number[], groupId: number): ApiResult<null> {
         if (!row) continue;
         const rel = uniqueName(folder, row.file.slice(row.file.indexOf("/") + 1));
         try {
-            renameSync(join(galleryDir(), row.file), join(galleryDir(), rel));
+            await rename(join(galleryDir(), row.file), join(galleryDir(), rel));
         } catch (e) {
             if ((e as NodeJS.ErrnoException).code !== "ENOENT") continue;
         }
@@ -1378,9 +1400,9 @@ export function moveImages(ids: number[], groupId: number): ApiResult<null> {
 const stmtImageForDelete = db.prepare("SELECT id, file, format FROM gallery_images WHERE id = ?");
 const stmtDeleteImage = db.prepare("DELETE FROM gallery_images WHERE id = ?");
 
-export function deleteImages(ids: number[]): ApiResult<null> {
+export async function deleteImages(ids: number[]): Promise<ApiResult<null>> {
     // 同 deleteGroup 的顺序约定：行删了就再也找不到磁盘上的图，先在事务里收集清单并删行，
-    // 文件 IO 放事务外（rmSync 不占事务持锁时间）
+    // 文件 IO 放事务外（不占事务持锁时间，也不卡主进程）
     const files: { id: number; file: string; format: string }[] = [];
     db.transaction(() => {
         for (const id of ids) {
@@ -1390,7 +1412,7 @@ export function deleteImages(ids: number[]): ApiResult<null> {
             stmtDeleteImage.run(id);
         }
     })();
-    for (const f of files) removeImageFiles(f.id, f.file, f.format);
+    for (const f of files) await removeImageFiles(f.id, f.file, f.format);
     return { ok: true, data: null };
 }
 
@@ -1425,92 +1447,69 @@ export async function pickFiles(): Promise<ApiResult<string[]>> {
     return { ok: true, data: r.canceled ? [] : r.filePaths };
 }
 
-// ── mpimg:// 协议取字节（注册见 src/main/index.ts）──
+// ── mpimg:// 协议取字节（注册见 src/main/app.ts）──
 
 function thumbPath(id: number, format: string): string {
     return join(thumbsDir(), format === "jpg" ? `${id}.jpg` : `${id}.png`);
 }
 
-function readThumb(id: number, format: string): { buf: Buffer; mime: string } | null {
-    try {
-        return { buf: readFileSync(thumbPath(id, format)), mime: format === "jpg" ? MIME.jpg : MIME.png };
-    } catch {
-        return null; // 还没生成过，调用方按需生成
-    }
-}
-
-/** 长边压到 THUMB_EDGE 等比（不足阈值的不放大，放大不增信息量）：jpg 存 JPEG(85)、
- *  其余存 PNG 保透明（gif 取首帧）。库内图与网址导入候选用同一份缩图规则 */
-function shrink(img: NativeImage, format: string): Buffer {
-    const { width, height } = img.getSize();
-    const long = Math.max(width, height);
-    const thumb =
-        long > THUMB_EDGE
-            ? img.resize({
-                  width: Math.round((width * THUMB_EDGE) / long),
-                  height: Math.round((height * THUMB_EDGE) / long),
-              })
-            : img;
-    return format === "jpg" ? thumb.toJPEG(85) : thumb.toPNG();
-}
-
-/** 按需生成缩略图：源解不动（isEmpty）返回 null，调用方回退原图字节。
- *  已知取舍：nativeImage 对 jpg 的 EXIF 方向不保证与 <img> 一致，个别竖拍照片缩略图
- *  方向可能不一致——个人工具接受，不值得为此引入完整解码器。 */
-function makeThumb(id: number, format: string, origPath: string): { buf: Buffer; mime: string } | null {
-    const img = nativeImage.createFromPath(origPath);
-    if (img.isEmpty()) return null;
-    const out = shrink(img, format);
-    try {
-        writeFileSync(thumbPath(id, format), out);
-    } catch {
-        /* 落盘失败不影响本次返回，下次再生成 */
-    }
-    return { buf: out, mime: format === "jpg" ? MIME.jpg : MIME.png };
-}
-
-/** 协议处理器入口：按 id 取原图或缩略图字节；行不存在/文件读不到返回 null（→ 404） */
-export function serveImage(kind: "orig" | "thumb", id: number): { buf: Buffer; mime: string } | null {
+/** 协议处理器入口：按 id 取原图或缩略图字节；行不存在/文件读不到返回 null（→ 404）。
+ *  thumb 只读现成文件，没有就 null：缩略图由渲染端 Worker 生成并经 gallerySaveThumb 落盘，
+ *  主进程不解码，也不回退成原图（原图动辄数 MB，网格里全回原图会拖垮内存）。
+ *  svg 是矢量，thumb 直接回原图 */
+export async function serveImage(kind: "orig" | "thumb", id: number): Promise<{ buf: Buffer; mime: string } | null> {
     const row = db.prepare("SELECT file, format FROM gallery_images WHERE id = ?").get(id) as
         { file: string; format: string } | undefined;
     if (!row) return null;
-    const origPath = join(galleryDir(), row.file);
-    // thumb 对 svg 直接回原图：矢量天然可缩放，不生成位图缩略图
-    if (kind === "thumb" && row.format !== "svg") {
-        const thumb = readThumb(id, row.format) ?? makeThumb(id, row.format, origPath);
-        if (thumb) return thumb;
-    }
     try {
-        return { buf: readFileSync(origPath), mime: MIME[row.format] ?? MIME.jpg };
+        if (kind === "thumb" && row.format !== "svg") {
+            return { buf: await readFile(thumbPath(id, row.format)), mime: row.format === "jpg" ? MIME.jpg : MIME.png };
+        }
+        return { buf: await readFile(join(galleryDir(), row.file)), mime: MIME[row.format] ?? MIME.jpg };
     } catch {
-        return null; // 磁盘文件被外部删除等：404
+        return null; // 缩略图还没生成 / 磁盘文件被外部删除等：404
     }
 }
 
-/** mpimg://cand/<n>：网址导入候选的缩略图（与库内图同款按需生成策略，
- *  缩略图落暂存目录 <n>.t.(jpg|png)，会话清场一并删）；行不存在返回 null（→ 404） */
-export function serveCandidate(n: number): { buf: Buffer; mime: string } | null {
+/** mpimg://cand/<n>：网址导入候选，直接回暂存的原图（对话框是临时的，不值得再生成缩略图）；
+ *  编号不在会话里/文件没了返回 null（→ 404） */
+export async function serveCandidate(n: number): Promise<{ buf: Buffer; mime: string } | null> {
     const rec = staged.get(n);
     if (!rec) return null;
-    const origPath = join(stagingDir(), `${n}.${rec.format}`);
     try {
-        if (rec.format === "svg") return { buf: readFileSync(origPath), mime: MIME.svg };
-        const thumbPath = join(stagingDir(), rec.format === "jpg" ? `${n}.t.jpg` : `${n}.t.png`);
-        try {
-            return { buf: readFileSync(thumbPath), mime: rec.format === "jpg" ? MIME.jpg : MIME.png };
-        } catch {
-            // 还没生成过：现生成（源解不动回退原图字节）
-            const img = nativeImage.createFromPath(origPath);
-            if (img.isEmpty()) return { buf: readFileSync(origPath), mime: MIME[rec.format] ?? MIME.jpg };
-            const out = shrink(img, rec.format);
-            try {
-                writeFileSync(thumbPath, out);
-            } catch {
-                /* 落盘失败不影响本次返回，下次再生成 */
-            }
-            return { buf: out, mime: rec.format === "jpg" ? MIME.jpg : MIME.png };
-        }
+        return { buf: await readFile(join(stagingDir(), `${n}.${rec.format}`)), mime: MIME[rec.format] ?? MIME.jpg };
     } catch {
         return null;
     }
+}
+
+/** 渲染端 Worker 生成的缩略图字节落盘（文件名规则同 thumbPath：jpg 存 .jpg，其余 .png）。
+ *  svg 不生成缩略图，拒绝；行不存在回 not-found */
+export async function saveThumb(id: number, bytes: Uint8Array): Promise<ApiResult<null>> {
+    const row = db.prepare("SELECT format FROM gallery_images WHERE id = ?").get(id) as { format: string } | undefined;
+    if (!row) return notFound;
+    if (row.format === "svg") return badRequest;
+    try {
+        await writeFile(thumbPath(id, row.format), bytes);
+    } catch (e) {
+        return { ok: false, error: { kind: "failed", path: String(e) } };
+    }
+    return { ok: true, data: null };
+}
+
+/** 工具打开/刷新时一次取全侧栏需要的数据（分组、标签池、是否设密码、画廊计数），
+ *  省掉四次 IPC 往返；各部分沿用原接口的口径（锁定视角过滤等） */
+export function overview(password?: string): ApiResult<GalleryOverview> {
+    const groups = listGroups(password);
+    const tags = allTags();
+    const has = passwordState();
+    const wall = wallCount(password);
+    if (!groups.ok) return groups;
+    if (!tags.ok) return tags;
+    if (!has.ok) return has;
+    if (!wall.ok) return wall;
+    return {
+        ok: true,
+        data: { groups: groups.data, tags: tags.data, hasPassword: has.data.has, wallCount: wall.data.count },
+    };
 }

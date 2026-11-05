@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Eye, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -8,15 +9,12 @@ import { youdaoErrKey } from "@/tools/youdaoErr";
 import { useI18n } from "@/i18n/useI18n";
 import { CommitInput, FormRow } from "./shared";
 
-type Props = {
-    /** 有道翻译密钥：提交走 onTranslateCfg（App 负责落库与回填） */
-    translateCfg: TranslateConfig | null;
-    onTranslateCfg: (patch: TranslateConfigPatch) => Promise<boolean>;
-};
-
-/** 翻译分节：有道密钥 + 测试连接。分节挂载即持有全部编辑态，关闭即丢弃 */
-export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
+/** 翻译分节：有道密钥 + 测试连接。分节挂载即读取配置并持有全部编辑态，关闭即丢弃；
+ *  翻译请求由主进程现读库，所以密钥只在这里读写，不放进 App */
+export function TranslateSection() {
     const { t } = useI18n();
+    // 已落库的值（null = 尚未读到）：编辑态与它比较来判断「没改动不请求」
+    const [translateCfg, setTranslateCfg] = useState<TranslateConfig | null>(null);
     // 密钥编辑态：失焦提交；密钥默认打码，眼睛切换明文便于核对粘贴
     const [appKeyEdit, setAppKeyEdit] = useState("");
     const [secretEdit, setSecretEdit] = useState("");
@@ -25,12 +23,31 @@ export function TranslateSection({ translateCfg, onTranslateCfg }: Props) {
     const [test, setTest] = useState<"idle" | "testing" | "ok" | "fail">("idle");
     const [testMsg, setTestMsg] = useState("");
 
+    useEffect(() => {
+        api.getTranslateConfig().then((r) => {
+            if (r.ok) setTranslateCfg(r.data);
+        });
+    }, []);
+
     // translateCfg 变化（含保存回填）时同步编辑态
     useEffect(() => {
         if (!translateCfg) return;
         setAppKeyEdit(translateCfg.appKey);
         setSecretEdit(translateCfg.secret);
     }, [translateCfg]);
+
+    /** 提交密钥：失败统一 toast 并返回 false（调用方自行回滚编辑态），成功回填已落库值 */
+    async function onTranslateCfg(patch: TranslateConfigPatch): Promise<boolean> {
+        try {
+            const r = await api.setTranslateConfig(patch);
+            if (!r.ok) throw new Error(r.error.kind);
+            setTranslateCfg(r.data);
+            return true;
+        } catch {
+            toast.error(t("toast.error"));
+            return false;
+        }
+    }
 
     /** 翻译密钥失焦提交：空串 = 清除（工具随之进入未配置态）；没改动不请求；失败回滚 */
     async function commitTranslateKey(field: "appKey" | "secret") {

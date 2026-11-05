@@ -15,6 +15,8 @@ export function startClipWatch(): void {
     started = true;
     lastText = clipboard.readText();
     setInterval(() => {
+        // 时限 <= 0（含非法值）= 功能关闭，freshClipboardText 不会用到打点，不必每 500ms 读一次系统剪贴板
+        if (!(Number(getSetting("clipPasteWindow", "5")) > 0)) return;
         const t = clipboard.readText();
         if (t !== lastText) {
             lastText = t;

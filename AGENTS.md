@@ -49,8 +49,9 @@ pnpm dist:win   # 打包目录版到 release/win-unpacked/（dist:mac 到 releas
 ## 架构
 
 ```text
-src/main/index.ts                主进程入口：窗口/托盘/热键 + IPC 注册 + mpimg:// 协议
-src/main/dataBoot.ts             开库前确定数据目录，所以 server 模块都在它之后动态加载
+src/main/index.ts                主进程入口：单实例锁 + scheme 注册 + 启动失败提示
+src/main/dataBoot.ts             开库前确定数据目录，所以 app.ts 在它之后才动态加载
+src/main/app.ts                  应用主体：窗口/托盘/热键 + IPC 注册 + mpimg:// 协议
 src/main/server/api.ts           ★ MpApi 接口 = 前后端唯一契约；apiHandlers 逐方法实现
 src/main/server/schemas.ts       zod schema 与前后端共享的 id 词汇（HOTKEY_IDS / TOOL_IDS）
 src/main/server/*.ts             业务模块，纯函数风格

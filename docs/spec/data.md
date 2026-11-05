@@ -25,6 +25,7 @@
 | `activeWorkspace` | 当前工作区 id |
 | `pinned` | 钉住状态，"1"/"0"（置顶不落库） |
 | `galleryPassword` | 图库密码 |
+| `galleryFoldersMigrated` | 图库文件归位迁移已完成，"1" 后启动不再跑；有文件被占用没归位时不写，下次重试 |
 | `window_state` | 窗口尺寸与最大化状态 |
 
 自启不存这里，交给系统登录项（`app.setLoginItemSettings`，见 `src/main/server/autostart.ts`）。
@@ -39,8 +40,16 @@
 ## 图库文件
 
 - 图片**字节级复制**进数据目录 `gallery/<组文件夹>/` 子目录。组文件夹由组名清洗而来，`file` 列存「组文件夹/文件名」相对路径。
-- sha256 全库去重；缩略图按需生成于 `.thumbs/`，按 id 寻址，不分目录。
-- 渲染端经 `mpimg://orig|thumb/<id>` 协议直读。
+- sha256 全库去重；入库时的宽高靠读文件头拿到，不解码（jpg、png、gif、bmp、webp；svg 和读不出的存 0×0，已有的 0×0 行不回填）。
+- 缩略图放 `.thumbs/`，按 id 寻址，不分目录：jpg 存 `.jpg`，其余存 `.png` 保透明，svg 不生成。主进程不解码：渲染端的 Worker（`tools/gallery/thumbWorker.ts`）生成后经 `gallerySaveThumb` 存盘。
+- 渲染端经 `mpimg://orig|thumb/<id>` 协议读取。`thumb` 没有文件时回 404，渲染端生成后再请求，不回退原图；svg 的 `thumb` 直接回原图。协议开了 `corsEnabled`，响应带 `access-control-allow-origin: *`，页面和 Worker 都能 fetch；它只注册在默认 session，网址导入的隐藏窗口用另一个分区，碰不到。
+- 网址导入的候选 `mpimg://cand/<n>` 直接回暂存原图，暂存目录在系统临时目录，入库才进 `gallery/`。
+
+主进程同时管热键、全部 IPC 和终端输入输出，所以图库不在主进程解码，文件操作也都走 `fs/promises`。这样定的依据（Windows 实测，2400 万像素 JPEG）：
+
+- `nativeImage` 解一张要约 125ms，而且解不了 WebP、GIF、BMP。
+- `nativeImage.createThumbnailFromPath` 名义上异步，实际同样卡住主线程，不要换回它。
+- 在页面线程生成缩略图最长占 49ms，隐藏窗口里还可能卡住不返回，所以放进 Worker，不占主进程。
 - `gallery/` 与 favicons 同在 dataLocation 的具名迁移/清理清单里，改数据目录会整体跟随。
 
 ## 渲染端 localStorage

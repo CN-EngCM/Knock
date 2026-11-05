@@ -16,7 +16,9 @@
 
 ## GaN.UI 同步
 
-`components/ui/` 与上游支撑模块（`lib/platform|shortcut|density|scroll`、`hooks/use-overlay-density|use-size-token|use-virtual-rows`）保持上游原样（2 空格、无分号），`.prettierignore` 已排除，改它们等于放弃下次整文件 diff。这些文件注释里提到的 `docs/design.md` 指上游仓库的文档，不是本仓库的。
+`components/ui/` 与上游支撑模块（`lib/platform|shortcut|density|scroll`、`hooks/use-overlay-density|use-virtual-rows`）保持上游原样（2 空格、无分号），`.prettierignore` 已排除，改它们等于放弃下次整文件 diff。这些文件注释里提到的 `docs/design.md` 指上游仓库的文档，不是本仓库的。
+
+只复制用得到的组件。`tree`、`drag`、`attachment`、`disclosure-group`、`avatar`、`alert`、`direction`、`skeleton` 和 `hooks/use-size-token` 没有放进本仓库，要用时再从上游取；对应的令牌还留在 `index.css`。
 
 本地只有三处差异，别的都要么回上游、要么放业务层：
 
@@ -106,3 +108,29 @@ GaN.UI `DockLayout`，业务封装 `DockZone.tsx`，底座 dockview-react。
 - **环境变量**：新建会话将 `TERM` 设为 `xterm-256color`、`COLORTERM` 设为 `truecolor`，并清除继承的 `NO_COLOR`，避免启动环境禁用彩色输出。
 - **xterm 实例归 `termStore.ts`**，与面板生命周期解耦：面板拖动重组只重挂 DOM，不丢回滚缓冲；会话结束才 dispose；实例未就绪前的 pty 输出由它缓冲回放。
 - 主题切换经 html 类监听热更新 xterm 配色，不重建进程，不清缓冲。
+
+## 设置
+
+- 分节内容随弹窗打开才挂载。剪贴板时限、翻译密钥、AI 模型由各分节挂载时自己读、提交时自己写，失败 `toast.error`，`App` 不持有它们。
+- 界面主题、终端、字体和工具别名启动就要用，留在 `App`。
+- AI 模型是 AI 工具和设置页共用的，放在共享 store `lib/aiModels.ts`：在设置里保存后，已打开的 AI 工具立刻生效，不用重开。
+
+## 图库
+
+- **网格**：整个网格只有一个右键菜单，点击和右键都在容器上按格子的 `data-index` 处理，空白处右键不弹菜单。格子是 `memo` 组件，勾选一张只重渲染那一格。没有上虚拟列表，真到上万张再上。
+- **缩略图**：`mpimg://thumb/<id>` 回 404 时先显示占位，排队交给 Worker 生成（长边 320，不放大），同时最多 2 张，同一张只生成一次。存盘后带 `?v=1` 重新请求，绕开浏览器对失败结果的缓存。生成失败显示名字兜底块。
+- **查看器**：删图只在本地移除这一张并刷新侧栏计数，不重置列表，也不滚回顶部。
+- **从网址导入**：
+  - 首页先探测一次 `content-type`（`galleryProbeUrl`），是图片就当单张候选。探测失败不算错，其余都走隐藏窗口渲染收集，没有静态解析。
+  - 隐藏窗口翻页间复用，空闲 30 秒或会话清场（`galleryCollectReset`）时销毁，失败或超时后也销毁。
+  - 每页总时限 15 秒，只等 `dom-ready`，到点就用已加载的 DOM 收集，所以图多的慢页面不算失败。
+  - 首页渲染失败才报错；翻到后面的页失败时停止翻页，已收集到的候选照常呈现。
+  - 抓取全部走抓取分区的 `session.fetch`，和隐藏窗口共用 cookie 与代理。`ProxyEnable=1` 时自动走系统代理；直连失败时读注册表 `ProxyServer` 试用一次，能通就固定下来，都不通就还原。超时覆盖到响应体读完，体积上限边读边判断。
+  - `session.fetch` 的三个坑：`res.url` 恒为空串；https 的 referer 请求 http 目标时必须传 `referrerPolicy: "unsafe-url"`；`reader.cancel()` 不断开连接，提前结束要用 `AbortController.abort()`。
+  - 隐藏窗口注入采集脚本要用 `mainFrame.executeJavaScript`，`webContents.executeJavaScript` 会等页面加载完。
+
+## AI 助手
+
+- 增量在 `aiSessions` 里攒 80ms 再提交。用定时器而不用 `requestAnimationFrame`：窗口藏到托盘时动画帧不触发。
+- 消息行是 `memo` 组件，流式时只重渲染末条，历史消息不会重新解析 Markdown。
+- 终结、停止、清空、重试、回滚、删专家之前都先写入积压的文字，保证不丢、不串。

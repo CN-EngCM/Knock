@@ -282,6 +282,14 @@ export const galleryQuerySchema = z.object({
 });
 export type GalleryQueryInput = z.infer<typeof galleryQuerySchema>;
 
+// 渲染端 Worker 生成的缩略图字节：上限 5MB（320px 长边的缩略图通常几十 KB，这是不信任前端的硬兜底），
+// 空字节拒绝（写成 0 字节文件会让该图的缩略图永远 200 但显示不出来）
+export const GALLERY_THUMB_MAX_BYTES = 5 * 1024 * 1024;
+export const gallerySaveThumbSchema = z.object({
+    id: z.number().int().positive(),
+    bytes: z.instanceof(Uint8Array).refine((b) => b.length > 0 && b.length <= GALLERY_THUMB_MAX_BYTES),
+});
+
 // 图库密码本体（明文本地存储）：设置/修改/解锁共用；不 trim——设什么存什么，解锁输一样即可
 export const galleryPasswordSchema = z.object({ password: z.string().min(1).max(64) });
 
@@ -328,12 +336,10 @@ export const galleryImportCandidatesSchema = z.object({
 });
 export type GalleryImportCandidatesInput = z.infer<typeof galleryImportCandidatesSchema>;
 
-// 抓页结果：isImage = 输入本身就是图片直链（无翻页语义，imageUrls 即单张候选）；
-// title = <title> 文本（服务端已清洗截断），导入单独成组时的组名首选
+// 渲染收集结果：title = document.title（服务端已清洗截断），导入单独成组时的组名首选
 export type GalleryPageResult = {
     imageUrls: string[];
     nextUrl: string | null;
-    isImage: boolean;
     title: string | null;
 };
 
@@ -443,3 +449,11 @@ export type GalleryImage = {
 };
 
 export type GalleryImportStats = { imported: number; skipped: number };
+
+/** 图库侧栏一次取全：分组（按密码视角过滤）、标签池、是否已设密码、画廊可见计数 */
+export type GalleryOverview = {
+    groups: GalleryGroup[];
+    tags: string[];
+    hasPassword: boolean;
+    wallCount: number;
+};

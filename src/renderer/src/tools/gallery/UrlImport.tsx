@@ -94,7 +94,7 @@ const FILTERS: readonly { key: keyof Params; label: MessageKey }[] = [
     { key: "minDh", label: "gallery.url.minDh" },
 ];
 
-/** 候选缩略图：mpimg://cand/<n>（主进程暂存目录按需生成），挂了显示兜底块 */
+/** 候选缩略图：mpimg://cand/<n>（主进程直接回暂存的原图），挂了显示兜底块 */
 function CandThumb({ index }: { index: number }) {
     const [failed, setFailed] = useState(false);
     if (failed) {
@@ -178,7 +178,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
     /** 关闭（Esc/遮罩/X 同路）：停掉还在跑的循环；入库中除外——清场由入库循环自己收尾 */
     function requestClose() {
         cancelRef.current = true;
-        if (phase !== "importing") void api.galleryCollectDiscard();
+        if (phase !== "importing") void api.galleryCollectReset();
         onClose();
     }
 
@@ -191,7 +191,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         } catch {
             /* 存不进就算了，下次回落默认 */
         }
-        const r0 = await api.galleryCollectStart();
+        const r0 = await api.galleryCollectReset();
         if (!r0.ok) {
             toast.error(t("toast.error"));
             return;
@@ -199,31 +199,31 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         cancelRef.current = false;
         titleRef.current = null;
         setPhase("collecting");
-        // 翻页收集：渲染收集为主路径（隐藏窗口真实加载后的 DOM 是全量，SPA 站如 pixiv
-        // 的作品图靠 JS 插入，静态 HTML 只有页脚图标）；渲染失败降级用静态解析结果。
-        // 同 host 与循环防护（已抓页判定到底）主进程已保证，这里只管页数/数量上限与 URL 去重
+        // 先探一次首页：URL 本身是图片直链就是单张候选，无翻页语义；探测失败不算错，照样走渲染。
+        // 其余全走渲染收集（隐藏窗口真实加载后的 DOM 是全量，SPA 站如 pixiv 的作品图靠 JS 插入）。
+        // 同 host 主进程已保证，这里管页数/数量上限、URL 去重与循环防护（指回已抓页 = 到底）
         const seen = new Set<string>();
         const visited = new Set<string>();
         const found: string[] = [];
-        let next: string | null = u;
+        const probe = await api.galleryProbeUrl(u);
+        const isImage = probe.ok && probe.data.isImage;
+        if (isImage) found.push(u); // 下载时会再跟随重定向，候选地址用输入的即可
+        let next: string | null = isImage ? null : u;
         let pagesDone = 0;
-        let isImage = false;
         while (next && !cancelRef.current && pagesDone < pages && found.length < maxCandidates) {
-            const r = await api.galleryFetchPage(next);
+            const r = await api.galleryRenderPage(next);
             if (!r.ok) {
-                toast.error(t("gallery.url.toast.fetchFailed"));
-                setPhase("form");
-                void api.galleryCollectDiscard();
-                return;
-            }
-            visited.add(next);
-            if (r.data.isImage) {
-                isImage = true; // 直链：单张候选，无翻页语义
-                found.push(...r.data.imageUrls);
+                // 首页就失败才算错；翻到后面的页失败，已收集到的照常呈现
+                if (pagesDone === 0) {
+                    toast.error(t("gallery.url.toast.fetchFailed"));
+                    setPhase("form");
+                    void api.galleryCollectReset();
+                    return;
+                }
                 break;
             }
-            const rr = await api.galleryRenderPage(next);
-            const page = rr.ok ? rr.data : r.data; // 渲染失败（挂死/超时）→ 静态兜底
+            const page = r.data;
+            visited.add(next);
             if (!titleRef.current && page.title) titleRef.current = page.title; // 组名用首页标题
             for (const img of page.imageUrls) {
                 if (seen.has(img)) continue;
@@ -258,13 +258,13 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         }
         if (cancelRef.current) {
             setPhase("form"); // 取消回表单
-            void api.galleryCollectDiscard();
+            void api.galleryCollectReset();
             return;
         }
         if (items.length === 0) {
             toast(t("gallery.url.toast.none"));
             setPhase("form");
-            void api.galleryCollectDiscard();
+            void api.galleryCollectReset();
             return;
         }
         setCandidates(items);
@@ -385,7 +385,7 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         }
         setImporting(null);
         importBusy.current = false;
-        void api.galleryCollectDiscard(); // 会话收场：清暂存（取消/失败也清，重开重新抓）
+        void api.galleryCollectReset(); // 会话收场：清暂存（取消/失败也清，重开重新抓）
         if (ok && imported + skipped > 0) {
             toast.success(
                 fmt(t("gallery.toast.imported"), { n: imported }) +

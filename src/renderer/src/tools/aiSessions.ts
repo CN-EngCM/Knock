@@ -43,6 +43,15 @@ let lastEid: number | null = null;
 /** 在途流登记：streamId → 专家 id。并发流的唯一路由依据（每专家可各有一条流互不干扰） */
 const streams = new Map<number, number>();
 
+/**
+ * 增量积压：专家 id → 尚未写进会话的文字。模型每秒可能吐上百个增量，逐个提交会让订阅者
+ * 每次都重渲染，攒 80ms 再一次写入。用 setTimeout 而不用 requestAnimationFrame：
+ * 窗口藏到托盘时动画帧不触发，增量会一直攒着，流式回答在后台就停了。
+ */
+const pending = new Map<number, { content: string; reasoning: string }>();
+const FLUSH_MS = 80;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
 const subs = new Set<() => void>();
 let snap: SessionsSnapshot = { convs, activeId, lastEid };
 
@@ -50,6 +59,43 @@ let snap: SessionsSnapshot = { convs, activeId, lastEid };
 function commit(): void {
     snap = { convs, activeId, lastEid };
     for (const fn of subs) fn();
+}
+
+/**
+ * 把积压的增量写进会话，不提交；返回是否真的写了东西。凡是要改消息列表、状态的地方
+ * （终结事件、停止、清空、重试、回滚……）动手前都先调它：不先写，文字会丢，或写到已被换掉的占位上。
+ */
+function writePending(): boolean {
+    if (flushTimer !== null) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+    }
+    if (pending.size === 0) return false;
+    for (const [eid, acc] of pending) {
+        lastEid = eid;
+        patchLast(eid, (m) => ({
+            ...m,
+            content: m.content + acc.content,
+            // 没有思考内容时不要凭空多出 reasoning: ""，界面靠它是否为空决定画不画折叠行
+            ...(acc.reasoning ? { reasoning: (m.reasoning ?? "") + acc.reasoning } : {}),
+        }));
+    }
+    pending.clear();
+    return true;
+}
+
+/** 写入积压并提交：定时器到点、以及后面自己不一定会提交的改动入口用 */
+function flushPending(): void {
+    if (writePending()) commit();
+}
+
+/** 收一个增量：只攒不提交，定时器到点统一写入 */
+function queueDelta(eid: number, phase: "reasoning" | "content" | undefined, text: string): void {
+    const acc = pending.get(eid) ?? { content: "", reasoning: "" };
+    if (phase === "reasoning") acc.reasoning += text;
+    else acc.content += text;
+    pending.set(eid, acc);
+    flushTimer ??= setTimeout(flushPending, FLUSH_MS);
 }
 
 export function setActive(id: number | null): void {
@@ -67,6 +113,7 @@ export function getActive(): number | null {
 /** 发送一轮问答的 UI 先行：user + 占位 assistant（status streaming，delta 追加进占位）。
  *  两行总是一起 push —— turn 折叠靠用户消息开新轮，回滚也按整对撤销 */
 export function appendExchange(eid: number, userText: string): void {
+    flushPending();
     const cur = convs[eid] ?? { msgs: [], override: null, effortOverride: null };
     // 一问一答共用同一时刻：footer 上的时间属于这一轮，不是两条独立消息
     const now = Date.now();
@@ -87,6 +134,7 @@ export function appendExchange(eid: number, userText: string): void {
 
 /** startChat 失败时撤掉最后一对占位；只在 appendExchange 之后紧跟调用（回滚语义不通用） */
 export function rollbackLastExchange(eid: number): void {
+    flushPending();
     const cur = convs[eid];
     if (!cur || cur.msgs.length < 2) return;
     convs = { ...convs, [eid]: { ...cur, msgs: cur.msgs.slice(0, -2) } };
@@ -99,8 +147,8 @@ export function registerStream(eid: number, streamId: number): void {
     streams.set(streamId, eid);
 }
 
-/** 不可变改写该会话最后一条 assistant（delta 与终结态都落到它身上） */
-export function patchLastAssistant(eid: number, fn: (m: Msg) => Msg): void {
+/** 不可变改写该会话最后一条 assistant，不提交（flushPending 要在一次提交里改多位专家） */
+function patchLast(eid: number, fn: (m: Msg) => Msg): void {
     const conv = convs[eid];
     if (!conv || conv.msgs.length === 0) return;
     const idx = conv.msgs.length - 1;
@@ -109,6 +157,12 @@ export function patchLastAssistant(eid: number, fn: (m: Msg) => Msg): void {
     const msgs = [...conv.msgs];
     msgs[idx] = fn(last);
     convs = { ...convs, [eid]: { ...conv, msgs } };
+}
+
+/** 改写最后一条 assistant 并提交（终结态落到它身上）；先写完积压的增量，保证文字在状态之前 */
+export function patchLastAssistant(eid: number, fn: (m: Msg) => Msg): void {
+    writePending(); // 下面无条件提交，这里不必再提交一次
+    patchLast(eid, fn);
     lastEid = eid;
     commit();
 }
@@ -150,6 +204,7 @@ export function setEffortOverride(eid: number, effort: AiEffortId | null): void 
 
 /** 清空对话历史但保留 override（模型/思考强度是「这个会话怎么配」，不是内容） */
 export function clearConv(eid: number): void {
+    flushPending();
     const cur = convs[eid];
     if (!cur) return;
     // 清空后 delta 没有落点，先把在途流停掉，别让请求继续烧 token
@@ -164,6 +219,7 @@ export function clearConv(eid: number): void {
  * 不可重试（已没有消息、末条不是 error 助手）返回 false。
  */
 export function resetForRetry(eid: number): boolean {
+    flushPending();
     const conv = convs[eid];
     if (!conv || conv.msgs.length < 2) return false;
     const last = conv.msgs[conv.msgs.length - 1];
@@ -178,6 +234,7 @@ export function resetForRetry(eid: number): boolean {
 
 /** 专家被删除：连带停掉在途流并抹掉整个会话（无处安放的会话不留残骸） */
 export function dropConv(eid: number): void {
+    flushPending();
     stopExpertStreams(eid);
     if (!(eid in convs)) return;
     const next = { ...convs };
@@ -214,11 +271,7 @@ onAiEvent((ev) => {
     const eid = streams.get(ev.streamId);
     if (eid == null) return;
     if (ev.type === "delta") {
-        patchLastAssistant(eid, (m) =>
-            ev.phase === "reasoning"
-                ? { ...m, reasoning: (m.reasoning ?? "") + ev.text }
-                : { ...m, content: m.content + ev.text },
-        );
+        queueDelta(eid, ev.phase, ev.text);
         return;
     }
     // 流终结三态：先解除路由再落状态

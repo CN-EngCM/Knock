@@ -52,9 +52,6 @@ type Props = {
     /** 字体设置（界面/等宽）：提交走 onFontPatch（App 落库回填并写 CSS 变量即全局生效） */
     fontCfg: FontConfig | null;
     onFontPatch: (patch: FontPatch) => Promise<boolean>;
-    /** 剪贴板素材时限（秒，0 = 关闭） */
-    clipSec: number | null;
-    onClipSec: (seconds: number) => Promise<boolean>;
 };
 
 /** 基础设置分节：语言 / 主题 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 运行环境 */
@@ -68,8 +65,6 @@ export function BasicSection({
     onTermPatch,
     fontCfg,
     onFontPatch,
-    clipSec,
-    onClipSec,
 }: Props) {
     const { t } = useI18n();
     // Radix Dialog 关闭即卸载分节内容，挂载时拉一次即可，每次打开都会重新拉取
@@ -79,7 +74,9 @@ export function BasicSection({
     // 终端设置的本地编辑态：shell 即选即存；字号失焦（或回车）才提交
     const [shell, setShell] = useState<ShellId | null>(null);
     const [fontSize, setFontSize] = useState("13");
-    // 剪贴板时限编辑态（秒）
+    // 剪贴板素材时限（秒，0 = 关闭）：主进程呼出时直接读库，只有这里读写，不放进 App。
+    // clipSec 是已落库的值（null = 尚未读到），clipSecEdit 是输入框编辑态
+    const [clipSec, setClipSec] = useState<number | null>(null);
     const [clipSecEdit, setClipSecEdit] = useState("5");
     // 数据目录（null = 尚未拉取）；迁移是「搬库 → 重启」的长流程，pending 防重复触发
     const [dataDirInfo, setDataDirInfo] = useState<{ dir: string; isDefault: boolean } | null>(null);
@@ -92,6 +89,9 @@ export function BasicSection({
         });
         api.getDataDir().then((r) => {
             if (r.ok) setDataDirInfo(r.data);
+        });
+        api.getClipPaste().then((r) => {
+            if (r.ok) setClipSec(r.data.seconds);
         });
     }, []);
 
@@ -179,8 +179,14 @@ export function BasicSection({
             if (clipSec !== null) setClipSecEdit(String(clipSec));
             return;
         }
-        const ok = await onClipSec(clamped);
-        if (!ok && clipSec !== null) setClipSecEdit(String(clipSec));
+        try {
+            const r = await api.setClipPaste(clamped);
+            if (!r.ok) throw new Error(r.error.kind);
+            setClipSec(r.data.seconds);
+        } catch {
+            toast.error(t("toast.error"));
+            setClipSecEdit(String(clipSec));
+        }
     }
 
     /** 数据目录迁移失败提示：data-dir 按原因给文案，其余通用 */

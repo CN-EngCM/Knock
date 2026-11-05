@@ -2,7 +2,7 @@
 // 渲染端只负责给 <html> 套/摘 .dark 类——全部令牌按类切换（见 index.css）。
 export type ThemeId = "dark" | "light";
 
-/** 读 <html> 当前主题类（初始值由 main.tsx 在首帧前按持久化值套好） */
+/** 读 <html> 当前主题类（初始值由 index.html 的内联脚本在首帧前按持久化值套好） */
 export function currentTheme(): ThemeId {
     return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }

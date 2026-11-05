@@ -15,7 +15,7 @@ import {
 
 // ── 启动引导：开库前确定数据目录 ──
 // server 侧模块在 import 求值链上同步打开 SQLite，因此本文件必须先于
-// await import("./server/api") 执行（index.ts 的 whenReady 里编排）；
+// await import("./app") 执行（index.ts 的 whenReady 里编排）；
 // 它只依赖纯 fs 的 dataLocation 与原生弹窗，不触达任何会开库的模块。
 //
 // 弹窗文案内联双语（app.getLocale() 判断），不 import src/renderer/src/i18n——那是渲染层的东西。

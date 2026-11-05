@@ -106,21 +106,17 @@ export default function GalleryTool() {
     // 「全部图片」计数与后端隔离边界一致：私密分组永远不计（解锁与否都不进全部视图）
     const allCount = (groups ?? []).filter((g) => !g.private).reduce((s, g) => s + g.count, 0);
 
-    /** 重拉分组 + 全局 tag 池 + 密码状态，返回新分组表（供「all 视图落收件箱」即时取用）。
-     *  pw = 解锁密码：锁定视角（缺省）下私密分组不随列表下发；密码状态顺带同步
+    /** 重拉分组 + 全局 tag 池 + 密码状态 + 画廊计数（一次 IPC），返回新分组表（供「all 视图落收件箱」
+     *  即时取用）。pw = 解锁密码：锁定视角（缺省）下私密分组不随列表下发；密码状态顺带同步
      *  （设置页改密后，锁入口显隐与解锁态在这里追平） */
     async function refreshGroups(pw?: string): Promise<GalleryGroup[]> {
-        const [g, tg, ps, wc] = await Promise.all([
-            api.galleryGroups(pw),
-            api.galleryAllTags(),
-            api.galleryPasswordState(),
-            api.galleryWallCount(pw),
-        ]);
-        if (g.ok) setGroups(g.data);
-        if (tg.ok) setAllTags(tg.data);
-        if (ps.ok) setPwSet(ps.data.has);
-        if (wc.ok) setWallCount(wc.data.count);
-        return g.ok ? g.data : [];
+        const r = await api.galleryOverview(pw);
+        if (!r.ok) return [];
+        setGroups(r.data.groups);
+        setAllTags(r.data.tags);
+        setPwSet(r.data.hasPassword);
+        setWallCount(r.data.wallCount);
+        return r.data.groups;
     }
 
     /** 任何变更操作后的统一刷新：重拉 groups + tags，图片查询重置到第一页 */
@@ -529,7 +525,8 @@ export default function GalleryTool() {
         }
         wallToast(r.data.added);
         // 只补 inWall 标记（右键「加入画廊」的置灰依据），行集不变
-        setItems((prev) => prev.map((it) => (menuIds.includes(it.id) ? { ...it, inWall: true } : it)));
+        const added = new Set(menuIds);
+        setItems((prev) => prev.map((it) => (added.has(it.id) ? { ...it, inWall: true } : it)));
         refreshWallCount();
     }
     async function wallRemoveMenu() {
@@ -595,11 +592,17 @@ export default function GalleryTool() {
         if (tg.fromViewer) {
             // 列表即时移除并指向相邻一张：优先同索引（原后一张），末尾退一格，全空关闭
             const idx = viewerIndex ?? 0;
-            const kept = items.filter((it) => !tg.ids.includes(it.id));
+            const gone = new Set(tg.ids);
+            const kept = items.filter((it) => !gone.has(it.id));
             setItems(kept);
             setTotal((v) => Math.max(0, v - tg.ids.length));
+            setSelectedIds((prev) => new Set([...prev].filter((id) => !gone.has(id))));
             if (kept.length === 0) setViewerIndex(null);
             else setViewerIndex(Math.min(idx, kept.length - 1));
+            // 不走 refreshAll：reloadTick 会把列表重置回前 200 条、网格滚回顶部，
+            // 本地补丁已让行集正确，只需追平侧栏计数
+            refreshWallCount();
+            return;
         }
         refreshAll();
     }

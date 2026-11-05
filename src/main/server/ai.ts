@@ -6,7 +6,7 @@ import type { ApiResult } from "./api";
 // ── AI 助手：OpenAI 兼容的 chat/completions 流式对接（工具 ai 的后端）──
 // 请求在主进程发（密钥不进渲染包）；数据走「启动 → 事件下行 → 停止」三件套，
 // 与终端 pty 同款模式：startChat 立即返回 streamId，增量经 setAiSink 注入的
-// 出口推给渲染进程（src/main/index.ts 转发到 mp:ai-event 频道）。
+// 出口推给渲染进程（src/main/app.ts 转发到 mp:ai-event 频道）。
 //
 // 两家供应商（v1 只做 OpenAI 兼容协议，端点见 PROVIDER_BASE）的 SSE 帧一致：
 //   data: {...} 逐行下发，data: [DONE] 结束。delta 分两相——
@@ -21,7 +21,7 @@ export type AiEvent =
     | { type: "abort"; streamId: number }
     | { type: "error"; streamId: number; status?: number };
 
-// server 层不持有 BrowserWindow：出口由 src/main/index.ts 注入
+// server 层不持有 BrowserWindow：出口由 src/main/app.ts 注入
 let emit: ((e: AiEvent) => void) | null = null;
 export function setAiSink(fn: (e: AiEvent) => void): void {
     emit = fn;

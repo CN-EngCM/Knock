@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronRight, Copy, SlidersHorizontal, Sparkles } from "lucide-react";
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -18,9 +18,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Titlebar } from "@/components/ui/titlebar";
-import { api, type AiEffortId, type AiModelConfig, type AiProviderId, type Expert } from "@/api/client";
+import { api, type AiEffortId, type AiProviderId, type Expert } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
+import { useAiModels } from "@/lib/aiModels";
 import { useExperts } from "@/lib/experts";
 import {
     appendExchange,
@@ -49,7 +50,7 @@ import { aiErrKey } from "./aiErr";
 // 会话与选中放在模块级 store（./aiSessions）：关闭工具 tab 后流仍在推进、历史保留，
 // 重开即见最新内容——这是 TOOL_SPEC §3 生命周期的用户决策例外，应用重启仍从空开始。
 // 流式输出走 mp:ai-event 事件流；不同专家的会话允许各有一条并发流，
-// 同一专家重发先停自己的旧流。状态分层：模型配置挂载时拉一次；
+// 同一专家重发先停自己的旧流。状态分层：模型配置来自共享 store（src/renderer/src/lib/aiModels）；
 // 专家列表来自共享 store（src/renderer/src/lib/experts）；没有任何需要 localStorage 的东西。
 
 // 供应商词汇表：须与 server/schemas.AI_PROVIDER_IDS 手工对齐（渲染进程禁止运行时
@@ -108,6 +109,136 @@ function ReasoningRow({ text, live }: { text: string; live: boolean }) {
     );
 }
 
+/**
+ * 回答的 markdown 渲染覆写。放模块级：内联对象每次渲染都是新引用，
+ * 会让 react-markdown 在每个增量都重建整棵树的覆写映射。
+ */
+const MARKDOWN_COMPONENTS: Components = {
+    pre: ({ node: _node, ...rest }) => (
+        <pre
+            {...rest}
+            className="overflow-auto rounded-lg bg-[var(--control-input-background)] p-2 font-mono text-[12.5px]"
+        />
+    ),
+    code: ({ node: _node, ...rest }) => <code {...rest} className="font-mono text-[12.5px]" />,
+};
+
+// 消息行：用户侧右对齐气泡 + 分钟时间；AI 侧头像 + 气泡 + footer（时间 / 状态 / 复制）。
+// markdown 沿用 react-markdown 与现有 pre/code 覆写；思考过程交给 ReasoningRow 折叠。
+// 用 memo 包住：Msg 不可变，流式时只有末条换引用，历史消息的 props 全部不变就不会重渲染。
+const UserMsg = memo(function UserMsg({ m }: { m: Msg }) {
+    return (
+        <Message side="end">
+            <MessageContent>
+                <Bubble side="end" variant="primary" className="max-w-[80%]">
+                    <BubbleContent className="rounded-xl rounded-br-[4px] px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap">
+                        {m.content}
+                    </BubbleContent>
+                </Bubble>
+                <MessageFooter className="px-1 text-[10.5px] font-normal text-dim-foreground">
+                    {formatTime(m.createdAt)}
+                </MessageFooter>
+            </MessageContent>
+        </Message>
+    );
+});
+
+const AssistantMsg = memo(function AssistantMsg({
+    m,
+    eid,
+    isLast,
+    initial,
+    onRetry,
+    onOpenSettings,
+}: {
+    m: Msg;
+    eid: number;
+    isLast: boolean;
+    /** 头像上的专家名首字 */
+    initial: string;
+    onRetry: (eid: number) => void;
+    onOpenSettings: () => void;
+}) {
+    const { t } = useI18n();
+    const isStreaming = m.status === "streaming";
+    const authError = m.status === "error" && aiErrKey(m.errStatus) === "ai.err.auth";
+
+    async function copyMsg(content: string): Promise<void> {
+        // 走主进程写：navigator.clipboard 要求页面有焦点，主进程没有这个限制
+        const r = await api.clipboardWrite(content).catch(() => null);
+        if (r?.ok) toast.success(t("ai.copied"));
+        else toast.error(t("toast.error"));
+    }
+
+    return (
+        <Message>
+            <MessageAvatar
+                aria-hidden="true"
+                className="mt-0.5 size-6 min-w-6 rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
+            >
+                {initial}
+            </MessageAvatar>
+            <MessageContent className="gap-1.5">
+                {!!m.reasoning && <ReasoningRow text={m.reasoning} live={isStreaming && !m.content} />}
+                {/* 没有正文的错误/停止不画空气泡，footer 自己交代状态 */}
+                {(isStreaming || !!m.content) && (
+                    <Bubble variant="secondary">
+                        <BubbleContent className="rounded-xl rounded-bl-[4px] px-3 py-2 text-[12.5px] leading-relaxed [&_li]:ml-4 [&_ul]:list-disc">
+                            {isStreaming && !m.content ? (
+                                <Spinner decorative className="size-3.5 text-muted-foreground" />
+                            ) : (
+                                <Markdown components={MARKDOWN_COMPONENTS}>{m.content}</Markdown>
+                            )}
+                        </BubbleContent>
+                    </Bubble>
+                )}
+                <MessageFooter className="flex-wrap gap-1.5 px-1 text-[10.5px] font-normal text-dim-foreground">
+                    <span>{formatTime(m.createdAt)}</span>
+                    {m.status === "stopped" && <span>· {t("ai.stopped")}</span>}
+                    {m.status === "error" && (
+                        <>
+                            <span className="text-destructive">
+                                {(() => {
+                                    const k = aiErrKey(m.errStatus);
+                                    return k ? t(k) : `${t("ai.err.other")}: ${m.errStatus}`;
+                                })()}
+                            </span>
+                            {isLast && (
+                                <Button
+                                    type="button"
+                                    appearance="standard"
+                                    variant="ghost"
+                                    size="xs"
+                                    className="h-auto px-1 text-[10.5px] font-normal text-primary"
+                                    onClick={() => (authError ? onOpenSettings() : onRetry(eid))}
+                                >
+                                    {authError ? t("translate.openSettings") : t("ai.retry")}
+                                </Button>
+                            )}
+                        </>
+                    )}
+                    {(!m.status || m.status === "stopped") && m.content && (
+                        <MessageActions className="min-h-0 gap-0.5 px-0 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 motion-reduce:transition-none">
+                            <TipButton
+                                type="button"
+                                label={t("ai.copy")}
+                                aria-label={t("ai.copy")}
+                                appearance="standard"
+                                variant="ghost"
+                                size="icon-xs"
+                                className="size-5 text-muted-foreground enabled:hover:text-foreground"
+                                onClick={() => void copyMsg(m.content)}
+                            >
+                                <Copy className="size-3" />
+                            </TipButton>
+                        </MessageActions>
+                    )}
+                </MessageFooter>
+            </MessageContent>
+        </Message>
+    );
+});
+
 export default function AiTool({
     initialInput,
     openSettings,
@@ -122,7 +253,8 @@ export default function AiTool({
     const modelSelectId = `${uid}-model`;
     const effortSelectId = `${uid}-effort`;
     const experts = useExperts();
-    const [aiModels, setAiModels] = useState<AiModelConfig[] | null>(null);
+    // 模型配置来自共享 store：在设置里新增模型后，这里立刻看到，不用关掉工具重开
+    const aiModels = useAiModels();
     // 注入管道：text/expertId/seq 只承载「新到的素材」，见下方注入 effect；
     // setText 不取用——草稿与管道分离，多轮预填走 setDraft
     const { text, expertId, seq } = useToolInput("ai", initialInput);
@@ -148,12 +280,6 @@ export default function AiTool({
     useEffect(() => {
         activeRef.current = activeId;
     }, [activeId]);
-
-    useEffect(() => {
-        api.getAiModels().then((r) => {
-            if (r.ok) setAiModels(r.data);
-        });
-    }, []);
 
     // experts 到达后选中第一个（store 默认 null；列表非空即可选）
     useEffect(() => {
@@ -272,7 +398,7 @@ export default function AiTool({
     // 未指明专家（工具行进入）→ 落到当前选中专家后同规则分叉。
     // 两类「未就绪」都不消费序号，effect 随依赖到位重跑重试——此时消费掉会让首次注入静默蒸发：
     //   experts 未就绪：共享 store 还在异步拉取；
-    //   aiModels 未就绪：挂载时异步拉取中，此刻自动发送必把「还没加载」误判成「未绑定」。
+    //   aiModels 未就绪：共享 store 首次异步拉取中，此刻自动发送必把「还没加载」误判成「未绑定」。
     useEffect(() => {
         if (seq <= handledSeq.current) return; // 含 StrictMode 双跑的第二击
         if (aiModels === null) return;
@@ -326,117 +452,16 @@ export default function AiTool({
         if (mid && aiModels.some((m) => m.id === mid)) setGate(null);
     }, [aiModels, gate, activeExpert, convs]);
 
-    async function copyMsg(content: string): Promise<void> {
-        // 打包后页面是 file:// 非安全上下文，渲染进程没有 navigator.clipboard，只能走主进程
-        const r = await api.clipboardWrite(content).catch(() => null);
-        if (r?.ok) toast.success(t("ai.copied"));
-        else toast.error(t("toast.error"));
-    }
-
-    // 消息区：用户侧右对齐气泡 + 分钟时间；AI 侧头像 + 气泡 + footer（时间 / 状态 / 复制）。
-    // markdown 沿用 react-markdown 与现有 pre/code 覆写；思考过程交给 ReasoningRow 折叠。
-    function renderUserMsg(m: Msg) {
-        return (
-            <Message side="end">
-                <MessageContent>
-                    <Bubble side="end" variant="primary" className="max-w-[80%]">
-                        <BubbleContent className="rounded-xl rounded-br-[4px] px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap">
-                            {m.content}
-                        </BubbleContent>
-                    </Bubble>
-                    <MessageFooter className="px-1 text-[10.5px] font-normal text-dim-foreground">
-                        {formatTime(m.createdAt)}
-                    </MessageFooter>
-                </MessageContent>
-            </Message>
-        );
-    }
-
-    function renderAssistantMsg(m: Msg, eid: number, isLast: boolean) {
-        const isStreaming = m.status === "streaming";
-        const authError = m.status === "error" && aiErrKey(m.errStatus) === "ai.err.auth";
-        return (
-            <Message>
-                <MessageAvatar
-                    aria-hidden="true"
-                    className="mt-0.5 size-6 min-w-6 rounded-full bg-primary/15 text-[10px] font-semibold text-primary"
-                >
-                    {assistantInitial}
-                </MessageAvatar>
-                <MessageContent className="gap-1.5">
-                    {!!m.reasoning && <ReasoningRow text={m.reasoning} live={isStreaming && !m.content} />}
-                    {/* 没有正文的错误/停止不画空气泡，footer 自己交代状态 */}
-                    {(isStreaming || !!m.content) && (
-                        <Bubble variant="secondary">
-                            <BubbleContent className="rounded-xl rounded-bl-[4px] px-3 py-2 text-[12.5px] leading-relaxed [&_li]:ml-4 [&_ul]:list-disc">
-                                {isStreaming && !m.content ? (
-                                    <Spinner decorative className="size-3.5 text-muted-foreground" />
-                                ) : (
-                                    <Markdown
-                                        components={{
-                                            pre: ({ node: _node, ...rest }) => (
-                                                <pre
-                                                    {...rest}
-                                                    className="overflow-auto rounded-lg bg-[var(--control-input-background)] p-2 font-mono text-[12.5px]"
-                                                />
-                                            ),
-                                            code: ({ node: _node, ...rest }) => (
-                                                <code {...rest} className="font-mono text-[12.5px]" />
-                                            ),
-                                        }}
-                                    >
-                                        {m.content}
-                                    </Markdown>
-                                )}
-                            </BubbleContent>
-                        </Bubble>
-                    )}
-                    <MessageFooter className="flex-wrap gap-1.5 px-1 text-[10.5px] font-normal text-dim-foreground">
-                        <span>{formatTime(m.createdAt)}</span>
-                        {m.status === "stopped" && <span>· {t("ai.stopped")}</span>}
-                        {m.status === "error" && (
-                            <>
-                                <span className="text-destructive">
-                                    {(() => {
-                                        const k = aiErrKey(m.errStatus);
-                                        return k ? t(k) : `${t("ai.err.other")}: ${m.errStatus}`;
-                                    })()}
-                                </span>
-                                {isLast && (
-                                    <Button
-                                        type="button"
-                                        appearance="standard"
-                                        variant="ghost"
-                                        size="xs"
-                                        className="h-auto px-1 text-[10.5px] font-normal text-primary"
-                                        onClick={() => (authError ? openSettings?.() : void retry(eid))}
-                                    >
-                                        {authError ? t("translate.openSettings") : t("ai.retry")}
-                                    </Button>
-                                )}
-                            </>
-                        )}
-                        {(!m.status || m.status === "stopped") && m.content && (
-                            <MessageActions className="min-h-0 gap-0.5 px-0 opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 motion-reduce:transition-none">
-                                <TipButton
-                                    type="button"
-                                    label={t("ai.copy")}
-                                    aria-label={t("ai.copy")}
-                                    appearance="standard"
-                                    variant="ghost"
-                                    size="icon-xs"
-                                    className="size-5 text-muted-foreground enabled:hover:text-foreground"
-                                    onClick={() => void copyMsg(m.content)}
-                                >
-                                    <Copy className="size-3" />
-                                </TipButton>
-                            </MessageActions>
-                        )}
-                    </MessageFooter>
-                </MessageContent>
-            </Message>
-        );
-    }
+    // 消息行是 memo 组件，回调引用必须稳定才不会被打穿：最新的 retry / openSettings 放进 ref，
+    // 对外只给一个永不变的壳。retry 闭包里要读最新的 experts / convs / aiModels，所以不能直接传。
+    const retryRef = useRef(retry);
+    const openSettingsRef = useRef(openSettings);
+    useEffect(() => {
+        retryRef.current = retry;
+        openSettingsRef.current = openSettings;
+    });
+    const onRetry = useCallback((eid: number) => void retryRef.current(eid), []);
+    const onOpenSettings = useCallback(() => openSettingsRef.current?.(), []);
 
     return (
         <div className="flex h-full">
@@ -713,9 +738,18 @@ export default function AiTool({
                                                     index === turn.messages.length - 1;
                                                 return (
                                                     <Fragment key={`${turn.key}:${index}`}>
-                                                        {msg.role === "user"
-                                                            ? renderUserMsg(msg)
-                                                            : renderAssistantMsg(msg, activeExpert.id, isLast)}
+                                                        {msg.role === "user" ? (
+                                                            <UserMsg m={msg} />
+                                                        ) : (
+                                                            <AssistantMsg
+                                                                m={msg}
+                                                                eid={activeExpert.id}
+                                                                isLast={isLast}
+                                                                initial={assistantInitial}
+                                                                onRetry={onRetry}
+                                                                onOpenSettings={onOpenSettings}
+                                                            />
+                                                        )}
                                                     </Fragment>
                                                 );
                                             })}

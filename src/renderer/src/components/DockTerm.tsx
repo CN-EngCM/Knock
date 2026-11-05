@@ -16,8 +16,8 @@ import { getTerm, registerTerm, termFont, themeFromVars } from "./termStore";
 // 复制粘贴：xterm 不碰剪贴板（Ctrl+C/V 默认作为 SIGINT/0x16 直发 shell）。
 // 复制统一走右键——Windows 终端惯例：有选区复制、无选区粘贴；Ctrl+C 永远
 // 留给中断程序。Ctrl+V（macOS 为 Cmd+V）只管粘贴，走 term.paste 自动适配
-// bracketed paste。剪贴板读写走主进程 API：打包后页面是 file:// 非安全
-// 上下文，渲染进程没有 navigator.clipboard。
+// bracketed paste。剪贴板读写走主进程 API：渲染进程只放行了写权限（见 app.ts），
+// 读剪贴板必须经主进程。
 const isMac = navigator.userAgent.includes("Mac");
 
 export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {

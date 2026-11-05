@@ -38,17 +38,17 @@ import {
 import {
     addTagsToImages as galleryAddTagsToImages,
     allTags as galleryAllTags,
-    collectDiscard as galleryCollectDiscard,
-    collectStart as galleryCollectStart,
+    collectReset as galleryCollectReset,
     createGroup as galleryCreateGroup,
     deleteGroup as galleryDeleteGroup,
     deleteImages as galleryDeleteImages,
     downloadCandidates as galleryDownloadCandidates,
-    fetchPage as galleryFetchPage,
     importCandidates as galleryImportCandidates,
     importFiles as galleryImport,
     listGroups as galleryListGroups,
     moveImages as galleryMove,
+    overview as galleryOverview,
+    probeUrl as galleryProbeUrl,
     renderPage as galleryRenderPage,
     passwordState as galleryPasswordState,
     pasteFromClipboard as galleryPaste,
@@ -61,10 +61,10 @@ import {
     setLibraryPassword as gallerySetPassword,
     deleteTag as galleryDeleteTag,
     revealImage as galleryRevealImage,
+    saveThumb as gallerySaveThumb,
     unlockLibrary as galleryUnlock,
     wallAdd as galleryWallAdd,
     wallAddGroup as galleryWallAddGroup,
-    wallCount as galleryWallCount,
     wallRemove as galleryWallRemove,
 } from "./gallery";
 import {
@@ -75,8 +75,8 @@ import {
 import { youdaoTranslate, type TranslateResult } from "./youdao";
 import { app, clipboard, dialog } from "electron";
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { existsSync, mkdirSync } from "node:fs";
+import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import {
     aiChatSchema,
@@ -97,6 +97,7 @@ import {
     galleryOptionalPasswordSchema,
     galleryPasswordSchema,
     galleryQuerySchema,
+    gallerySaveThumbSchema,
     galleryTagSchema,
     galleryTagsSchema,
     fileSearchSchema,
@@ -132,6 +133,7 @@ import {
     type GalleryImage,
     type GalleryImportCandidatesInput,
     type GalleryImportStats,
+    type GalleryOverview,
     type GalleryPageResult,
     type GalleryQueryInput,
     type HotkeyId,
@@ -210,8 +212,8 @@ export interface MpApi {
     ptyWrite(id: number, data: string): Promise<ApiResult<null>>;
     ptyResize(id: number, cols: number, rows: number): Promise<ApiResult<null>>;
     ptyKill(id: number): Promise<ApiResult<null>>;
-    // ── 剪贴板（终端复制/粘贴用）：主进程 electron.clipboard 读写。打包后页面是
-    //    file:// 非安全上下文，渲染进程没有 navigator.clipboard，只能经 IPC 走这里 ──
+    // ── 剪贴板（终端复制/粘贴用）：主进程 electron.clipboard 读写。渲染进程只放行了写权限
+    //    （见 app.ts），读不了剪贴板，终端粘贴必须经 IPC 走这里 ──
     clipboardRead(): Promise<string>;
     clipboardWrite(text: string): Promise<ApiResult<null>>;
     // ── 终端设置（v2.3）：shell 只对新建会话生效，字号作用于全部已有会话 ──
@@ -269,7 +271,7 @@ export interface MpApi {
     aiChat(input: AiChatInput): Promise<ApiResult<{ streamId: number }>>;
     aiChatStop(streamId: number): Promise<ApiResult<null>>;
     // ── 图库（工具 gallery）：图片字节级复制进数据目录 gallery/，sha256 全库去重；
-    //    图片经 mpimg:// 协议按 id 直读（注册见 src/main/index.ts），不经 IPC 传字节 ──
+    //    图片经 mpimg:// 协议按 id 直读（注册见 src/main/app.ts），不经 IPC 传字节 ──
     /** 分组列表：锁定视角（未携有效密码）不下发私密分组行 */
     galleryGroups(password?: string): Promise<ApiResult<GalleryGroup[]>>;
     galleryCreateGroup(name: string): Promise<ApiResult<{ id: number }>>;
@@ -286,6 +288,10 @@ export interface MpApi {
     galleryImages(input: GalleryQueryInput): Promise<ApiResult<{ total: number; items: GalleryImage[] }>>;
     /** 标签池：全量（私密只隔离图片内容，不隔离标签词——共用标签不消失） */
     galleryAllTags(): Promise<ApiResult<string[]>>;
+    /** 侧栏一次取全：分组 + 标签池 + 是否设密码 + 画廊计数（口径同上面各单项接口，一次 IPC） */
+    galleryOverview(password?: string): Promise<ApiResult<GalleryOverview>>;
+    /** 保存渲染端生成的缩略图字节（≤5MB）：行不存在 not-found，svg 不生成缩略图 bad-request */
+    gallerySaveThumb(id: number, bytes: Uint8Array): Promise<ApiResult<null>>;
     galleryImport(files: string[], groupId: number): Promise<ApiResult<GalleryImportStats>>;
     galleryPaste(groupId: number): Promise<ApiResult<GalleryImportStats>>;
     gallerySetImageTags(id: number, tags: string[]): Promise<ApiResult<null>>;
@@ -306,15 +312,13 @@ export interface MpApi {
     galleryWallAddGroup(groupId: number): Promise<ApiResult<{ added: number }>>;
     /** 从画廊移除（只动成员籍，图片本体不动） */
     galleryWallRemove(ids: number[]): Promise<ApiResult<null>>;
-    /** 画廊可见计数（侧栏行；锁定视角剔除私密组的图） */
-    galleryWallCount(password?: string): Promise<ApiResult<{ count: number }>>;
     // ── 从网址导入：渲染端驱动翻页/分批下载（进度与取消自然落在渲染端循环里），
     //    主进程只维护一个暂存会话（候选字节在 os.tmpdir，入库才进 gallery/）──
-    galleryCollectStart(): Promise<ApiResult<null>>;
-    galleryCollectDiscard(): Promise<ApiResult<null>>;
-    /** 静态抓页：直链判定（isImage）与渲染失败时的兜底解析 */
-    galleryFetchPage(url: string): Promise<ApiResult<GalleryPageResult>>;
-    /** 渲染收集（主路径）：隐藏窗口真实加载后从 DOM 收图片 URL 全集/显示尺寸/标题/下页；
+    /** 会话清场：清暂存并销毁隐藏窗口（开始前、关闭、取消、入库完成都调） */
+    galleryCollectReset(): Promise<ApiResult<null>>;
+    /** 探测 URL 本身是不是图片直链（只看响应头）；探测失败不算错，调用方继续走渲染收集 */
+    galleryProbeUrl(url: string): Promise<ApiResult<{ isImage: boolean }>>;
+    /** 渲染收集：隐藏窗口真实加载后从 DOM 收图片 URL 全集/显示尺寸/标题/下页；
      *  SPA 站（pixiv 等）作品图靠 JS 插入，静态 HTML 里没有 */
     galleryRenderPage(url: string): Promise<ApiResult<GalleryPageResult>>;
     galleryDownloadCandidates(input: GalleryDownloadInput): Promise<ApiResult<{ items: GalleryCandidate[] }>>;
@@ -702,11 +706,11 @@ export const apiHandlers: ApiHandlers = {
             const destDb = join(dest, DB_NAME);
             await db.backup(destDb);
             if (existsSync(join(oldDir, FAVICONS_NAME))) {
-                cpSync(join(oldDir, FAVICONS_NAME), join(dest, FAVICONS_NAME), { recursive: true });
+                await cp(join(oldDir, FAVICONS_NAME), join(dest, FAVICONS_NAME), { recursive: true });
             }
             // 图库目录同款跟进：图片是字节级复制进数据目录的，不搬走等于全丢
             if (existsSync(join(oldDir, GALLERY_NAME))) {
-                cpSync(join(oldDir, GALLERY_NAME), join(dest, GALLERY_NAME), { recursive: true });
+                await cp(join(oldDir, GALLERY_NAME), join(dest, GALLERY_NAME), { recursive: true });
             }
 
             // 校验副本可整库读，并顺手把当前窗口状态写进副本：旧库稍后会被删除，
@@ -881,6 +885,16 @@ export const apiHandlers: ApiHandlers = {
         return galleryQuery(v);
     },
     galleryAllTags: async () => galleryAllTags(),
+    galleryOverview: async (password) => {
+        const v = guard(galleryOptionalPasswordSchema, { password });
+        if (!v) return badRequest;
+        return galleryOverview(v.password);
+    },
+    gallerySaveThumb: async (id, bytes) => {
+        const v = guard(gallerySaveThumbSchema, { id, bytes });
+        if (!v) return badRequest;
+        return gallerySaveThumb(v.id, v.bytes);
+    },
     galleryImport: async (files, groupId) => {
         const v = guard(galleryImportSchema, { files, groupId });
         if (!v) return badRequest;
@@ -943,18 +957,12 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         return galleryWallRemove(v.ids);
     },
-    galleryWallCount: async (password) => {
-        const v = guard(galleryOptionalPasswordSchema, { password });
-        if (!v) return badRequest;
-        return galleryWallCount(v.password);
-    },
     // ── 从网址导入：同样只做入口校验与转发（业务见 server/gallery.ts 的「从网址导入」一节）──
-    galleryCollectStart: async () => galleryCollectStart(),
-    galleryCollectDiscard: async () => galleryCollectDiscard(),
-    galleryFetchPage: async (url) => {
+    galleryCollectReset: async () => galleryCollectReset(),
+    galleryProbeUrl: async (url) => {
         const v = guard(galleryPageSchema, { url });
         if (!v) return badRequest;
-        return galleryFetchPage(v.url);
+        return galleryProbeUrl(v.url);
     },
     galleryRenderPage: async (url) => {
         const v = guard(galleryPageSchema, { url });

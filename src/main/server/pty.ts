@@ -3,9 +3,8 @@
 // 否则隐藏到托盘再退出会留下孤儿 shell 进程。
 // node-pty 1.1.0 的预编译是 NAPI 单二进制（prebuilds/ 随 npm 包分发），
 // 与 Electron ABI 无关，因此 electron-deps.mjs 不需要为它做 ABI 切换。
-import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, lstatSync } from "node:fs";
+import { basename, delimiter, join } from "node:path";
 import { spawn, type IPty } from "node-pty";
 import { getSetting } from "./util/settings";
 import { SHELL_IDS, type ShellId, type ShellOption, type TermConfig } from "./schemas";
@@ -13,7 +12,7 @@ import { SHELL_IDS, type ShellId, type ShellOption, type TermConfig } from "./sc
 /** 主进程 → 渲染进程的输出事件（preload 转发，渲染端按 id 分发到 xterm 实例） */
 export type PtyEvent = { type: "data"; id: number; data: string } | { type: "exit"; id: number };
 
-// server 层不持有 BrowserWindow：出口由 src/main/index.ts 注入
+// server 层不持有 BrowserWindow：出口由 src/main/app.ts 注入
 let emit: ((e: PtyEvent) => void) | null = null;
 export function setPtySink(fn: (e: PtyEvent) => void): void {
     emit = fn;
@@ -46,29 +45,33 @@ function queueOut(id: number, data: string): void {
 }
 
 // 候选 shell 探测缓存（id → 绝对路径，null = 不可用），应用运行期内只探一次。
-// 注意：微软商店版 pwsh 是 WindowsApps 下的「应用执行别名」（重解析点），
-// fs.existsSync 对它返回 false——Windows 侧不能用 existsSync 验证 `where`
-// 的结果；`where` 按 PATH 找到即代表 CreateProcess 可执行（ConPTY 同路径）。
+// 直接扫 PATH 而不起 `where` 子进程：打开设置页时不再同步等待外部进程。
+// Windows 必须用 lstat：微软商店版 pwsh 是 WindowsApps 下的「应用执行别名」
+// （重解析点），existsSync（stat 跟随链接）对它返回 false，lstat 不跟随才能探明；
+// 能在 PATH 里找到即代表 CreateProcess 可执行（ConPTY 同路径）。
+// macOS 保持原来的 existsSync 判断，探测结果不变。
 const probed = new Map<string, string | null>();
+function fileExistsOnPath(p: string): boolean {
+    if (process.platform !== "win32") return existsSync(p);
+    try {
+        lstatSync(p);
+        return true;
+    } catch {
+        return false;
+    }
+}
 function probeShell(id: string): string | null {
     if (probed.has(id)) return probed.get(id) ?? null;
     const exe = process.platform === "win32" ? `${id}.exe` : id;
     let path: string | null = null;
-    if (process.platform === "win32") {
-        try {
-            const p = execFileSync("where", [exe], { encoding: "utf8" }).trim().split(/\r?\n/)[0];
-            if (p) path = p;
-        } catch {
-            /* 不在 PATH */
-        }
-    } else {
-        for (const dir of (process.env.PATH || "").split(":")) {
-            if (!dir) continue;
-            const p = join(dir, exe);
-            if (existsSync(p)) {
-                path = p;
-                break;
-            }
+    for (const raw of (process.env.PATH || "").split(delimiter)) {
+        // Windows 的 PATH 项允许被引号包住（含分号的目录），去掉再拼
+        const dir = raw.replace(/^"(.*)"$/, "$1");
+        if (!dir) continue;
+        const p = join(dir, exe);
+        if (fileExistsOnPath(p)) {
+            path = p;
+            break;
         }
     }
     probed.set(id, path);
@@ -180,7 +183,7 @@ export function killSession(id: number): boolean {
     return true;
 }
 
-/** 应用退出前统一回收（src/main/index.ts 的 before-quit 调用） */
+/** 应用退出前统一回收（src/main/app.ts 的 before-quit 调用） */
 export function killAllSessions(): void {
     for (const p of sessions.values()) p.kill();
     sessions.clear();

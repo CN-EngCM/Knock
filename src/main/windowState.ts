@@ -28,7 +28,7 @@ export function loadWindowState(): WinState {
         const s = JSON.parse(raw) as Partial<WinState>;
         if (!isInt(s.width) || !isInt(s.height)) return DEFAULT;
         return {
-            // 下限 = 最小窗口尺寸（index.ts 的 minWidth/minHeight）：老版本存下的
+            // 下限 = 最小窗口尺寸（app.ts 的 minWidth/minHeight）：老版本存下的
             // 更小值装不下两区布局，统一抬到已验证最小值
             width: Math.max(s.width, 840),
             height: Math.max(s.height, 520),

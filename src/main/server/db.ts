@@ -59,7 +59,7 @@ db.exec(`
 
   -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 items 表。
   -- 图片字节级复制进数据目录 gallery/<组文件夹>/（server/gallery.ts），行里只存元数据；
-  -- 图片经 mpimg:// 协议按 id 直读（注册见 src/main/index.ts），不经 IPC 传字节
+  -- 图片经 mpimg:// 协议按 id 直读（注册见 src/main/app.ts），不经 IPC 传字节
   CREATE TABLE IF NOT EXISTS gallery_groups (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT    NOT NULL,

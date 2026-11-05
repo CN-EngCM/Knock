@@ -4,8 +4,8 @@ import { join } from "node:path";
 // ── 托盘 ──
 // 左键单击 = 切换主窗口显隐（与热键等效）；
 // 右键菜单 = 显示主窗口 / 设置 / 退出——「退出」是程序唯一退出入口。
-// 显隐动作由 index.ts 注入（onToggle/onShow）：呼出走 showWindow 的前台锁破局流程，
-// 隐藏与钉住状态都归 index.ts / server/pin.ts 管，托盘不再自持窗口操作。
+// 显隐动作由 app.ts 注入（onToggle/onShow）：呼出走 showWindow 的前台锁破局流程，
+// 隐藏与钉住状态都归 app.ts / server/pin.ts 管，托盘不再自持窗口操作。
 
 /** 图标位于应用根目录，避免依赖构建后的代码目录。 */
 function iconPath(): string {

@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    type AiModelConfig,
     type FontConfig,
     type FontPatch,
     type TermConfig,
@@ -11,8 +10,6 @@ import {
     type ThemeId,
     type ToolAliasPatch,
     type ToolAliases,
-    type TranslateConfig,
-    type TranslateConfigPatch,
 } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang } from "@/i18n";
@@ -40,15 +37,6 @@ type Props = {
     /** 工具别名：提交走 onToolAlias（App 负责落库与回填，SearchBox 随之生效） */
     toolAliases: ToolAliases | null;
     onToolAlias: (patch: ToolAliasPatch) => Promise<boolean>;
-    /** 剪贴板素材时限（秒，0 = 关闭）：主进程呼出时直接读库，此处仅编辑态 */
-    clipSec: number | null;
-    onClipSec: (seconds: number) => Promise<boolean>;
-    /** 有道翻译密钥：提交走 onTranslateCfg（App 负责落库与回填） */
-    translateCfg: TranslateConfig | null;
-    onTranslateCfg: (patch: TranslateConfigPatch) => Promise<boolean>;
-    /** AI 模型配置整表：提交走 onAiModels（App 负责落库与回填） */
-    aiModels: AiModelConfig[] | null;
-    onAiModels: (list: AiModelConfig[]) => Promise<boolean>;
     /** 打开时直接定位的分节（工具内「打开设置」引导；缺省回基础设置） */
     initialSection?: SectionId;
 };
@@ -79,12 +67,6 @@ export function SettingsDialog({
     onFontPatch,
     toolAliases,
     onToolAlias,
-    clipSec,
-    onClipSec,
-    translateCfg,
-    onTranslateCfg,
-    aiModels,
-    onAiModels,
     initialSection,
 }: Props) {
     const { t } = useI18n();
@@ -133,18 +115,16 @@ export function SettingsDialog({
                                 onTermPatch={onTermPatch}
                                 fontCfg={fontCfg}
                                 onFontPatch={onFontPatch}
-                                clipSec={clipSec}
-                                onClipSec={onClipSec}
                             />
                         </TabsContent>
                         <TabsContent value="tools" forceMount className="grid content-start gap-3">
                             <ToolsSection toolAliases={toolAliases} onToolAlias={onToolAlias} />
                         </TabsContent>
                         <TabsContent value="translate" forceMount className="grid content-start gap-3">
-                            <TranslateSection translateCfg={translateCfg} onTranslateCfg={onTranslateCfg} />
+                            <TranslateSection />
                         </TabsContent>
                         <TabsContent value="ai" forceMount className="grid content-start gap-3">
-                            <AiSection aiModels={aiModels} onAiModels={onAiModels} />
+                            <AiSection />
                         </TabsContent>
                         <TabsContent value="gallery" forceMount className="grid content-start gap-3">
                             <GallerySection />

@@ -67,7 +67,7 @@
 
 - **状态机**：`"idle" | "loading" | "done" | "error"` 为基线，按需加工具特定态（`winOnly` / `noConfig`），一个 useState 字符串判别联合，渲染按态分支。
 - **异步竞态**（输入驱动请求的工具必备）：防抖 300–600ms + `seq` ref 序号，晚归旧包直接丢弃；清理函数取消定时器；输入清空时推进序号并回 idle。FileSearchTool / TranslateTool 是同款范式。
-- **操作反馈**：sonner toast；成功用具体文案，失败兜底 `toast.error`。复制走 `navigator.clipboard` + try/catch。
+- **操作反馈**：sonner toast；成功用具体文案，失败兜底 `toast.error`。复制走 `navigator.clipboard` + try/catch（`app.ts` 只放行了写权限，读剪贴板走 `api.clipboardRead`）。
 - **视觉骨架**（GaN.UI 中性灰体系，令牌见 `src/renderer/src/index.css`，与现有工具保持一致，具体值可微调但不要另起炉灶）：
   - 工具区是 GaN.UI DockLayout 停靠区（components/DockZone.tsx），面板内容铺满标签页：停靠区不提供外围留白，留白由各工具的根容器自己给（见下条），组边框与标签规格归 dock 皮肤；
   - 根容器吃满 `h-full`；工具栏一律用 `@/components/ui/toolbar` 的 `Toolbar`（高度取 `--size-toolbar`，regular 43px）+ `ToolbarGroup` / `ToolbarSeparator`，搜索框用 `ToolbarSearch`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
@@ -76,7 +76,7 @@
   - 行内轻量文字动作（复制/打开/清空等）用 `Button appearance="standard" variant="ghost" size="xs"`，11px 与零内边距用 `className` 覆写（`h-auto px-0 text-[11px]`）；危险动作用 `text-destructive`，不再有 `.tbtn` / `.tbtn-danger` 应用类；
   - 图标动作（工具栏图标按钮、行内小图标操作）用 `Button size="icon"`（25px）或紧凑场景 `className="size-7"`（28px）；用 `active` 表达选中（自动写 `data-active` 与 `aria-pressed`）；悬停文案用 `Tooltip`，不要退回原生 `title`；
   - 文字档位：主 `text-foreground` / 次级 `text-muted-foreground` / 较弱 `text-dim-foreground`；悬停填充 `bg-(--state-hover)`、选中行 `bg-(--state-selected)`（库令牌，不要再引入应用层填充令牌）；
-  - 空态用 `Empty` 族，加载用 `Spinner` / `Skeleton`，计数用 `Badge`，章节分隔用 `Marker structure="separator"` 或 `Separator`，底部固定信息条用 `StatusBar` + `StatusBarItem`，长任务进度用 `Progress`；
+  - 空态用 `Empty` 族，加载用 `Spinner`，计数用 `Badge`，章节分隔用 `Marker structure="separator"` 或 `Separator`，底部固定信息条用 `StatusBar` + `StatusBarItem`，长任务进度用 `Progress`；
   - 表单行用 `Field` + `FieldLabel`（定宽标签列由 `shared.tsx` 的 `FormRow` 提供），`htmlFor`/`id` 必须成对，点标签要能聚焦控件；
   - 表单控件一律复用 GaN.UI 公共组件：普通单行输入用 `@/components/ui/input` 的 `Input`，固定选项选择用 `@/components/ui/select` 的 `Select`，普通多行输入用 `@/components/ui/textarea` 的 `Textarea`——输入面材质、焦点背景与错误态由组件提供，调用处只保留宽度/高度/布局类。多控件组合的复合输入（输入区内嵌按钮等）用 `@/components/ui/input-group` 的 `InputGroup` 系列，焦点与错误只由容器表达。占满整栏的编辑区 `Textarea` 覆盖 `rounded-none shadow-none dark:shadow-none`，避免内嵌卡片观感；隐藏文件入口 `input type="file"` 保留原生写法（另有可见按钮触发）。
 - **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。

@@ -29,5 +29,4 @@ src/renderer/src/lib/shortcut.ts
 src/renderer/src/lib/density.ts
 src/renderer/src/lib/scroll.ts
 src/renderer/src/hooks/use-overlay-density.ts
-src/renderer/src/hooks/use-size-token.ts
 src/renderer/src/hooks/use-virtual-rows.ts
