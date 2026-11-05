@@ -1,4 +1,15 @@
-import { Suspense, lazy, useCallback, Dispatch, useEffect, useRef, SetStateAction, useState } from "react";
+import {
+    Suspense,
+    lazy,
+    useCallback,
+    Dispatch,
+    useEffect,
+    useMemo,
+    useRef,
+    SetStateAction,
+    useState,
+    type CSSProperties,
+} from "react";
 import { toast } from "sonner";
 import { BringToFront, Moon, PanelLeft, Pin, PinOff, Plus, Settings2, Sun } from "lucide-react";
 import {
@@ -27,12 +38,14 @@ import { SearchBox } from "./components/SearchBox";
 import { ToolsMenu } from "./components/ToolsMenu";
 import { ToolHome } from "./components/ToolHome";
 import { WorkspaceBar } from "./components/WorkspaceBar";
+import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { disposeTerm, setTermFont } from "./components/termStore";
 import type { DockviewApi } from "@/components/ui/dock-layout";
 import { toolMeta, type ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
 import { NameDialog } from "./components/dialogs/NameDialog";
+import { WorkspaceDialog } from "./components/dialogs/WorkspaceDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
 import { applyFonts } from "./lib/fonts";
@@ -56,9 +69,10 @@ const TOOL_SETTINGS_SECTION: Partial<Record<ToolId, SectionId>> = {
 // 用 kind 字段区分形态，switch 后每个分支的 payload 类型自动收窄。
 type DialogState =
     | { kind: "none" }
-    | { kind: "item-create" }
+    | { kind: "item-create"; workspaceId: number | null }
     | { kind: "item-edit"; item: Item }
     | { kind: "item-delete"; item: Item }
+    | { kind: "ws-create"; initialName: string }
     | { kind: "ws-rename"; workspace: Workspace }
     | { kind: "ws-delete"; workspace: Workspace }
     // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
@@ -117,6 +131,23 @@ export default function App() {
     // 当前工作区决定停靠区那圈描边：数据还没到时退回中性线，避免首帧闪一个不属于任何工作区的颜色
     const activeWorkspace = wsData?.workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
     const dockStroke = activeWorkspace ? workspaceStroke(activeWorkspace) : "var(--line)";
+    // 条目按归属分成两处：左侧列表与顶栏搜索只认空值，工作区工具栏只认当前工作区 id。
+    // 工作区条目在主窗口里只有工具栏一个入口（移动菜单负责换归属）
+    const globalItems = useMemo(() => items.filter((item) => item.workspaceId === null), [items]);
+    const activeWorkspaceItems = useMemo(
+        () => (activeWorkspaceId === null ? [] : items.filter((item) => item.workspaceId === activeWorkspaceId)),
+        [items, activeWorkspaceId],
+    );
+    // 移动菜单的目标：临时工作区没有工具栏，不作为目标
+    const workspaceTargets = useMemo(() => (wsData?.workspaces ?? []).filter((w) => !w.builtin), [wsData]);
+    // 工作区文件夹是该工作区新终端与命令条目的默认工作目录；临时工作区、旧的无文件夹工作区
+    // 返回 undefined，调用方据此回落到主目录
+    function workspaceFolderOf(workspaceId: number | null): string | undefined {
+        if (workspaceId === null) return undefined;
+        const workspace = wsData?.workspaces.find((w) => w.id === workspaceId);
+        if (!workspace || workspace.builtin) return undefined;
+        return workspace.folder || undefined;
+    }
     // 切换工作区：先落库再重拉；停靠区实例常驻，切换只是换显示，不动任何面板与终端
     const switchWorkspace = useCallback(
         async (id: number) => {
@@ -136,22 +167,38 @@ export default function App() {
         if (next.ok) setWsData(next.data);
     }, [setWsData]);
 
-    // 新建：名字里的编号取「工作区 N」中第一个没被占用的（删掉 1 之后新建会重新用上 1）；
-    // 建成后自动切过去，界面只认最后一次拉取的结果
-    const createWorkspace = useCallback(async () => {
+    // 新建工作区：只负责算默认名并打开弹窗，落库交给提交回调（文件夹在弹窗里选）；
+    // 编号仍取「工作区 N」中第一个没被占用的（删掉 1 之后新建会重新用上 1）
+    const openCreateWorkspace = useCallback(() => {
         const used = new Set((wsData?.workspaces ?? []).filter((w) => !w.builtin).map((w) => w.name));
         let n = 1;
         while (used.has(`${t("ws.defaultName")} ${n}`)) n += 1;
-        const created = await api.createWorkspace(`${t("ws.defaultName")} ${n}`);
-        if (!created.ok) {
-            toast.error(t("toast.error"));
-            return;
-        }
+        setDialog({ kind: "ws-create", initialName: `${t("ws.defaultName")} ${n}` });
+    }, [wsData, t]);
+
+    // 提交新建：服务端校验文件夹，成功后重拉并切到新工作区；失败抛给弹窗保持打开。
+    // 切换失败只提示不回滚——工作区已经建好，用户点一下列表就能切过去
+    async function submitCreateWorkspace(name: string, folder: string) {
+        const created = await api.createWorkspace(name, folder);
+        if (!created.ok) throw new Error(created.error.kind);
         await refreshWorkspaces();
         const active = await api.setActiveWorkspace(created.data.id);
         if (!active.ok) toast.error(t("toast.error"));
         await refreshWorkspaces();
-    }, [wsData, t, refreshWorkspaces]);
+    }
+
+    // 修改工作区文件夹：从当前目录起步选新目录，成功后重拉列表。
+    // 已开的终端与面板各自持有自己的 cwd，本次修改只影响之后新开的会话
+    async function changeWorkspaceFolder(workspace: Workspace) {
+        const picked = await api.pickDirectory(workspace.folder);
+        if (!picked.ok || picked.data === null) return;
+        const r = await api.updateWorkspaceFolder(workspace.id, picked.data);
+        if (!r.ok) {
+            toast.error(t("toast.error"));
+            return;
+        }
+        await refreshWorkspaces();
+    }
 
     // 改名：服务端 trim 后校验 1..40 字，成功重拉列表
     async function renameWorkspace(workspace: Workspace, name: string) {
@@ -428,10 +475,11 @@ export default function App() {
         }
     }
 
-    // ── 执行终端命令条目：新开会话（cwd/label 来自条目），建好后整行命令送入执行。
-    //    cwd 不存在由服务端按 missing 拒绝（spawnSession 里 toast 同启动失败口径）
+    // ── 执行终端命令条目：显式工作目录优先；工作区条目留空时继承所属工作区文件夹，
+    //    左侧条目（无归属）留空仍回主目录。cwd 不存在由服务端按 missing 拒绝 ──
     function runCommand(item: Item) {
-        void spawnSession({ cwd: item.args ?? undefined, label: item.title, command: item.target });
+        const cwd = item.args || workspaceFolderOf(item.workspaceId);
+        void spawnSession({ cwd, label: item.title, command: item.target });
     }
 
     // ── 文件夹条目：在应用内终端打开该目录（标签名取文件夹名），opencode / claude
@@ -494,8 +542,9 @@ export default function App() {
     }
 
     function openTool(id: ToolId, input?: string | null, expertId?: number) {
+        // 终端落在当前工作区文件夹；临时工作区或没设文件夹的工作区回主目录
         if (id === "terminal") {
-            void spawnSession();
+            void spawnSession({ cwd: workspaceFolderOf(activeWorkspaceId) });
             return;
         }
         // 工作区数据还没到时不知道该往哪开：直接忽略这次点击（此时 dock 也还没挂出来）
@@ -519,8 +568,9 @@ export default function App() {
 
     // ── 终端会话生命周期：每个会话一块 dock 面板（term:<会话号>）──
 
-    // 开新会话（工具菜单 / 终端命令条目共用）：命令条目带 cwd/label/整行命令，
-    // 会话建好即写入执行——首屏输出由 termStore 的缓冲兜住，面板挂载后回放
+    // 开新会话（工具菜单 / 终端命令条目共用）：cwd 由调用方决定（工作区文件夹或条目自带的
+    // 工作目录），缺省主目录；命令条目的整行命令在建好后写入执行——首屏输出由 termStore
+    // 的缓冲兜住，面板挂载后回放
     async function spawnSession(req?: { cwd?: string; label?: string; command?: string }) {
         // 没有当前工作区就不起会话：pty 起来了却没有面板接，等于留一个看不见的 shell
         const ws = activeWorkspaceId;
@@ -608,6 +658,13 @@ export default function App() {
             return;
         }
         await refreshWorkspaces();
+        // 条目随工作区外键级联删除：再拉一次全量，左侧与工具栏里别留着已不存在的行
+        await refresh();
+    }
+
+    // 移动条目归属（左侧 ↔ 工作区）：成功后重拉全量，界面只认服务端结果
+    async function moveItem(item: Item, workspaceId: number | null) {
+        await mutate(() => api.moveItem(item.id, workspaceId), t("toast.moved"));
     }
 
     // shell 自己退出（exit / 进程崩溃）：先释放 xterm 实例再关面板（触发上面的
@@ -653,6 +710,23 @@ export default function App() {
         setDialog({ kind: "settings", section: (toolId && TOOL_SETTINGS_SECTION[toolId]) || "translate" });
     }
 
+    // 条目弹窗的归属：新建时取弹窗选的（左侧 null / 工具栏当前工作区），编辑时取条目自己的。
+    // 归属决定新建默认类型与工作目录提示；弹窗关闭时这些值不参与渲染
+    const itemDialogWorkspaceId =
+        dialog.kind === "item-create"
+            ? dialog.workspaceId
+            : dialog.kind === "item-edit"
+              ? dialog.item.workspaceId
+              : null;
+    const itemDialogWorkspace =
+        itemDialogWorkspaceId === null
+            ? null
+            : (wsData?.workspaces.find((workspace) => workspace.id === itemDialogWorkspaceId) ?? null);
+    const itemDialogInWorkspace = itemDialogWorkspace !== null && !itemDialogWorkspace.builtin;
+    // 删除工作区前的条目数：确认框据此说明会连带删掉多少快捷启动
+    const deletingWorkspaceItemCount =
+        dialog.kind === "ws-delete" ? items.filter((item) => item.workspaceId === dialog.workspace.id).length : 0;
+
     return (
         <TooltipProvider>
             <div className="flex h-screen flex-col overflow-hidden font-sans text-foreground">
@@ -685,7 +759,7 @@ export default function App() {
                         /* 34px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px） */
                         <TitlebarWell className="relative h-[34px] flex-row px-2.5 overflow-visible">
                             <SearchBox
-                                items={items}
+                                items={globalItems}
                                 // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
                                 toolAliases={toolAliases ?? {}}
                                 onOpenItem={openItem}
@@ -793,8 +867,9 @@ export default function App() {
                                 activeId={activeWorkspaceId}
                                 panelCounts={panelCounts}
                                 onSwitch={(id) => void switchWorkspace(id)}
-                                onCreate={() => void createWorkspace()}
+                                onCreate={openCreateWorkspace}
                                 onRename={(workspace) => setDialog({ kind: "ws-rename", workspace })}
+                                onChangeFolder={(workspace) => void changeWorkspaceFolder(workspace)}
                                 onDelete={(workspace) => setDialog({ kind: "ws-delete", workspace })}
                             />
 
@@ -805,7 +880,7 @@ export default function App() {
                                     variant="ghost"
                                     size="icon"
                                     className="size-7"
-                                    onClick={() => setDialog({ kind: "item-create" })}
+                                    onClick={() => setDialog({ kind: "item-create", workspaceId: null })}
                                     title={t("side.addItem")}
                                     aria-label={t("side.addItem")}
                                 >
@@ -815,7 +890,7 @@ export default function App() {
 
                             {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器） */}
                             <div className="min-h-0 flex-1">
-                                {items.length === 0 ? (
+                                {globalItems.length === 0 ? (
                                     /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
                                     <Empty className="px-3 py-8">
                                         <EmptyHeader>
@@ -825,12 +900,14 @@ export default function App() {
                                     </Empty>
                                 ) : (
                                     <LauncherList
-                                        items={items}
+                                        items={globalItems}
                                         dirIds={dirIds}
+                                        workspaces={workspaceTargets}
                                         onOpenInTerminal={openInTerminal}
                                         onOpen={openItem}
                                         onEditItem={(item) => setDialog({ kind: "item-edit", item })}
                                         onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
+                                        onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
                                     />
                                 )}
                             </div>
@@ -841,44 +918,76 @@ export default function App() {
                         侧栏原来那条右边线由它兼任，所以 aside 去掉了 border-r */}
                     <main
                         className="relative flex min-w-0 flex-1 flex-col border bg-canvas"
-                        style={{ borderColor: dockStroke }}
+                        style={
+                            {
+                                borderColor: dockStroke,
+                                // 活动标签的标识线只在深色主题取工作区色（换工作区时连标签标记一起换色）；
+                                // 浅色主题焦点标签是深底浅字，原本的白色高光才是那套材质的一部分
+                                ...(theme === "dark"
+                                    ? {
+                                          "--dock-focus-top-line": dockStroke,
+                                          "--dock-focus-mark": dockStroke,
+                                      }
+                                    : {}),
+                            } as CSSProperties
+                        }
                     >
-                        {serverOk === false ? (
-                            /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
-                            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-                                <Marker structure="separator" variant="muted" className="max-w-[460px]">
-                                    {t("offline.title")}
-                                </Marker>
-                                <span className="max-w-[460px] text-center text-xs text-dim-foreground">
-                                    {t("offline.hint")}
-                                </span>
-                                <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
-                                    {t("offline.retry")}
-                                </Button>
-                            </div>
-                        ) : dockWanted && wsData ? (
-                            /* 工作区数据还没到时按空态处理：此时不知道该挂哪个工作区的实例 */
-                            <Suspense
-                                fallback={
-                                    <div className="flex h-full items-center justify-center">
-                                        <Spinner decorative className="text-muted-foreground" />
-                                    </div>
-                                }
-                            >
-                                <DockZone
-                                    workspaces={wsData.workspaces.map((w) => w.id)}
-                                    activeId={wsData.activeId}
-                                    onReady={handleDockReady}
-                                    onOpenTool={openTool}
-                                    onOpenSettings={openSettingsForActiveTool}
-                                />
-                            </Suspense>
-                        ) : (
-                            /* 冷启动空态：dock 未挂载不加载 dockview，首页卡片与搜索即入口 */
-                            <div className="h-full min-h-0">
-                                <ToolHome onOpen={openTool} />
-                            </div>
+                        {/* 普通工作区顶部一条项目快捷启动工具栏：条目归属当前工作区，
+                            临时工作区没有归属条目，不渲染。断线态也不显示，避免点了没反应的按钮 */}
+                        {serverOk !== false && activeWorkspace && !activeWorkspace.builtin && (
+                            <WorkspaceToolbar
+                                folder={activeWorkspace.folder}
+                                items={activeWorkspaceItems}
+                                dirIds={dirIds}
+                                workspaces={workspaceTargets}
+                                currentWorkspaceId={activeWorkspace.id}
+                                onCreate={() => setDialog({ kind: "item-create", workspaceId: activeWorkspace.id })}
+                                onOpenFolder={(folder) => void openLocalPath(folder)}
+                                onOpen={openItem}
+                                onOpenInTerminal={openInTerminal}
+                                onEditItem={(item) => setDialog({ kind: "item-edit", item })}
+                                onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
+                                onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
+                            />
                         )}
+                        <div className="flex min-h-0 flex-1 flex-col">
+                            {serverOk === false ? (
+                                /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
+                                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+                                    <Marker structure="separator" variant="muted" className="max-w-[460px]">
+                                        {t("offline.title")}
+                                    </Marker>
+                                    <span className="max-w-[460px] text-center text-xs text-dim-foreground">
+                                        {t("offline.hint")}
+                                    </span>
+                                    <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
+                                        {t("offline.retry")}
+                                    </Button>
+                                </div>
+                            ) : dockWanted && wsData ? (
+                                /* 工作区数据还没到时按空态处理：此时不知道该挂哪个工作区的实例 */
+                                <Suspense
+                                    fallback={
+                                        <div className="flex h-full items-center justify-center">
+                                            <Spinner decorative className="text-muted-foreground" />
+                                        </div>
+                                    }
+                                >
+                                    <DockZone
+                                        workspaces={wsData.workspaces.map((w) => w.id)}
+                                        activeId={wsData.activeId}
+                                        onReady={handleDockReady}
+                                        onOpenTool={openTool}
+                                        onOpenSettings={openSettingsForActiveTool}
+                                    />
+                                </Suspense>
+                            ) : (
+                                /* 冷启动空态：dock 未挂载不加载 dockview，首页卡片与搜索即入口 */
+                                <div className="h-full min-h-0">
+                                    <ToolHome onOpen={openTool} />
+                                </div>
+                            )}
+                        </div>
                     </main>
                 </div>
 
@@ -895,16 +1004,29 @@ export default function App() {
                     }}
                 />
 
+                <WorkspaceDialog
+                    open={dialog.kind === "ws-create"}
+                    initialName={dialog.kind === "ws-create" ? dialog.initialName : ""}
+                    onClose={() => setDialog({ kind: "none" })}
+                    onSubmit={submitCreateWorkspace}
+                />
+
                 <ItemDialog
                     open={dialog.kind === "item-create" || dialog.kind === "item-edit"}
                     item={dialog.kind === "item-edit" ? dialog.item : null}
                     platform={platform}
+                    inWorkspace={itemDialogInWorkspace}
+                    workspaceFolder={itemDialogInWorkspace ? itemDialogWorkspace?.folder : undefined}
                     onClose={() => setDialog({ kind: "none" })}
                     onSubmit={
                         dialog.kind === "item-edit"
                             ? (values: ItemFormValues) =>
                                   mutate(() => api.updateItem(dialog.item.id, values), t("toast.saved"))
-                            : (values: ItemFormValues) => mutate(() => api.createItem(values), t("toast.saved"))
+                            : (values: ItemFormValues) =>
+                                  mutate(
+                                      () => api.createItem({ ...values, workspaceId: itemDialogWorkspaceId }),
+                                      t("toast.saved"),
+                                  )
                     }
                 />
 
@@ -940,7 +1062,13 @@ export default function App() {
                               ? `${t("menu.delete")}:${dialog.item.title}`
                               : ""
                     }
-                    description={dialog.kind === "ws-delete" ? t("ws.deleteHint") : undefined}
+                    description={
+                        dialog.kind === "ws-delete"
+                            ? deletingWorkspaceItemCount > 0
+                                ? `${t("ws.deleteHint")} ${t("ws.deleteItemsPrefix")}${deletingWorkspaceItemCount}${t("ws.deleteItemsSuffix")}`
+                                : t("ws.deleteHint")
+                            : undefined
+                    }
                     onClose={() => setDialog({ kind: "none" })}
                     onConfirm={async () => {
                         if (dialog.kind === "ws-delete") {

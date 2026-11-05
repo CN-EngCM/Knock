@@ -11,14 +11,22 @@ export const kindSchema = z.enum(["bookmark", "app", "file", "command"]);
 // ── 工作区：每个工作区一套独立的停靠区 ──
 // 名字规则同分组（trim 后非空），上限按工作区取 40；创建与改名共用一份
 const workspaceNameSchema = z.string().trim().min(1).max(40);
+// 文件夹是绝对路径：只校验非空与长度，路径是否真实存在由 server/workspaces.ts 查磁盘
+const workspaceFolderSchema = z.string().trim().min(1).max(1000);
 
-export const createWorkspaceSchema = z.object({ name: workspaceNameSchema });
+export const createWorkspaceSchema = z.object({ name: workspaceNameSchema, folder: workspaceFolderSchema });
 // 改名把 id 与名字一起校验，处理器入口一次过
 export const renameWorkspaceSchema = z.object({ id: z.number().int().positive(), name: workspaceNameSchema });
+// 修改文件夹：id + 新路径，路径存在性同样留给 server 层
+export const updateWorkspaceFolderSchema = z.object({
+    id: z.number().int().positive(),
+    folder: workspaceFolderSchema,
+});
 // 删除、设为当前只认 id
 export const workspaceIdSchema = z.object({ id: z.number().int().positive() });
 
-export const createItemSchema = z.object({
+// 条目自身的字段：新建与编辑共用一份（编辑用 partial，字段规则不会漂）
+const itemFieldsSchema = z.object({
     kind: kindSchema,
     title: z.string().trim().min(1).max(100),
     target: z.string().trim().min(1).max(1000),
@@ -26,8 +34,19 @@ export const createItemSchema = z.object({
     args: z.string().trim().max(1000).nullish(),
 });
 
-// PATCH：所有字段可选，只更新传入的部分
-export const updateItemSchema = createItemSchema.partial();
+// 新建时可选归属：空 = 左侧快捷启动，数字 = 该工作区的快捷启动工具栏
+export const createItemSchema = itemFieldsSchema.extend({
+    workspaceId: z.number().int().positive().nullish(),
+});
+
+// PATCH 不允许改归属：移动走 moveItem，避免两个入口都能写 workspace_id
+export const updateItemSchema = itemFieldsSchema.partial();
+
+// 移动条目：workspaceId 为 null 表示移回左侧快捷启动，数字表示工作区工具栏
+export const moveItemSchema = z.object({
+    id: z.number().int().positive(),
+    workspaceId: z.number().int().positive().nullable(),
+});
 
 // 启动条目：只传 id，目标路径等以数据库为准
 export const launchSchema = z.object({ id: z.number().int().positive() });
@@ -35,8 +54,8 @@ export const launchSchema = z.object({ id: z.number().int().positive() });
 // ── 终端会话（v2.2）──
 // 输入分片走 IPC，单次上限 8KB（整屏粘贴也远小于此，防误传大负载）
 export const ptyWriteSchema = z.object({ id: z.number().int().positive(), data: z.string().max(8192) });
-// spawn 可选载荷：终端命令条目带 cwd（工作目录）与 label（会话标签 = 条目标题）；
-// 工具菜单、首页和搜索打开终端时不传，cwd 缺省主目录、label 使用 shell 标签。
+// spawn 可选载荷：cwd 是工作目录（工作区里开终端传工作区文件夹；命令条目有显式工作目录时传它，
+// 留空则不带）；不传时缺省主目录；label 是会话标签（命令条目传标题，否则用 shell 标签）。
 export const ptySpawnSchema = z.object({
     cwd: z.string().trim().max(1000).optional(),
     label: z.string().trim().max(100).optional(),
@@ -365,11 +384,15 @@ export type Item = {
     target: string;
     args: string | null;
     icon: string | null;
+    /** 空 = 左侧快捷启动；数字 = 工作区工具栏。SQL 列名 workspace_id，下发前别名成这个字段 */
+    workspaceId: number | null;
 };
 
 export type Workspace = {
     id: number;
     name: string;
+    /** 工作区文件夹（绝对路径）；临时工作区为空串 */
+    folder: string;
     /** 自带的「临时工作区」：显示名走渲染端 i18n（库里存空串），不可删除/改名，恒排第一 */
     builtin: boolean;
     position: number;

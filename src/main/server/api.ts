@@ -27,7 +27,14 @@ import {
 import { currentWindowState } from "../windowState";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
-import { createWorkspace, deleteWorkspace, listWorkspaces, renameWorkspace, setActiveWorkspace } from "./workspaces";
+import {
+    createWorkspace,
+    deleteWorkspace,
+    listWorkspaces,
+    renameWorkspace,
+    setActiveWorkspace,
+    updateWorkspaceFolder,
+} from "./workspaces";
 import {
     addTagsToImages as galleryAddTagsToImages,
     allTags as galleryAllTags,
@@ -94,6 +101,7 @@ import {
     galleryTagsSchema,
     fileSearchSchema,
     fontPatchSchema,
+    moveItemSchema,
     pathArgSchema,
     pickFileSchema,
     translateConfigPatchSchema,
@@ -108,6 +116,7 @@ import {
     toolAliasPatchSchema,
     updateExpertSchema,
     updateItemSchema,
+    updateWorkspaceFolderSchema,
     workspaceIdSchema,
     TOOL_IDS,
     type AiModelConfig,
@@ -177,12 +186,15 @@ export interface MpApi {
     // ── 工作区：每个工作区一套独立的停靠区；builtin 行是自带的「临时工作区」，不可删/改名 ──
     /** 全量工作区（临时的恒在首位）+ 生效 id；activeWorkspace 失效时只读回落到临时的 */
     getWorkspaces(): Promise<ApiResult<{ workspaces: Workspace[]; activeId: number }>>;
-    createWorkspace(name: string): Promise<ApiResult<{ id: number }>>;
+    createWorkspace(name: string, folder: string): Promise<ApiResult<{ id: number }>>;
     renameWorkspace(id: number, name: string): Promise<ApiResult<null>>;
+    updateWorkspaceFolder(id: number, folder: string): Promise<ApiResult<null>>;
     deleteWorkspace(id: number): Promise<ApiResult<null>>;
     setActiveWorkspace(id: number): Promise<ApiResult<null>>;
     createItem(input: CreateItemInput): Promise<ApiResult<{ id: number }>>;
     updateItem(id: number, patch: UpdateItemInput): Promise<ApiResult<null>>;
+    /** 移动条目归属：null = 左侧快捷启动，数字 = 指定工作区的工具栏（临时工作区不可作为目标） */
+    moveItem(id: number, workspaceId: number | null): Promise<ApiResult<null>>;
     deleteItem(id: number): Promise<ApiResult<null>>;
     launch(id: number): Promise<ApiResult<null>>;
     getAutostart(): Promise<ApiResult<{ supported: boolean; enabled: boolean }>>;
@@ -191,7 +203,8 @@ export interface MpApi {
     setHotkey(hotkey: HotkeyId): Promise<ApiResult<{ hotkey: HotkeyId }>>;
     listShortcuts(refresh: boolean): Promise<ApiResult<{ shortcuts: Shortcut[] }>>;
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
-    // opts 供终端命令条目传入 cwd/label；不传时 cwd 缺省主目录、label 用 shell 标签。
+    // opts 带 cwd 与 label：工作区里开终端时 cwd 取工作区文件夹；命令条目有显式工作目录时传它，
+    // 留空则不传。不传时 cwd 缺省主目录、label 用 shell 标签。
     // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
     ptySpawn(opts?: PtySpawnInput): Promise<ApiResult<{ id: number; label: string }>>;
     ptyWrite(id: number, data: string): Promise<ApiResult<null>>;
@@ -227,8 +240,8 @@ export interface MpApi {
     revealPath(path: string): Promise<ApiResult<null>>;
     /** 路径探测（搜索框直达动作）：只回答「存在与否 + 是否目录」；不存在走 not-found */
     statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
-    /** 原生目录选择框（条目编辑「浏览…」用）：取消返回 null */
-    pickDirectory(): Promise<ApiResult<string | null>>;
+    /** 原生目录选择框（条目编辑与工作区文件夹用）：取消返回 null */
+    pickDirectory(defaultPath?: string): Promise<ApiResult<string | null>>;
     /** 原生文件选择框（条目编辑目标「浏览…」用）：app = 过滤可执行文件，path = 文件/文件夹皆可选；取消返回 null */
     pickFile(purpose: "app" | "path"): Promise<ApiResult<string | null>>;
     // ── 数据目录（设置页展示与迁移）：目录由默认根下的指针文件决定（dataLocation.ts）──
@@ -322,6 +335,9 @@ type ApiHandlers = {
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界统一断言成行类型。
 // （字段由 schema 与 SQL 共同保证，是全项目唯一允许 as 的地方）
+// 列名 workspace_id 与前端字段 workspaceId 不一致，显式列出并别名，避免 SELECT * 把 snake_case
+// 原样返回后靠断言骗过类型系统。
+const ITEM_COLUMNS = "id, kind, title, target, args, icon, workspace_id AS workspaceId";
 const asItems = (rows: unknown[]) => rows as Item[];
 
 const badRequest = { ok: false, error: { kind: "bad-request" } } as const;
@@ -344,21 +360,26 @@ export const apiHandlers: ApiHandlers = {
     getData: async () => ({
         ok: true,
         data: {
-            items: asItems(db.prepare("SELECT * FROM items ORDER BY id").all()),
+            items: asItems(db.prepare(`SELECT ${ITEM_COLUMNS} FROM items ORDER BY id`).all()),
         },
     }),
 
     // ── 工作区：入口只做 zod 校验与转发，行不存在 / builtin 拒删改的判定在 server/workspaces.ts ──
     getWorkspaces: async () => listWorkspaces(),
-    createWorkspace: async (name) => {
-        const v = guard(createWorkspaceSchema, { name });
+    createWorkspace: async (name, folder) => {
+        const v = guard(createWorkspaceSchema, { name, folder });
         if (!v) return badRequest;
-        return createWorkspace(v.name);
+        return createWorkspace(v.name, v.folder);
     },
     renameWorkspace: async (id, name) => {
         const v = guard(renameWorkspaceSchema, { id, name });
         if (!v) return badRequest;
         return renameWorkspace(v.id, v.name);
+    },
+    updateWorkspaceFolder: async (id, folder) => {
+        const v = guard(updateWorkspaceFolderSchema, { id, folder });
+        if (!v) return badRequest;
+        return updateWorkspaceFolder(v.id, v.folder);
     },
     deleteWorkspace: async (id) => {
         const v = guard(workspaceIdSchema, { id });
@@ -374,17 +395,25 @@ export const apiHandlers: ApiHandlers = {
     createItem: async (input) => {
         const v = guard(createItemSchema, input);
         if (!v) return badRequest;
+        const workspaceId = v.workspaceId ?? null;
+        // 归属只在非空时查一次：临时工作区没有工具栏，不能作为条目归属
+        if (workspaceId !== null) {
+            const ws = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(workspaceId) as
+                { builtin: number } | undefined;
+            if (!ws || ws.builtin !== 0) return badRequest;
+        }
         const info = db
-            .prepare("INSERT INTO items (kind, title, target, args) VALUES (?, ?, ?, ?)")
-            .run(v.kind, v.title, v.target, v.args ?? null);
+            .prepare("INSERT INTO items (kind, title, target, args, workspace_id) VALUES (?, ?, ?, ?, ?)")
+            .run(v.kind, v.title, v.target, v.args ?? null, workspaceId);
         return { ok: true, data: { id: Number(info.lastInsertRowid) } };
     },
 
-    // PATCH 用「读旧值 → 合并 → 整行写回」：逻辑直白，个人工具无并发顾虑
+    // PATCH 用「读旧值 → 合并 → 整行写回」：逻辑直白，个人工具无并发顾虑。
+    // 归属不在 patch 里，移动条目走 moveItem
     updateItem: async (id, patch) => {
         const v = guard(updateItemSchema, patch);
         if (!v) return badRequest;
-        const row = db.prepare("SELECT * FROM items WHERE id = ?").get(id) as Item | undefined;
+        const row = db.prepare(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id) as Item | undefined;
         if (!row) return notFound;
         const next = {
             kind: v.kind ?? row.kind,
@@ -402,6 +431,20 @@ export const apiHandlers: ApiHandlers = {
         return { ok: true, data: null };
     },
 
+    // 移动归属：null = 回左侧快捷启动；数字 = 目标工作区。目标必须是存在的非临时工作区，
+    // 临时工作区没有工具栏，移过去等于把条目藏起来
+    moveItem: async (id, workspaceId) => {
+        const v = guard(moveItemSchema, { id, workspaceId });
+        if (!v) return badRequest;
+        if (v.workspaceId !== null) {
+            const ws = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(v.workspaceId) as
+                { builtin: number } | undefined;
+            if (!ws || ws.builtin !== 0) return badRequest;
+        }
+        const info = db.prepare("UPDATE items SET workspace_id = ? WHERE id = ?").run(v.workspaceId, v.id);
+        return info.changes === 0 ? notFound : { ok: true, data: null };
+    },
+
     deleteItem: async (id) => {
         const info = db.prepare("DELETE FROM items WHERE id = ?").run(id);
         return info.changes === 0 ? notFound : { ok: true, data: null };
@@ -410,7 +453,7 @@ export const apiHandlers: ApiHandlers = {
     // ── 启动 / 打开（M3 核心）。书签由前端直接 window.open；应用与文件走这里 ──
     launch: async (id) => {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
-        const item = db.prepare("SELECT * FROM items WHERE id = ?").get(id) as Item | undefined;
+        const item = db.prepare(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id) as Item | undefined;
         if (!item) return notFound;
         // 书签由前端 window.open、终端命令由前端驱动 pty 执行，走到这里都是误用；
         // 提前 return 后 item.kind 已窄化为 app/file，kind 显式取出才能过 launchItem 的参数类型
@@ -604,10 +647,13 @@ export const apiHandlers: ApiHandlers = {
         }
     },
 
-    // 原生目录选择框（条目编辑「浏览…」）：取消 = data null，前端保持原值不动。
+    // 原生目录选择框（条目编辑与工作区文件夹）：取消 = data null，前端保持原值不动。
+    // defaultPath 让修改工作区文件夹时从当前目录起步；不传时保持系统默认位置。
     // withNativeDialog 抑制主窗口失焦自动隐藏（见 util/nativeDialog.ts）
-    pickDirectory: async () => {
-        const r = await withNativeDialog(() => dialog.showOpenDialog({ properties: ["openDirectory"] }));
+    pickDirectory: async (defaultPath) => {
+        const r = await withNativeDialog(() =>
+            dialog.showOpenDialog({ properties: ["openDirectory"], defaultPath: defaultPath || undefined }),
+        );
         return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };
     },
 

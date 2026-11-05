@@ -131,8 +131,8 @@ export function readTermConfig(): TermConfig {
 }
 
 /** 新建会话；返回 id 与 shell 标签（渲染端做 tab 名）。
- *  opts 供终端命令条目传入 cwd（工作目录）与 label（会话标签 = 条目标题）；
- *  不传时 cwd 缺省主目录、label 用 shell 标签，与历史行为一致 */
+ *  opts 带 cwd（工作目录：工作区文件夹或命令条目显式填的目录，缺省主目录）与 label（会话标签）；
+ *  不传时 label 用 shell 标签 */
 export function spawnSession(opts?: { cwd?: string; label?: string }): { id: number; label: string } {
     const shell = resolveShell();
     const id = nextId++;

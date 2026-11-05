@@ -1,4 +1,5 @@
 import db from "./db";
+import { existsSync, statSync } from "node:fs";
 import { getSetting, setSetting } from "./util/settings";
 import type { Workspace } from "./schemas";
 // type-only import 编译期擦除，不构成运行时循环依赖
@@ -10,11 +11,21 @@ import type { ApiResult } from "./api";
 
 const ACTIVE_KEY = "activeWorkspace";
 
-type WorkspaceRow = { id: number; name: string; builtin: number; position: number };
+type WorkspaceRow = { id: number; name: string; folder: string; builtin: number; position: number };
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界断言成行类型（同 experts.ts 约定）
 function toWorkspace(row: WorkspaceRow): Workspace {
-    return { id: row.id, name: row.name, builtin: row.builtin !== 0, position: row.position };
+    return { id: row.id, name: row.name, folder: row.folder, builtin: row.builtin !== 0, position: row.position };
+}
+
+/** 工作区文件夹必须是现存目录：失效路径在启动/开终端时另有提示，创建与修改阶段直接拒绝 */
+function isDirectory(folder: string): boolean {
+    if (!existsSync(folder)) return false;
+    try {
+        return statSync(folder).isDirectory();
+    } catch {
+        return false;
+    }
 }
 
 /** 幂等播种：builtin 行自身就是标记——它删不掉，存在即已播种，不像专家那样另记 settings 标记 */
@@ -34,14 +45,15 @@ export function listWorkspaces(): ApiResult<{ workspaces: Workspace[]; activeId:
     return { ok: true, data: { workspaces, activeId } };
 }
 
-export function createWorkspace(name: string): ApiResult<{ id: number }> {
+export function createWorkspace(name: string, folder: string): ApiResult<{ id: number }> {
+    if (!isDirectory(folder)) return { ok: false, error: { kind: "bad-request" } };
     // 新工作区排到最后：MAX(position)+1（与 experts 同款）
     const info = db
         .prepare(
-            "INSERT INTO workspaces (name, position, builtin) " +
-                "VALUES (?, (SELECT COALESCE(MAX(position), -1) + 1 FROM workspaces), 0)",
+            "INSERT INTO workspaces (name, folder, position, builtin) " +
+                "VALUES (?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM workspaces), 0)",
         )
-        .run(name);
+        .run(name, folder);
     return { ok: true, data: { id: Number(info.lastInsertRowid) } };
 }
 
@@ -53,7 +65,17 @@ export function renameWorkspace(id: number, name: string): ApiResult<null> {
     return { ok: true, data: null };
 }
 
-// 只删工作区行：停靠区内容是不落库的运行时状态，没有关联数据要清理
+// 修改工作区文件夹：只影响之后新开的终端/命令，已开面板各自持有自己的 cwd
+export function updateWorkspaceFolder(id: number, folder: string): ApiResult<null> {
+    const row = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(id) as { builtin: number } | undefined;
+    if (!row) return { ok: false, error: { kind: "not-found" } };
+    if (row.builtin !== 0) return { ok: false, error: { kind: "bad-request" } };
+    if (!isDirectory(folder)) return { ok: false, error: { kind: "bad-request" } };
+    db.prepare("UPDATE workspaces SET folder = ? WHERE id = ?").run(folder, id);
+    return { ok: true, data: null };
+}
+
+// 只删工作区行：停靠区面板是运行时状态，由渲染端先逐个关闭；条目由外键 ON DELETE CASCADE 一起删
 export function deleteWorkspace(id: number): ApiResult<null> {
     const row = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(id) as { builtin: number } | undefined;
     if (!row) return { ok: false, error: { kind: "not-found" } };

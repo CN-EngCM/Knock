@@ -18,7 +18,10 @@ db.exec(`
     title  TEXT    NOT NULL,
     target TEXT    NOT NULL,          -- bookmark: URL / app: 程序路径 / file: 文件或文件夹路径 / command: 命令行
     args   TEXT,                      -- app: 启动参数 / command: 工作目录，可空
-    icon   TEXT                       -- 图标缓存文件名；空 = 用首字母回退
+    icon   TEXT,                      -- 图标缓存文件名；空 = 用首字母回退
+    -- 空 = 左侧快捷启动；非空 = 该工作区的快捷启动工具栏。workspaces 表在后面才建，
+    -- SQLite 允许外键前向引用，只要插数据时父表已存在
+    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -47,6 +50,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS workspaces (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     name     TEXT    NOT NULL,
+    folder   TEXT    NOT NULL DEFAULT '',  -- 工作区文件夹；临时工作区为空串
     position INTEGER NOT NULL DEFAULT 0,
     builtin  INTEGER NOT NULL DEFAULT 0
   );
@@ -100,6 +104,14 @@ db.exec(`
   DROP TABLE IF EXISTS gallery_group_tags;
 `);
 
+// 存量库幂等迁移：folder 列是后加的，CREATE IF NOT EXISTS 对已存在的表不补列，
+// 老库必须用 ALTER 补上。PRAGMA 探测列存在性后再动（列已在则跳过，重启可重入）。
+// 只补列不回填：没有文件夹的旧工作区保留空串，等用户第一次修改时再选目录。
+const workspaceCols = db.prepare("PRAGMA table_info(workspaces)").all() as { name: string }[];
+if (!workspaceCols.some((c) => c.name === "folder")) {
+    db.exec("ALTER TABLE workspaces ADD COLUMN folder TEXT NOT NULL DEFAULT ''");
+}
+
 // 存量库幂等迁移：effort 列是后加的，CREATE IF NOT EXISTS 对已存在的表不补列，
 // 老库必须用 ALTER 补上。PRAGMA 探测列存在性后再动（列已在则跳过，重启可重入）。
 const expertCols = db.prepare("PRAGMA table_info(experts)").all() as { name: string }[];
@@ -149,5 +161,13 @@ db.transaction(() => {
     // 先重建 items 再删 groups：开着外键时 DROP 父表会触发级联删除，顺序反了条目会被清空
     db.exec("DROP TABLE IF EXISTS groups");
 })();
+
+// 存量库幂等迁移：workspace_id 是后加的（条目归属工作区），建表语句对已存在的 items
+// 不补列。必须放在上面的 items 重建之后：老库重建出来的 items_new 没有这一列，
+// 重建后再探测才能把列补到新表上。只加列不回填，现有条目全部留在左侧快捷启动（NULL）。
+const itemColsAfterRebuild = db.prepare("PRAGMA table_info(items)").all() as { name: string }[];
+if (!itemColsAfterRebuild.some((c) => c.name === "workspace_id")) {
+    db.exec("ALTER TABLE items ADD COLUMN workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE");
+}
 
 export default db;

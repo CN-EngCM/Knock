@@ -24,11 +24,15 @@ type Props = {
     item: Item | null;
     /** 服务端平台（win32 才显示快捷方式选择器） */
     platform: string;
+    /** 归属普通工作区：新建时默认给终端命令（项目工具栏里命令最常见） */
+    inWorkspace?: boolean;
+    /** 工作区文件夹；空串表示这个工作区没有目录，不能提示「空 = 工作区文件夹」 */
+    workspaceFolder?: string;
     onClose: () => void;
     onSubmit: (values: ItemFormValues) => Promise<void>;
 };
 
-export function ItemDialog({ open, item, platform, onClose, onSubmit }: Props) {
+export function ItemDialog({ open, item, platform, inWorkspace = false, workspaceFolder, onClose, onSubmit }: Props) {
     const { t } = useI18n();
     const [kind, setKind] = useState<Kind>("bookmark");
     const [title, setTitle] = useState("");
@@ -37,14 +41,15 @@ export function ItemDialog({ open, item, platform, onClose, onSubmit }: Props) {
     const [saving, setSaving] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
 
-    // 每次打开时用 item / 默认值重置表单（编辑回填）
+    // 每次打开时用 item / 默认值重置表单（编辑回填）。
+    // 工作区里新建默认终端命令：项目启动项绝大多数是命令，省掉每次改下拉
     useEffect(() => {
         if (!open) return;
-        setKind(item?.kind ?? "bookmark");
+        setKind(item?.kind ?? (inWorkspace ? "command" : "bookmark"));
         setTitle(item?.title ?? "");
         setTarget(item?.target ?? "");
         setArgs(item?.args ?? "");
-    }, [open, item]);
+    }, [open, item, inWorkspace]);
 
     const targetLabel =
         kind === "bookmark"
@@ -178,7 +183,11 @@ export function ItemDialog({ open, item, platform, onClose, onSubmit }: Props) {
                     {(kind === "app" || kind === "command") && (
                         <FormRow>
                             <FieldLabel htmlFor="item-args">
-                                {kind === "app" ? t("item.args") : t("item.cwd")}
+                                {kind === "app"
+                                    ? t("item.args")
+                                    : workspaceFolder
+                                      ? t("item.cwdInWorkspace")
+                                      : t("item.cwd")}
                             </FieldLabel>
                             <div className="flex gap-2">
                                 <Input

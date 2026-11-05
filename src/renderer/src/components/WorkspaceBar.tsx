@@ -45,6 +45,7 @@ type Props = {
     onSwitch: (id: number) => void;
     onCreate: () => void;
     onRename: (workspace: Workspace) => void;
+    onChangeFolder: (workspace: Workspace) => void;
     onDelete: (workspace: Workspace) => void;
 };
 
@@ -53,7 +54,16 @@ type Props = {
  * 列表高度记在 localStorage，只影响本机界面；数据与增删改都归 App（这里不碰 api）。
  * 侧栏隐藏时整块跟着 aside 一起消失，不另做入口。
  */
-export function WorkspaceBar({ workspaces, activeId, panelCounts, onSwitch, onCreate, onRename, onDelete }: Props) {
+export function WorkspaceBar({
+    workspaces,
+    activeId,
+    panelCounts,
+    onSwitch,
+    onCreate,
+    onRename,
+    onChangeFolder,
+    onDelete,
+}: Props) {
     const { t } = useI18n();
     const rootRef = useRef<HTMLDivElement>(null);
     const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -160,6 +170,7 @@ export function WorkspaceBar({ workspaces, activeId, panelCounts, onSwitch, onCr
                         count={panelCounts[workspace.id] ?? 0}
                         onSwitch={onSwitch}
                         onRename={onRename}
+                        onChangeFolder={onChangeFolder}
                         onDelete={onDelete}
                     />
                 ))}
@@ -184,20 +195,26 @@ type RowProps = {
     count: number;
     onSwitch: (id: number) => void;
     onRename: (workspace: Workspace) => void;
+    onChangeFolder: (workspace: Workspace) => void;
     onDelete: (workspace: Workspace) => void;
 };
 
-function WorkspaceRow({ workspace, active, count, onSwitch, onRename, onDelete }: RowProps) {
+function WorkspaceRow({ workspace, active, count, onSwitch, onRename, onChangeFolder, onDelete }: RowProps) {
     const { t } = useI18n();
     const color = workspaceColor(workspace);
     // builtin 的名字在库里存的是空串，显示名必须走 i18n
     const name = workspace.builtin ? t("ws.scratch") : workspace.name;
+    // 文件夹是工作区的项目目录：悬停时连窗口数一起给全，方便确认这一行指向哪个目录。
+    // 旧库里没补过文件夹的工作区保留空串，此时只显示窗口数
+    const title = workspace.folder
+        ? `${count} ${t("ws.windowUnit")} · ${workspace.folder}`
+        : `${count} ${t("ws.windowUnit")}`;
     const row = (
         <button
             type="button"
             onClick={() => onSwitch(workspace.id)}
             // 计数只留一个数字，鼠标停在哪一行都能从 title 读到完整说法
-            title={`${count} ${t("ws.windowUnit")}`}
+            title={title}
             // 当前行：同色低透明度底色 + 上/左/下三边内描边（1px 不占布局，行高仍是 32px）。
             // 用内阴影而不是 border：通栏行的 border 会把内容挤动 1px，滚起来会抖。
             // 右边不画——那一侧紧挨停靠区的左描边，画了会变成两条并排的线
@@ -230,6 +247,7 @@ function WorkspaceRow({ workspace, active, count, onSwitch, onRename, onDelete }
             <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
             <ContextMenuContent>
                 <ContextMenuItem onClick={() => onRename(workspace)}>{t("ws.rename")}</ContextMenuItem>
+                <ContextMenuItem onClick={() => onChangeFolder(workspace)}>{t("ws.changeFolder")}</ContextMenuItem>
                 <ContextMenuItem variant="destructive" onClick={() => onDelete(workspace)}>
                     {t("common.delete")}
                 </ContextMenuItem>
