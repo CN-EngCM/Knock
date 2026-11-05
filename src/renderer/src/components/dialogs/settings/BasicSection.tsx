@@ -46,8 +46,6 @@ type Props = {
     /** 界面主题（App 状态）：提交走 onTheme（App 负责落库、切换 <html> 类与窗口外观） */
     theme: ThemeId;
     onTheme: (theme: ThemeId) => void;
-    /** 从设置里打开书签导入 */
-    onOpenImport: () => void;
     /** 终端设置：shell 候选与当前值；提交走 onTermPatch（App 负责落库与回填） */
     termCfg: TermConfig | null;
     onTermPatch: (patch: TermPatch) => Promise<boolean>;
@@ -59,14 +57,13 @@ type Props = {
     onClipSec: (seconds: number) => Promise<boolean>;
 };
 
-/** 基础设置分节：语言 / 主题 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 书签导入 / 运行环境 */
+/** 基础设置分节：语言 / 主题 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 运行环境 */
 export function BasicSection({
     lang,
     onChangeLang,
     platform,
     theme,
     onTheme,
-    onOpenImport,
     termCfg,
     onTermPatch,
     fontCfg,
@@ -365,20 +362,6 @@ export function BasicSection({
                     onCommit={() => void commitFontSize()}
                     className="w-24"
                 />
-            </FormRow>
-
-            <FormRow>
-                <FieldLabel>{t("settings.import")}</FieldLabel>
-                <Button
-                    type="button"
-                    appearance="standard"
-                    variant="outline"
-                    size="sm"
-                    // App 侧切换弹窗状态即关闭设置页，无需再显式调 onClose
-                    onClick={onOpenImport}
-                >
-                    {t("settings.importBtn")}
-                </Button>
             </FormRow>
 
             <FormRow>

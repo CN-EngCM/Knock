@@ -8,13 +8,6 @@ import { z } from "zod";
 // 条目类型：网页收藏 / 本机应用 / 本机文件或文件夹 / 终端命令
 export const kindSchema = z.enum(["bookmark", "app", "file", "command"]);
 
-export const createGroupSchema = z.object({
-    name: z.string().trim().min(1).max(50),
-});
-
-// 目前分组只有 name 可改，直接复用创建 schema
-export const updateGroupSchema = createGroupSchema;
-
 // ── 工作区：每个工作区一套独立的停靠区 ──
 // 名字规则同分组（trim 后非空），上限按工作区取 40；创建与改名共用一份
 const workspaceNameSchema = z.string().trim().min(1).max(40);
@@ -26,7 +19,6 @@ export const renameWorkspaceSchema = z.object({ id: z.number().int().positive(),
 export const workspaceIdSchema = z.object({ id: z.number().int().positive() });
 
 export const createItemSchema = z.object({
-    group_id: z.number().int().positive(),
     kind: kindSchema,
     title: z.string().trim().min(1).max(100),
     target: z.string().trim().min(1).max(1000),
@@ -37,22 +29,8 @@ export const createItemSchema = z.object({
 // PATCH：所有字段可选，只更新传入的部分
 export const updateItemSchema = createItemSchema.partial();
 
-// 拖拽排序：两数组均可选，按显示顺序传 id，position 由服务端按下标写入
-export const orderSchema = z.object({
-    groups: z.array(z.number().int().positive()).optional(),
-    items: z.array(z.object({ id: z.number().int().positive(), group_id: z.number().int().positive() })).optional(),
-});
-
 // 启动条目：只传 id，目标路径等以数据库为准
 export const launchSchema = z.object({ id: z.number().int().positive() });
-
-// 书签导入：整个导出 HTML 的文本（Chrome 导出通常几百 KB，上限 10MB 兜底）
-export const importSchema = z.object({
-    html: z
-        .string()
-        .min(1)
-        .max(10 * 1024 * 1024),
-});
 
 // ── 终端会话（v2.2）──
 // 输入分片走 IPC，单次上限 8KB（整屏粘贴也远小于此，防误传大负载）
@@ -261,7 +239,7 @@ export const aiChatStopSchema = z.object({ streamId: z.number().int().positive()
 // 存库与磁盘归一小写，jpeg 归一为 jpg（见 server/gallery.ts 的 normalizeExt）。
 export const GALLERY_FORMATS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"] as const;
 
-// 分组名：创建与改名共用一套（同 createGroupSchema 模式）
+// 分组名：创建与改名共用一套
 export const galleryGroupSchema = z.object({ name: z.string().trim().min(1).max(50) });
 
 // 标签集合：图片与分组通用，单个 1–32 字符，一次最多 50 个
@@ -375,27 +353,18 @@ export const hotkeySchema = z.object({ hotkey: z.enum(HOTKEY_IDS) });
 // ── RPC 输入类型（由 zod schema 推导，主进程处理器与渲染进程共用）──
 export type CreateItemInput = z.infer<typeof createItemSchema>;
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
-export type OrderInput = z.infer<typeof orderSchema>;
 
 // ── 行类型（与 SQLite 查询结果一一对应，前端经类型化 RPC 复用）──
 
 export type Kind = z.infer<typeof kindSchema>;
 
-export type Group = {
-    id: number;
-    name: string;
-    position: number;
-};
-
 export type Item = {
     id: number;
-    group_id: number;
     kind: Kind;
     title: string;
     target: string;
     args: string | null;
     icon: string | null;
-    position: number;
 };
 
 export type Workspace = {

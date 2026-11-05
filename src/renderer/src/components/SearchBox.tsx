@@ -4,8 +4,9 @@ import botIcon from "@/assets/icons/bot.svg";
 import fileIcon from "@/assets/icons/file.svg";
 import folderOpenIcon from "@/assets/icons/folder-open.svg";
 import { TOOLS, type ToolId } from "@/tools/registry";
-import { api, type Expert, type Group, type Item, type ToolAliases } from "@/api/client";
+import { api, type Expert, type Item, type ToolAliases } from "@/api/client";
 import { KindIcon } from "@/lib/kindIcon";
+import { sortItems } from "@/lib/itemOrder";
 import { useExperts } from "@/lib/experts";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -30,7 +31,7 @@ const CHIP_MAX_CHARS = 32;
 const PATH_PROBE_DEBOUNCE_MS = 200;
 
 type Candidate =
-    | { kind: "item"; item: Item; groupName: string }
+    | { kind: "item"; item: Item }
     | { kind: "tool"; id: ToolId; name: string; desc: MessageKey }
     /** 勾了「推荐到搜索栏」的 AI 专家：进推荐区一行 */
     | { kind: "expert"; expert: Expert }
@@ -49,7 +50,6 @@ function candidateIcon(c: Candidate): React.ReactNode {
 }
 
 type Props = {
-    groups: Group[];
     items: Item[];
     /** 工具别名（设置页维护）：别名命中也算工具候选 */
     toolAliases: ToolAliases;
@@ -90,7 +90,7 @@ function chipLabel(text: string): string {
     return chars.length > CHIP_MAX_CHARS ? chars.slice(0, CHIP_MAX_CHARS).join("") + "…" : flat;
 }
 
-export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, onOpenPath }: Props) {
+export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPath }: Props) {
     const { t } = useI18n();
     const [query, setQuery] = useState("");
     const [clip, setClip] = useState<string | null>(null);
@@ -115,10 +115,10 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
     const { matches } = useMemo(() => {
         const out: Candidate[] = [];
         if (q) {
-            const gname = new Map(groups.map((g) => [g.id, g.name]));
-            for (const item of items) {
+            // 先按侧栏同一套规则排序再匹配：候选顺序与列表顺序一致，不会随数据落库次序跳动
+            for (const item of sortItems(items)) {
                 if (item.title.toLowerCase().includes(q) || item.target.toLowerCase().includes(q)) {
-                    out.push({ kind: "item", item, groupName: gname.get(item.group_id) ?? "" });
+                    out.push({ kind: "item", item });
                     if (out.length >= MAX_CANDIDATES) break;
                 }
             }
@@ -136,7 +136,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
             }
         }
         return { matches: out };
-    }, [q, groups, items, t, toolAliases]);
+    }, [q, items, t, toolAliases]);
 
     // 命中区：条目 + 不吃素材的工具；能吃素材的工具恒住推荐区，不在命中区重复出现
     const hits = useMemo(
@@ -310,7 +310,7 @@ export function SearchBox({ groups, items, toolAliases, onOpenItem, onOpenTool, 
                                     : t(c.label === "open" ? "search.openFile" : "search.gotoFolder");
                         const tail =
                             c.kind === "item"
-                                ? c.groupName
+                                ? t(`item.kind.${c.item.kind}`)
                                 : c.kind === "tool"
                                   ? t(c.desc)
                                   : c.kind === "expert"

@@ -35,8 +35,6 @@ export const en: Record<MessageKey, string> = {
     "settings.clip": "Auto-paste window",
     "settings.clipHint":
         "On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)",
-    "settings.import": "Browser bookmarks",
-    "settings.importBtn": "Open import",
     "settings.info": "Runtime",
     "settings.dataDir": "Data directory",
     "settings.dataDir.change": "Change…",
@@ -133,28 +131,6 @@ export const en: Record<MessageKey, string> = {
     "ai.err.other": "Request failed",
     "search.expert": "expert",
 
-    "import.title": "Import browser bookmarks",
-    "import.step1": "Export bookmarks from Chrome Bookmark Manager: ⋮ menu → Export bookmarks, get an HTML file.",
-    "import.pick": "Choose the exported HTML file",
-    "import.run": "Import",
-    "import.running": "Importing…",
-    "import.createdGroups": "groups created",
-    "import.imported": "imported",
-    "import.skipped": "duplicates skipped",
-    "import.noFile": "Choose a file first",
-    "import.badFile": "Failed to read file",
-
-    "group.none": "No groups yet",
-    "group.noneHint":
-        "Use the plus button at the top right of the launcher list to create a group for sites, apps and commands.",
-    "group.empty": "(no items)",
-    "group.new": "New group",
-    "group.newBtn": "+ New group",
-    "group.rename": "Rename group",
-    "group.delete": "Delete group",
-    "group.deleteHint": "All items in this group will be deleted too.",
-    "group.name": "Group name",
-
     "item.new": "Add item",
     "item.edit": "Edit item",
     "item.kind": "Kind",
@@ -170,7 +146,6 @@ export const en: Record<MessageKey, string> = {
     "item.target.command": "Command (e.g. pnpm dev)",
     "item.args": "Arguments (optional)",
     "item.cwd": "Working directory (optional, empty = home)",
-    "item.group": "Group",
     "item.pickShortcut": "Pick from Start Menu",
     "picker.title": "Pick a shortcut",
     "picker.placeholder": "filter by name…",
@@ -462,18 +437,20 @@ export const en: Record<MessageKey, string> = {
     "gallery.url.toast.clearFailed": "Clear failed — close Chrome and retry",
     "gallery.url.toast.cleared": "Login data cleared",
 
-    "btn.sidebar": "show/hide launch list",
-    "btn.pin": "pin (no hide on blur)",
+    "btn.sidebar": "show/hide quick launch",
+    "btn.pin": "pin (no auto-hide)",
     "btn.unpin": "unpin",
+    "btn.topmost": "always on top",
+    "btn.untopmost": "not always on top",
+    "btn.topmostHint": "pin first to keep on top",
 
-    // ── launch list / tools home ──
-    "side.title": "Launch list",
-    "side.add": "Add",
-    "side.sort": "Sort mode",
+    // ── quick launch list / tools home ──
+    "side.title": "Quick launch",
     "side.addItem": "Add launch item",
-    "side.createGroupFirst": "Create a group first",
+    "side.empty": "No launch items yet",
+    "side.emptyHint": "Use the + button to add a bookmark, app, file or command.",
 
-    // ── workspaces at the bottom of the sidebar ──
+    // ── workspaces at the top of the sidebar ──
     "ws.title": "Workspaces",
     "ws.new": "New workspace",
     "ws.defaultName": "Workspace",
@@ -481,12 +458,9 @@ export const en: Record<MessageKey, string> = {
     "ws.deleteTitle": "Delete workspace",
     "ws.deleteHint": "Terminals open in this workspace will be ended and its panels closed.",
     "ws.scratch": "Scratch",
-    "ws.termUnit": "terminals",
+    "ws.windowUnit": "windows",
 
-    // ── launch list tree (GaN.UI Tree) ──
-    "tree.collapse": "Collapse",
-    "tree.expand": "Expand",
-    "tree.dragHandle": "Drag {label} to move",
+    // ── quick launch list ──
     "tools.home": "Tools home",
     "home.title": "Everyday tools, one click away",
     "home.sub": "Local only · open as you go",

@@ -8,7 +8,8 @@ import type { AiEvent } from "../main/server/ai";
 //                     参数由处理器入口的 zod 校验兜底）
 //   hideWindow     —— 渲染进程启动成功后请求隐藏窗口（首个渲染→主进程方向的 send，
 //                     fire-and-forget，无需返回值）
-//   setPinned      —— 钉子按钮同步失焦自动隐藏的豁免状态（mp:set-pinned，同上）
+//   setPinned      —— 钉子按钮同步钉住状态（mp:set-pinned，同上）；钉住落库、跨重启保持
+//   setTopmost     —— 钉住下的置顶开关（mp:set-topmost，同上）；仅内存，重启复位
 //   onOpenSettings —— 订阅托盘菜单「设置」事件
 //   onFocusSearch  —— 订阅窗口呼出事件（双击 Ctrl 等，渲染端聚焦搜索框）
 //   onPtyEvent     —— 订阅终端输出流（v2.2：pty data/exit 下行事件），返回退订函数：
@@ -29,6 +30,9 @@ contextBridge.exposeInMainWorld("knock", {
     },
     setPinned: (v: boolean): void => {
         ipcRenderer.send("mp:set-pinned", v);
+    },
+    setTopmost: (v: boolean): void => {
+        ipcRenderer.send("mp:set-topmost", v);
     },
     setTheme: (theme: "dark" | "light"): void => {
         ipcRenderer.send("mp:set-theme", theme);

@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain, protocol, session, shell } from "electron";
-import { spawn } from "node:child_process";
 import { join } from "node:path";
 // 纯工具模块（不开库、不触 settings），可在引导前静态 import
 import { nativeDialogOpen } from "./server/util/nativeDialog";
@@ -19,6 +18,7 @@ type GalleryModule = typeof import("./server/gallery");
 type ClipModule = typeof import("./clipWatch");
 type HotkeyModule = typeof import("./hotkey");
 type WindowStateModule = typeof import("./windowState");
+type PinModule = typeof import("./server/pin");
 
 // 引导完成后才赋值；此前没有调用路径能触达它们（相关监听也在引导后才注册）
 let apiHandlers: ApiModule["apiHandlers"];
@@ -34,6 +34,11 @@ let shutdownHotkey: HotkeyModule["shutdownHotkey"];
 let unlockForeground: HotkeyModule["unlockForeground"];
 let loadWindowState: WindowStateModule["loadWindowState"];
 let trackWindowState: WindowStateModule["trackWindowState"];
+let initPin: PinModule["initPin"];
+let isPinned: PinModule["isPinned"];
+let isTopmost: PinModule["isTopmost"];
+let setPinned: PinModule["setPinned"];
+let setTopmost: PinModule["setTopmost"];
 
 // ── Electron 主进程入口 ──
 // 单实例托盘常驻应用：业务逻辑（server/api.ts 处理器表 + SQLite）跑在本进程内，
@@ -53,6 +58,8 @@ const startHidden = process.argv.includes("--hidden");
 
 let win: BrowserWindow | null = null;
 let quitting = false; // 托盘「退出」时置位：此时关闭窗口才真正退出
+// 呼出序号：每次 showWindow 自增，过期的 120ms 收尾定时器据此让位（见 showWindow）
+let summonSeq = 0;
 
 app.setAppUserModelId("com.knock.app"); // Windows 托盘/任务栏分组标识
 
@@ -72,10 +79,13 @@ if (!app.requestSingleInstanceLock()) {
         ({ startClipWatch, freshClipboardText } = await import("./clipWatch"));
         ({ initHotkey, shutdownHotkey, unlockForeground } = await import("./hotkey"));
         ({ loadWindowState, trackWindowState } = await import("./windowState"));
-        // 主题在开窗前读定（settings 表 theme 键，脏值回落深色）：
-        // 决定窗口预绘底色与 DWM 系统边线颜色
+        // 主题在开窗前读定（settings 表 theme 键，脏值回落深色）：决定窗口预绘底色
         const { getSetting } = await import("./server/util/settings");
         currentTheme = getSetting("theme", "dark") === "light" ? "light" : "dark";
+        // 钉住落库、置顶仅内存：pin 模块经 settings 开库，同样等目录就绪后再加载；
+        // 启动即读一次，窗口一开就按上次的钉住状态决定失焦是否自动隐藏
+        ({ initPin, isPinned, isTopmost, setPinned, setTopmost } = await import("./server/pin"));
+        initPin();
 
         // 首帧前渲染端同步取主题（index.html 内联脚本套 .dark 类防闪色）：
         // sendSync 会阻塞渲染进程，只服务这一个「开窗定色」场景，勿作他用
@@ -83,7 +93,7 @@ if (!app.requestSingleInstanceLock()) {
             e.returnValue = currentTheme;
         });
 
-        // 渲染端主题切换的即时同步：只更新窗口外观（底色/系统边线），
+        // 渲染端主题切换的即时同步：只更新窗口底色，
         // 持久化由渲染端走 setTheme RPC（settings 表是唯一权威来源）
         ipcMain.on("mp:set-theme", (_e, v: unknown) => {
             const next = v === "light" ? "light" : "dark";
@@ -91,7 +101,6 @@ if (!app.requestSingleInstanceLock()) {
             currentTheme = next;
             if (!win || win.isDestroyed()) return;
             win.setBackgroundColor(THEME_BG[currentTheme]);
-            tintSystemBorder(win);
         });
 
         // ── mpimg 协议：mpimg://<orig|thumb>/<id>（库内图）与 mpimg://cand/<n>（网址导入候选），
@@ -109,7 +118,7 @@ if (!app.requestSingleInstanceLock()) {
         });
 
         // ── RPC 注册：server/api.ts 的处理器表逐个挂到 ipcMain ──
-        // channel 名即方法名（getData / createGroup / …），类型契约见 server/api.ts。
+        // channel 名即方法名（getData / createItem / …），类型契约见 server/api.ts。
         // 参数透传给处理器，由处理器入口的 zod 校验兜底（preload 是通用转发）。
         for (const [channel, handler] of Object.entries(apiHandlers)) {
             // Object.entries 把参数类型抹成 unknown；处理器入口有 zod 校验兜底，此处断回参数元组
@@ -118,14 +127,20 @@ if (!app.requestSingleInstanceLock()) {
 
         // 启动成功后渲染进程请求隐藏窗口：窗口生命周期是主进程职责，走 mp:* 事件
         // 命名空间而非 MpApi 业务契约（fire-and-forget，无需返回值）。
-        // 这是「打开条目成功」的自动退场，钉住时尊重钉子不藏（用户决策：钉=工作模式）
+        // 这是「打开条目成功」的自动退场；钉住时尊重钉子不藏（钉=工作模式）
         ipcMain.on("mp:hide-window", () => {
-            if (!pinned) hideMainWindow();
+            if (!isPinned()) hideMainWindow();
         });
 
-        // 渲染端钉子按钮的状态同步（fire-and-forget；呼出/隐藏时双方各自重置，见下）
+        // 钉住 / 置顶按钮的即时同步（fire-and-forget）：状态归 server/pin.ts，
+        // 这里只把「实际生效的置顶」映射到窗口；窗口为空（启动早期/已销毁）时跳过
         ipcMain.on("mp:set-pinned", (_e, v: unknown) => {
-            pinned = v === true;
+            setPinned(v === true);
+            if (win && !win.isDestroyed()) win.setAlwaysOnTop(isTopmost());
+        });
+        ipcMain.on("mp:set-topmost", (_e, v: unknown) => {
+            setTopmost(v === true);
+            if (win && !win.isDestroyed()) win.setAlwaysOnTop(isTopmost());
         });
 
         // 二次启动唤起已有实例的窗口：引导期间窗口模块未加载，引导完成后才挂监听
@@ -171,46 +186,10 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 // ── 界面主题（GaN.UI 深浅双主题）──
-// 窗口预绘底色与 DWM 边线颜色随主题走；渲染端令牌见 src/renderer/src/index.css（同源值）
+// 窗口预绘底色随主题走；渲染端令牌见 src/renderer/src/index.css（同源值）
 type Theme = "dark" | "light";
 let currentTheme: Theme = "dark";
 const THEME_BG: Record<Theme, string> = { dark: "#26272b", light: "#eaeff5" };
-// DWM 边线取 GaN.UI 的 --window-border：深色 #131417；浅色 rgb(22 23 24 / 15%)，
-// COLORREF 不支持透明度，按浅色底 #eaeff5 合成出等视觉实色 #caced4
-const THEME_BORDER: Record<Theme, string> = { dark: "#131417", light: "#caced4" };
-
-// ── Win11 DWM 系统描边染色 ──
-// frame:false + 默认 thickFrame 保留了边缘缩放与系统阴影，但 Win11 会沿窗口边缘
-// 自画一条 1px 边线，颜色跟随系统强调色（紫色/蓝色都会与应用中性灰主题打架）。
-// DWMWA_BORDER_COLOR 可把它染成任意色：这里染成主题边线色，与窗口融为一体。
-// Electron 未暴露该属性，经 PowerShell P/Invoke 一次性设置；该属性跨 hide/show
-// 持久（spotlight 式高频呼出不受影响），窗口生命周期内只需按主题调用一次。
-// 失败静默：旧系统无此属性只会返回错误 HRESULT，不影响任何功能。
-function tintSystemBorder(w: BrowserWindow): void {
-    if (process.platform !== "win32") return;
-    try {
-        const hwnd = w.getNativeWindowHandle().readBigUInt64LE(0);
-        const hex = THEME_BORDER[currentTheme].slice(1);
-        const colorref = parseInt(hex.slice(4, 6) + hex.slice(2, 4) + hex.slice(0, 2), 16); // COLORREF = 0x00BBGGRR
-        // 脚本经 -EncodedCommand 投递（base64 UTF-16LE），免去引号转义地狱
-        const script =
-            `$h=[IntPtr]([long]${hwnd.toString()});` +
-            `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;` +
-            `public class K{[DllImport("dwmapi.dll")]public static extern int DwmSetWindowAttribute(IntPtr h,int a,ref uint v,int s);}';` +
-            `$v=[uint32]${colorref};` +
-            `[K]::DwmSetWindowAttribute($h,34,[ref]$v,4)|Out-Null`; // 34 = DWMWA_BORDER_COLOR
-        const child = spawn(
-            "powershell.exe",
-            ["-NoProfile", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")],
-            { stdio: "ignore", windowsHide: true },
-        );
-        child.on("error", () => {
-            /* 无 PowerShell 或被策略禁用：留着默认边线，无碍 */
-        });
-    } catch {
-        /* 拿不到句柄等意外：静默 */
-    }
-}
 
 function createWindow(): BrowserWindow {
     const st = loadWindowState();
@@ -233,13 +212,6 @@ function createWindow(): BrowserWindow {
             sandbox: true,
         },
     });
-    // 染色时机的三处兜底:创建即染 + ready-to-show 再染一次(创建期 DWM 尚未
-    // 完成初始化时可能被覆盖,实测偶发)+ 最大化切换后补染(DWM 会借最大化
-    // 重算边框色,实测必现)。hide/show 不重置,无需每次呼出补染
-    tintSystemBorder(w);
-    w.once("ready-to-show", () => tintSystemBorder(w));
-    w.on("maximize", () => tintSystemBorder(w));
-    w.on("unmaximize", () => tintSystemBorder(w));
     if (st.maximized) w.maximize();
     trackWindowState(w);
 
@@ -258,7 +230,7 @@ function createWindow(): BrowserWindow {
     w.on("blur", () => {
         setTimeout(() => {
             if (w.isDestroyed() || !w.isVisible() || w.isFocused()) return;
-            if (pinned || nativeDialogOpen()) return;
+            if (isPinned() || nativeDialogOpen()) return;
             hideMainWindow();
         }, 200);
     });
@@ -303,9 +275,9 @@ function showWindow(): void {
     // 破局三步（Windows 启动器类应用的标准配方）：
     //   1) 先瞬置顶：即使激活失败，窗口也压在最前面看得见；
     //   2) show + focus 立刻尝试激活；
-    //   3) 置顶必须【延迟】取消——与置顶调用同批次同步连发会被窗口管理器
-    //      合并忽略，窗口卡在置顶（表现为点别的软件也盖不住它），
-    //      这正是本函数早先版本的 bug。
+    //   3) 临时置顶必须【延迟】收掉——与置顶调用同批次同步连发会被窗口管理器
+    //      合并忽略，窗口卡在置顶（表现为点别的软件也盖不住它）。
+    //      收尾按 isTopmost() 落定：普通呼出回到不置顶，钉住 + 置顶则保留。
     w.setAlwaysOnTop(true);
     // show 无条件执行：show 参与激活链，跳过它只剩裸 focus() 时后台进程
     // 硬抢前台必被 Windows 前台锁拒（任务栏按钮闪橙、焦点拿不到）
@@ -315,12 +287,15 @@ function showWindow(): void {
     // blur() 复位（健康路径也会闪一下），不如让第一次激活就合法、被拒不发生
     unlockForeground();
     w.focus();
+    // 每次呼出取一个序号：120ms 内又呼出一次时旧定时器直接弃权，
+    // 否则它会按旧状态抢先改写置顶（钉住 + 置顶时表现为置顶闪一下就消失）
+    const seq = ++summonSeq;
     setTimeout(() => {
-        if (w.isDestroyed()) return;
-        // 窗口已被快速再按热键藏掉也照样清置顶——topmost 残留会带到下次呼出
-        w.setAlwaysOnTop(false);
+        if (w.isDestroyed() || seq !== summonSeq) return;
+        // 收掉本次呼出的临时置顶；钉住 + 置顶时改为保留用户要的长置顶
+        w.setAlwaysOnTop(isTopmost());
         // 罕见的持续被拒（全屏游戏/高权限进程占前台）再武装重试一次；
-        // 仍拿不到焦点时窗口浮着等用户点一下或双击 Ctrl 收掉（二态切换不判焦点）
+        // 仍拿不到焦点时窗口浮着等用户点一下或按热键收掉
         if (w.isVisible() && !w.isFocused()) {
             unlockForeground();
             w.focus();
@@ -331,21 +306,25 @@ function showWindow(): void {
     w.webContents.send("mp:focus-search", freshClipboardText());
 }
 
-// ── 钉住：失焦自动隐藏的豁免开关 ──
-// 钉住 = 失焦不自动藏（挂终端/对照工作的场景）；任何隐藏都清钉（隐藏即取消，
-// 不跨呼出记忆）。状态归主进程管（blur 自动藏在此判定），渲染端按钮经
-// mp:set-pinned 同步；双方在「呼出 / 隐藏」时各自重置，不另做反向推送。
-let pinned = false;
+// ── 钉住 / 置顶 ──
+// 状态归 server/pin.ts（钉住落库跨重启，置顶仅内存）；主进程只把状态映射成窗口
+// 行为：失焦不藏、热键呼出收尾时保留置顶。渲染端按钮经 mp:set-pinned /
+// mp:set-topmost 同步，不做反向推送（界面启动时读一次 getPinState 即可）。
 
-/** 隐藏主窗口的统一入口：唯一会清钉的地方（隐藏即取消） */
+/** 隐藏主窗口的统一入口：只负责隐藏。钉住只由用户点按钮取消，隐藏不连带清掉 */
 function hideMainWindow(): void {
-    pinned = false;
     win?.hide();
 }
 
-// 二态切换：可见即藏（同时清钉）；藏/最小化则呼出。不判 isFocused——
-// 激活被拒的僵死窗口（焦点拿不到的罕见态）也能被双击收掉
+// 热键切换：未钉住时可见即藏（不判 isFocused——激活被拒的僵死窗口也能被收掉）；
+// 钉住时窗口是工作台，已在最前就不动，藏起/最小化/失焦才呼出
 function toggleWindow(): void {
+    if (isPinned()) {
+        if (nativeDialogOpen()) return;
+        if (win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()) return;
+        showWindow();
+        return;
+    }
     if (win && win.isVisible() && !win.isMinimized()) hideMainWindow();
     else showWindow();
 }

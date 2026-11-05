@@ -32,8 +32,6 @@ export const zh = {
     "settings.hotkey.saved": "热键已更新",
     "settings.clip": "自动粘贴时限",
     "settings.clipHint": "呼出时，时限内复制的文本自动填入搜索框（秒；0 = 关闭）",
-    "settings.import": "浏览器书签",
-    "settings.importBtn": "打开导入",
     "settings.info": "运行环境",
     "settings.dataDir": "数据目录",
     "settings.dataDir.change": "更改…",
@@ -129,27 +127,6 @@ export const zh = {
     "ai.err.other": "请求失败",
     "search.expert": "专家",
 
-    "import.title": "导入浏览器书签",
-    "import.step1": "在 Chrome 书签管理器里导出书签：⋮ 菜单 → 导出书签，得到 HTML 文件。",
-    "import.pick": "选择导出的 HTML 文件",
-    "import.run": "开始导入",
-    "import.running": "导入中…",
-    "import.createdGroups": "新建分组",
-    "import.imported": "导入",
-    "import.skipped": "跳过重复",
-    "import.noFile": "请先选择文件",
-    "import.badFile": "文件读取失败",
-
-    "group.none": "还没有分组",
-    "group.noneHint": "点击启动列表右上角的加号新建分组，收藏常用的网页、应用和命令。",
-    "group.empty": "（暂无条目）",
-    "group.new": "新建分组",
-    "group.newBtn": "＋ 新建分组",
-    "group.rename": "重命名分组",
-    "group.delete": "删除分组",
-    "group.deleteHint": "组内条目将一并删除，且不可恢复。",
-    "group.name": "分组名称",
-
     "item.new": "添加条目",
     "item.edit": "编辑条目",
     "item.kind": "类型",
@@ -165,7 +142,6 @@ export const zh = {
     "item.target.command": "命令（如 pnpm dev）",
     "item.args": "启动参数（可选）",
     "item.cwd": "工作目录（可选，空 = 主目录）",
-    "item.group": "所属分组",
     "item.pickShortcut": "从开始菜单选择",
     "picker.title": "选择快捷方式",
     "picker.placeholder": "输入名称过滤…",
@@ -452,18 +428,20 @@ export const zh = {
     "gallery.url.toast.clearFailed": "清除失败，请先关闭 Chrome 后重试",
     "gallery.url.toast.cleared": "已清除登录数据",
 
-    "btn.sidebar": "显示/隐藏启动列表",
-    "btn.pin": "钉住（失焦不隐藏）",
+    "btn.sidebar": "显示/隐藏快捷启动",
+    "btn.pin": "钉住（不自动隐藏）",
     "btn.unpin": "取消钉住",
+    "btn.topmost": "置顶",
+    "btn.untopmost": "取消置顶",
+    "btn.topmostHint": "先钉住才能置顶",
 
-    // ── 左侧启动列表 / 工具首页 ──
-    "side.title": "启动列表",
-    "side.add": "添加",
-    "side.sort": "排序模式",
+    // ── 左侧快捷启动 / 工具首页 ──
+    "side.title": "快捷启动",
     "side.addItem": "添加启动项",
-    "side.createGroupFirst": "请先添加分组",
+    "side.empty": "还没有快捷启动项",
+    "side.emptyHint": "点右上角的加号，添加网页、应用、文件或命令。",
 
-    // ── 侧栏底部的工作区 ──
+    // ── 侧栏顶部的工作区 ──
     "ws.title": "工作区",
     "ws.new": "新建工作区",
     "ws.defaultName": "工作区",
@@ -471,12 +449,9 @@ export const zh = {
     "ws.deleteTitle": "删除工作区",
     "ws.deleteHint": "该工作区里打开的终端会被结束，面板会被关闭。",
     "ws.scratch": "临时工作区",
-    "ws.termUnit": "个终端",
+    "ws.windowUnit": "个窗口",
 
-    // ── 启动列表树（GaN.UI Tree）──
-    "tree.collapse": "折叠",
-    "tree.expand": "展开",
-    "tree.dragHandle": "拖动 {label} 以移动",
+    // ── 快捷启动列表 ──
     "tools.home": "工具首页",
     "home.title": "常用工具，随手打开",
     "home.sub": "本机运行 · 随用随开",

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, Dispatch, useEffect, useRef, SetStateAction, useState } from "react";
 import { toast } from "sonner";
-import { ArrowUpDown, Moon, PanelLeft, Pin, PinOff, Plus, Settings2, Sun } from "lucide-react";
+import { BringToFront, Moon, PanelLeft, Pin, PinOff, Plus, Settings2, Sun } from "lucide-react";
 import {
     api,
     onPtyEvent,
@@ -8,7 +8,6 @@ import {
     type ApiResult,
     type AiModelConfig,
     type FontPatch,
-    type Group,
     type Item,
     type TermPatch,
     type ThemeId,
@@ -19,13 +18,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Marker } from "@/components/ui/marker";
-import { MenuTrigger, MenuContent, MenuItem } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
 import { Titlebar, TitlebarWell } from "@/components/ui/titlebar";
-import { Toggle } from "@/components/ui/toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { LauncherTree, type ItemMove } from "./components/LauncherTree";
+import { LauncherList } from "./components/LauncherList";
 import { SearchBox } from "./components/SearchBox";
 import { ToolsMenu } from "./components/ToolsMenu";
 import { ToolHome } from "./components/ToolHome";
@@ -35,13 +32,13 @@ import type { DockviewApi } from "@/components/ui/dock-layout";
 import { toolMeta, type ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolInput } from "./tools/toolInput";
 import { ItemDialog, type ItemFormValues } from "./components/dialogs/ItemDialog";
-import { GroupDialog } from "./components/dialogs/GroupDialog";
+import { NameDialog } from "./components/dialogs/NameDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
-import { ImportDialog } from "./components/dialogs/ImportDialog";
 import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
 import { applyFonts } from "./lib/fonts";
 import { cleanTermTitle } from "./lib/termTitle";
 import { applyTheme, currentTheme } from "./lib/theme";
+import { workspaceStroke } from "./lib/workspaceColor";
 import { useI18n } from "./i18n/useI18n";
 
 // 工具区停靠容器懒加载：dockview 与面板组件都不进首屏 chunk；
@@ -59,19 +56,15 @@ const TOOL_SETTINGS_SECTION: Partial<Record<ToolId, SectionId>> = {
 // 用 kind 字段区分形态，switch 后每个分支的 payload 类型自动收窄。
 type DialogState =
     | { kind: "none" }
-    | { kind: "group-create" }
-    | { kind: "group-rename"; group: Group }
-    | { kind: "group-delete"; group: Group }
-    | { kind: "item-create"; groupId: number }
+    | { kind: "item-create" }
     | { kind: "item-edit"; item: Item }
     | { kind: "item-delete"; item: Item }
     | { kind: "ws-rename"; workspace: Workspace }
     | { kind: "ws-delete"; workspace: Workspace }
-    | { kind: "import" }
     // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
     | { kind: "settings"; section?: SectionId };
 
-// ── 布局状态：启动列表显隐 ──
+// ── 布局状态：快捷启动列表显隐 ──
 // 与界面语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
 type Layout = {
     sidebarVisible: boolean;
@@ -108,7 +101,6 @@ function useRpcValue<T>(load: () => Promise<ApiResult<T>>): [T | null, Dispatch<
 export default function App() {
     const { t, lang, setLang } = useI18n();
     const [serverOk, setServerOk] = useState<boolean | null>(null);
-    const [groups, setGroups] = useState<Group[]>([]);
     const [items, setItems] = useState<Item[]>([]);
     // 本机目录条目 id：file 类型同时表示文件与文件夹，只能运行时 stat 判定，
     // 右键菜单据此决定要不要显示「在此打开终端」一组
@@ -116,14 +108,15 @@ export default function App() {
     const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
     const [platform, setPlatform] = useState("");
     const [layout, setLayout] = useState<Layout>(loadLayout);
-    // 排序模式：开启才显示启动列表的拖拽把手（运行时状态，不持久化，默认关）
-    const [sortMode, setSortMode] = useState(false);
     // 界面主题：初始值来自 main.tsx 首帧前套好的 <html> 类；切换经 settings 表持久化
     const [theme, setTheme] = useState<ThemeId>(currentTheme);
     // ── 工作区：每个工作区一套独立的停靠区实例，同一时刻只显示当前那个 ──
     // 数据以服务端为准（activeId 落库在 settings 表）：切换成功后重拉，界面不自留副本
     const [wsData, setWsData] = useRpcValue(api.getWorkspaces);
     const activeWorkspaceId = wsData?.activeId ?? null;
+    // 当前工作区决定停靠区那圈描边：数据还没到时退回中性线，避免首帧闪一个不属于任何工作区的颜色
+    const activeWorkspace = wsData?.workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
+    const dockStroke = activeWorkspace ? workspaceStroke(activeWorkspace) : "var(--line)";
     // 切换工作区：先落库再重拉；停靠区实例常驻，切换只是换显示，不动任何面板与终端
     const switchWorkspace = useCallback(
         async (id: number) => {
@@ -179,15 +172,15 @@ export default function App() {
         apis: Map<number, DockviewApi>;
         queues: Map<number, Array<(api: DockviewApi) => void>>;
     }>({ apis: new Map(), queues: new Map() });
-    // 每个工作区的终端数：dockview 是命令式 api，面板增删不会让 React 重渲染，
+    // 每个工作区的面板总数（工具＋终端）：dockview 是命令式 api，面板增删不会让 React 重渲染，
     // 这里在面板增删事件里重算，供侧栏的工作区列表显示
-    const [termCounts, setTermCounts] = useState<Record<number, number>>({});
+    const [panelCounts, setPanelCounts] = useState<Record<number, number>>({});
     // 终端设置（shell/字号）：字号喂 termStore（xterm 实例表），设置页改这里再落库
     const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
     // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈同步喂 termStore
     const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
 
-    // 启动列表显隐变化后保存，下次启动沿用。
+    // 快捷启动列表显隐变化后保存，下次启动沿用。
     useEffect(() => {
         try {
             localStorage.setItem("mypage-layout", JSON.stringify(layout));
@@ -201,7 +194,6 @@ export default function App() {
         try {
             const r = await api.getData();
             if (!r.ok) throw new Error(r.error.kind);
-            setGroups(r.data.groups);
             setItems(r.data.items);
             setServerOk(true);
         } catch {
@@ -234,17 +226,39 @@ export default function App() {
         window.knock.onOpenSettings(() => setDialog({ kind: "settings" }));
     }, []);
 
-    // ── 钉住：豁免「失焦自动隐藏」（挂终端/对照工作的场景）──
-    // 渲染端只管展示与切换，隐藏判定在主进程（src/main/index.ts 的 blur 处理）；
-    // 呼出事件即「新一轮会话」：与主进程的隐藏清钉对齐，双方各自重置为未钉
+    // ── 钉住 / 置顶：钉住豁免「失焦自动隐藏」（挂终端/对照工作的场景）──
+    // 钉住跨重启保持、呼出不再重置；置顶是钉住下的子状态，只在内存里，重启即复位。
+    // 状态变更只由界面发起、主进程不回推，所以启动读一次主进程现状即可（失败保持未钉：
+    // 这是启动期状态读取，不弹 toast）
     const [pinned, setPinned] = useState(false);
-    useEffect(() => window.knock.onFocusSearch(() => setPinned(false)), []);
-    const togglePin = useCallback(() => {
-        setPinned((p) => {
-            window.knock.setPinned(!p);
-            return !p;
+    const [topmost, setTopmost] = useState(false);
+    useEffect(() => {
+        void api.getPinState().then((r) => {
+            if (!r.ok) return;
+            setPinned(r.data.pinned);
+            setTopmost(r.data.topmost);
         });
     }, []);
+
+    // 钉住：本地先取反再同步主进程（fire-and-forget）。取消钉住时本地一并清置顶，
+    // 与主进程「取消钉住顺带清置顶」的行为保持一致，避免界面留着已失效的置顶态
+    const togglePin = useCallback(() => {
+        const next = !pinned;
+        window.knock.setPinned(next);
+        setPinned(next);
+        if (!next) setTopmost(false);
+    }, [pinned]);
+
+    // 置顶：仅在钉住时可切换——未钉住的窗口遵守「失焦即藏」，让窗口压在最前与这套形态冲突
+    const toggleTopmost = useCallback(() => {
+        if (!pinned) return;
+        const next = !topmost;
+        window.knock.setTopmost(next);
+        setTopmost(next);
+    }, [pinned, topmost]);
+
+    // 置顶按钮的提示文案：三态各一句（未钉住时按钮禁用，提示先钉住）
+    const topmostLabel = !pinned ? t("btn.topmostHint") : t(topmost ? "btn.untopmost" : "btn.topmost");
 
     // ── 主题切换：乐观更新界面类 + 通知主进程换窗口底色/边线，再落库；
     //    落库失败回滚（settings 表是唯一权威来源）──
@@ -363,36 +377,6 @@ export default function App() {
         },
         [refresh, t],
     );
-
-    // ── 拖拽排序（乐观更新：先改本地，再落库，失败回滚重拉）──
-    function reorderGroups(next: Group[]) {
-        setGroups(next);
-        api.reorder({ groups: next.map((g) => g.id) }).then((r) => {
-            if (!r.ok) {
-                toast.error(t("toast.error"));
-                refresh();
-            }
-        });
-    }
-
-    // 条目拖拽落库：跨组移动一次牵动两个组，affected 按组给全序列
-    function reorderItemGroups(affected: ItemMove) {
-        const touched = new Set(affected.map((a) => a.groupId));
-        setItems((prev) => [
-            ...prev.filter((i) => !touched.has(i.group_id)),
-            ...affected.flatMap((a) =>
-                a.items.map((item, index) => ({ ...item, group_id: a.groupId, position: index })),
-            ),
-        ]);
-        api.reorder({ items: affected.flatMap((a) => a.items.map((i) => ({ id: i.id, group_id: a.groupId }))) }).then(
-            (r) => {
-                if (!r.ok) {
-                    toast.error(t("toast.error"));
-                    refresh();
-                }
-            },
-        );
-    }
 
     // 断线自动重试：主进程与渲染进程同生命周期，此态基本只在启动瞬间出现；
     // serverOk 变回 true 时（refresh 成功）本 effect 自动停止。
@@ -565,27 +549,28 @@ export default function App() {
     const handleDockReady = useCallback((workspaceId: number, dock: DockviewApi) => {
         const ctl = dockCtl.current;
         ctl.apis.set(workspaceId, dock);
-        // 终端数只能按实例现状重算：面板增删发生在 dockview 内部，React 收不到通知；
+        // 面板数只能按实例现状重算：面板增删发生在 dockview 内部，React 收不到通知；
         // 数字没变就返回原对象，避免每次面板增删都触发一轮无意义的渲染
-        const syncTermCount = () => {
-            const count = dock.panels.filter((panel) => panel.id.startsWith("term:")).length;
-            setTermCounts((prev) => (prev[workspaceId] === count ? prev : { ...prev, [workspaceId]: count }));
+        const syncPanelCount = () => {
+            const count = dock.panels.length;
+            setPanelCounts((prev) => (prev[workspaceId] === count ? prev : { ...prev, [workspaceId]: count }));
         };
-        dock.onDidAddPanel(() => syncTermCount());
+        dock.onDidAddPanel(() => syncPanelCount());
         dock.onDidRemovePanel((panel) => {
+            // 先对齐计数再按前缀善后：pty 清理只认 term 面板，两步互不依赖
+            syncPanelCount();
             if (!panel.id.startsWith("term:")) return;
-            syncTermCount();
             const id = Number(panel.id.slice(5));
             void api.ptyKill(id);
             disposeTerm(id);
         });
-        // 监听先挂好再冲刷队列：实例就绪前排队的面板也要计进终端数；末尾再对齐一次现状
+        // 监听先挂好再冲刷队列：实例就绪前排队的面板也要计进面板数；末尾再对齐一次现状
         ctl.queues
             .get(workspaceId)
             ?.splice(0)
             .forEach((fn) => fn(dock));
         ctl.queues.delete(workspaceId);
-        syncTermCount();
+        syncPanelCount();
     }, []);
 
     // 工作区被删掉后，它的实例会随之卸载（dockview api 由组件自己销毁）；
@@ -597,8 +582,8 @@ export default function App() {
         for (const id of dockCtl.current.apis.keys()) {
             if (!alive.has(id)) dockCtl.current.apis.delete(id);
         }
-        // 工作区没了，它名下的终端数也没有意义，顺手清掉，免得表里越积越多
-        setTermCounts((prev) => {
+        // 工作区没了，它名下的面板数也没有意义，顺手清掉，免得表里越积越多
+        setPanelCounts((prev) => {
             const stale = Object.keys(prev)
                 .map(Number)
                 .filter((id) => !alive.has(id));
@@ -700,7 +685,6 @@ export default function App() {
                         /* 34px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px） */
                         <TitlebarWell className="relative h-[34px] flex-row px-2.5 overflow-visible">
                             <SearchBox
-                                groups={groups}
                                 items={items}
                                 // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
                                 toolAliases={toolAliases ?? {}}
@@ -728,6 +712,26 @@ export default function App() {
                                     </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>{t(pinned ? "btn.unpin" : "btn.pin")}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    {/* 禁用按钮自身不触发 tooltip：外面包一层 span，悬停仍能命中 */}
+                                    <span className="inline-flex">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-7"
+                                            active={pinned && topmost}
+                                            disabled={!pinned}
+                                            onClick={toggleTopmost}
+                                            aria-label={topmostLabel}
+                                        >
+                                            <BringToFront className="size-4" />
+                                        </Button>
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent>{topmostLabel}</TooltipContent>
                             </Tooltip>
                             <Tooltip>
                                 <TooltipTrigger asChild>
@@ -782,96 +786,63 @@ export default function App() {
                 {/* 两区工作区 */}
                 <div className="relative z-10 flex min-h-0 flex-1">
                     {layout.sidebarVisible && (
-                        <aside className="app-no-drag flex min-h-0 w-[246px] flex-none flex-col border-r border-well bg-background">
-                            <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
-                                <span className="text-xs font-medium">{t("side.title")}</span>
-                                <div className="flex items-center gap-1">
-                                    <Toggle
-                                        variant="outline"
-                                        className="size-7"
-                                        pressed={sortMode}
-                                        onPressedChange={setSortMode}
-                                        disabled={groups.length === 0}
-                                        title={t("side.sort")}
-                                        aria-label={t("side.sort")}
-                                    >
-                                        <ArrowUpDown className="size-3.5" />
-                                    </Toggle>
-                                    <MenuTrigger align="end">
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="size-7"
-                                            title={t("side.add")}
-                                            aria-label={t("side.add")}
-                                        >
-                                            <Plus className="size-3.5" />
-                                        </Button>
-                                        <MenuContent>
-                                            <MenuItem onSelect={() => setDialog({ kind: "group-create" })}>
-                                                {t("group.new")}
-                                            </MenuItem>
-                                            <MenuItem
-                                                disabled={groups.length === 0}
-                                                onSelect={() =>
-                                                    setDialog({ kind: "item-create", groupId: groups[0].id })
-                                                }
-                                            >
-                                                {t("side.addItem")}
-                                            </MenuItem>
-                                            {groups.length === 0 && (
-                                                <p className="px-2 py-1 text-[11px] text-dim-foreground">
-                                                    {t("side.createGroupFirst")}
-                                                </p>
-                                            )}
-                                        </MenuContent>
-                                    </MenuTrigger>
-                                </div>
-                            </div>
-
-                            {/* 滚动与内边距都归 Tree 自管（行高 26 与放置线需要整行统一的滚动容器） */}
-                            <div className="min-h-0 flex-1">
-                                {groups.length === 0 ? (
-                                    /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
-                                    <Empty className="px-3 py-8">
-                                        <EmptyHeader>
-                                            <EmptyTitle>{t("group.none")}</EmptyTitle>
-                                            <EmptyDescription>{t("group.noneHint")}</EmptyDescription>
-                                        </EmptyHeader>
-                                    </Empty>
-                                ) : (
-                                    <LauncherTree
-                                        groups={groups}
-                                        items={items}
-                                        sortable={sortMode}
-                                        dirIds={dirIds}
-                                        onOpenInTerminal={openInTerminal}
-                                        onOpen={openItem}
-                                        onEditItem={(item) => setDialog({ kind: "item-edit", item })}
-                                        onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
-                                        onRenameGroup={(g) => setDialog({ kind: "group-rename", group: g })}
-                                        onDeleteGroup={(g) => setDialog({ kind: "group-delete", group: g })}
-                                        onReorderGroups={reorderGroups}
-                                        onMoveItem={reorderItemGroups}
-                                    />
-                                )}
-                            </div>
-
-                            {/* 工作区块固定在侧栏底部：侧栏隐藏时跟着消失，不另做入口 */}
+                        <aside className="app-no-drag flex min-h-0 w-[246px] flex-none flex-col bg-background">
+                            {/* 工作区块固定在侧栏顶部：侧栏隐藏时跟着消失，不另做入口 */}
                             <WorkspaceBar
                                 workspaces={wsData?.workspaces ?? []}
                                 activeId={activeWorkspaceId}
-                                termCounts={termCounts}
+                                panelCounts={panelCounts}
                                 onSwitch={(id) => void switchWorkspace(id)}
                                 onCreate={() => void createWorkspace()}
                                 onRename={(workspace) => setDialog({ kind: "ws-rename", workspace })}
                                 onDelete={(workspace) => setDialog({ kind: "ws-delete", workspace })}
                             />
+
+                            <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
+                                <span className="text-xs font-medium">{t("side.title")}</span>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-7"
+                                    onClick={() => setDialog({ kind: "item-create" })}
+                                    title={t("side.addItem")}
+                                    aria-label={t("side.addItem")}
+                                >
+                                    <Plus className="size-3.5" />
+                                </Button>
+                            </div>
+
+                            {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器） */}
+                            <div className="min-h-0 flex-1">
+                                {items.length === 0 ? (
+                                    /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
+                                    <Empty className="px-3 py-8">
+                                        <EmptyHeader>
+                                            <EmptyTitle>{t("side.empty")}</EmptyTitle>
+                                            <EmptyDescription>{t("side.emptyHint")}</EmptyDescription>
+                                        </EmptyHeader>
+                                    </Empty>
+                                ) : (
+                                    <LauncherList
+                                        items={items}
+                                        dirIds={dirIds}
+                                        onOpenInTerminal={openInTerminal}
+                                        onOpen={openItem}
+                                        onEditItem={(item) => setDialog({ kind: "item-edit", item })}
+                                        onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
+                                    />
+                                )}
+                            </div>
                         </aside>
                     )}
 
-                    <main className="relative flex min-w-0 flex-1 flex-col bg-canvas">
+                    {/* 停靠区四周 1px 描边取当前工作区的标识色：整块区域的归属靠这圈线表达，
+                        侧栏原来那条右边线由它兼任，所以 aside 去掉了 border-r */}
+                    <main
+                        className="relative flex min-w-0 flex-1 flex-col border bg-canvas"
+                        style={{ borderColor: dockStroke }}
+                    >
                         {serverOk === false ? (
                             /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
                             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
@@ -912,35 +883,21 @@ export default function App() {
                 </div>
 
                 {/* ── 弹窗区 ── */}
-                <GroupDialog
-                    open={
-                        dialog.kind === "group-create" || dialog.kind === "group-rename" || dialog.kind === "ws-rename"
-                    }
-                    initialName={
-                        dialog.kind === "group-rename"
-                            ? dialog.group.name
-                            : dialog.kind === "ws-rename"
-                              ? dialog.workspace.name
-                              : null
-                    }
-                    title={dialog.kind === "ws-rename" ? t("ws.rename") : undefined}
-                    label={dialog.kind === "ws-rename" ? t("common.name") : undefined}
-                    maxLength={dialog.kind === "ws-rename" ? 40 : undefined}
+                <NameDialog
+                    open={dialog.kind === "ws-rename"}
+                    initialName={dialog.kind === "ws-rename" ? dialog.workspace.name : ""}
+                    title={t("ws.rename")}
+                    label={t("common.name")}
+                    maxLength={40}
                     onClose={() => setDialog({ kind: "none" })}
-                    onSubmit={
-                        dialog.kind === "group-rename"
-                            ? (name) => mutate(() => api.renameGroup(dialog.group.id, name), t("toast.saved"))
-                            : dialog.kind === "ws-rename"
-                              ? (name) => renameWorkspace(dialog.workspace, name)
-                              : (name) => mutate(() => api.createGroup(name), t("toast.saved"))
-                    }
+                    onSubmit={async (name) => {
+                        if (dialog.kind === "ws-rename") await renameWorkspace(dialog.workspace, name);
+                    }}
                 />
 
                 <ItemDialog
                     open={dialog.kind === "item-create" || dialog.kind === "item-edit"}
-                    groups={groups}
                     item={dialog.kind === "item-edit" ? dialog.item : null}
-                    defaultGroupId={dialog.kind === "item-create" ? dialog.groupId : undefined}
                     platform={platform}
                     onClose={() => setDialog({ kind: "none" })}
                     onSubmit={
@@ -949,12 +906,6 @@ export default function App() {
                                   mutate(() => api.updateItem(dialog.item.id, values), t("toast.saved"))
                             : (values: ItemFormValues) => mutate(() => api.createItem(values), t("toast.saved"))
                     }
-                />
-
-                <ImportDialog
-                    open={dialog.kind === "import"}
-                    onClose={() => setDialog({ kind: "none" })}
-                    onImported={refresh}
                 />
 
                 <SettingsDialog
@@ -966,7 +917,6 @@ export default function App() {
                     platform={platform}
                     theme={theme}
                     onTheme={switchTheme}
-                    onOpenImport={() => setDialog({ kind: "import" })}
                     termCfg={termCfg}
                     onTermPatch={patchTerm}
                     fontCfg={fontCfg}
@@ -982,31 +932,19 @@ export default function App() {
                 />
 
                 <ConfirmDialog
-                    open={
-                        dialog.kind === "group-delete" || dialog.kind === "item-delete" || dialog.kind === "ws-delete"
-                    }
+                    open={dialog.kind === "item-delete" || dialog.kind === "ws-delete"}
                     title={
                         dialog.kind === "ws-delete"
                             ? t("ws.deleteTitle")
-                            : dialog.kind === "group-delete"
-                              ? `${t("group.delete")}：${dialog.group.name}`
-                              : dialog.kind === "item-delete"
-                                ? `${t("menu.delete")}:${dialog.item.title}`
-                                : ""
+                            : dialog.kind === "item-delete"
+                              ? `${t("menu.delete")}:${dialog.item.title}`
+                              : ""
                     }
-                    description={
-                        dialog.kind === "ws-delete"
-                            ? t("ws.deleteHint")
-                            : dialog.kind === "group-delete"
-                              ? t("group.deleteHint")
-                              : undefined
-                    }
+                    description={dialog.kind === "ws-delete" ? t("ws.deleteHint") : undefined}
                     onClose={() => setDialog({ kind: "none" })}
                     onConfirm={async () => {
                         if (dialog.kind === "ws-delete") {
                             await deleteWorkspace(dialog.workspace);
-                        } else if (dialog.kind === "group-delete") {
-                            await mutate(() => api.deleteGroup(dialog.group.id), t("toast.deleted"));
                         } else if (dialog.kind === "item-delete") {
                             await mutate(() => api.deleteItem(dialog.item.id), t("toast.deleted"));
                         }

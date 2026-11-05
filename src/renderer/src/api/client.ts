@@ -5,14 +5,12 @@ import type { ThemeId } from "../../../main/server/schemas";
 
 // 类型再导出：前端组件从这里拿行类型，避免组件重复引用主进程模块的深路径
 export type {
-    Group,
     Item,
     Workspace,
     Kind,
     HotkeyId,
     CreateItemInput,
     UpdateItemInput,
-    OrderInput,
     ShellId,
     ShellOption,
     TermConfig,
@@ -45,7 +43,7 @@ export type {
     GalleryDownloadInput,
     GalleryImportCandidatesInput,
 } from "../../../main/server/schemas";
-export type { ApiResult, ApiError, ImportStats } from "../../../main/server/api";
+export type { ApiResult, ApiError } from "../../../main/server/api";
 export type { Shortcut } from "../../../main/server/shortcuts";
 export type { FileHit } from "../../../main/server/everything";
 export type { TranslateResult } from "../../../main/server/youdao";
@@ -60,6 +58,7 @@ declare global {
             getThemeSync: () => "dark" | "light";
             hideWindow: () => void;
             setPinned: (v: boolean) => void;
+            setTopmost: (v: boolean) => void;
             /** 主题切换即时同步：主进程更新窗口底色与系统边线（持久化另走 api.setTheme） */
             setTheme: (theme: ThemeId) => void;
             /** 拖拽导入取本机路径：Electron 32+ 渲染进程 File 不再带 .path，经 webUtils 在 preload 换 */
@@ -85,9 +84,6 @@ const invoke = window.knock.invoke as <K extends keyof MpApi>(
 export const api: MpApi = {
     session: () => invoke("session"),
     getData: () => invoke("getData"),
-    createGroup: (name) => invoke("createGroup", name),
-    renameGroup: (id, name) => invoke("renameGroup", id, name),
-    deleteGroup: (id) => invoke("deleteGroup", id),
     getWorkspaces: () => invoke("getWorkspaces"),
     createWorkspace: (name) => invoke("createWorkspace", name),
     renameWorkspace: (id, name) => invoke("renameWorkspace", id, name),
@@ -96,9 +92,7 @@ export const api: MpApi = {
     createItem: (input) => invoke("createItem", input),
     updateItem: (id, patch) => invoke("updateItem", id, patch),
     deleteItem: (id) => invoke("deleteItem", id),
-    reorder: (payload) => invoke("reorder", payload),
     launch: (id) => invoke("launch", id),
-    importBookmarks: (html) => invoke("importBookmarks", html),
     getAutostart: () => invoke("getAutostart"),
     setAutostart: (enabled) => invoke("setAutostart", enabled),
     getHotkey: () => invoke("getHotkey"),
@@ -120,6 +114,7 @@ export const api: MpApi = {
     setClipPaste: (seconds) => invoke("setClipPaste", seconds),
     getTheme: () => invoke("getTheme"),
     setTheme: (theme) => invoke("setTheme", theme),
+    getPinState: () => invoke("getPinState"),
     fileSearch: (input) => invoke("fileSearch", input),
     openPath: (path) => invoke("openPath", path),
     revealPath: (path) => invoke("revealPath", path),

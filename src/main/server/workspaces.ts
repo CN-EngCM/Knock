@@ -35,7 +35,7 @@ export function listWorkspaces(): ApiResult<{ workspaces: Workspace[]; activeId:
 }
 
 export function createWorkspace(name: string): ApiResult<{ id: number }> {
-    // 新工作区排到最后：MAX(position)+1（与 groups/experts 同款）
+    // 新工作区排到最后：MAX(position)+1（与 experts 同款）
     const info = db
         .prepare(
             "INSERT INTO workspaces (name, position, builtin) " +

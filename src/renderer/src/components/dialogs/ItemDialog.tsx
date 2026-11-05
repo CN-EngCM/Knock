@@ -6,7 +6,7 @@ import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
-import { api, type Group, type Item, type Kind } from "@/api/client";
+import { api, type Item, type Kind } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import { FormRow } from "./settings/shared";
 
@@ -16,29 +16,24 @@ export type ItemFormValues = {
     title: string;
     target: string;
     args: string | null;
-    group_id: number;
 };
 
 type Props = {
     open: boolean;
-    groups: Group[];
     /** 编辑时传入；新建时为 null */
     item: Item | null;
-    /** 新建时的预选分组 */
-    defaultGroupId?: number;
     /** 服务端平台（win32 才显示快捷方式选择器） */
     platform: string;
     onClose: () => void;
     onSubmit: (values: ItemFormValues) => Promise<void>;
 };
 
-export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClose, onSubmit }: Props) {
+export function ItemDialog({ open, item, platform, onClose, onSubmit }: Props) {
     const { t } = useI18n();
     const [kind, setKind] = useState<Kind>("bookmark");
     const [title, setTitle] = useState("");
     const [target, setTarget] = useState("");
     const [args, setArgs] = useState("");
-    const [groupId, setGroupId] = useState<number>(groups[0]?.id ?? 0);
     const [saving, setSaving] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -49,8 +44,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
         setTitle(item?.title ?? "");
         setTarget(item?.target ?? "");
         setArgs(item?.args ?? "");
-        setGroupId(item?.group_id ?? defaultGroupId ?? groups[0]?.id ?? 0);
-    }, [open, item, defaultGroupId, groups]);
+    }, [open, item]);
 
     const targetLabel =
         kind === "bookmark"
@@ -82,7 +76,7 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         // 必填兜底：标题与目标不能为空
-        if (!title.trim() || !target.trim() || !groupId) {
+        if (!title.trim() || !target.trim()) {
             toast.error(t("toast.error"));
             return;
         }
@@ -98,7 +92,6 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                         : target.trim(),
                 // 仅 app/command 复用 args 列（启动参数 / 工作目录），其余类型一律置 null
                 args: (kind === "app" || kind === "command") && args.trim() ? args.trim() : null,
-                group_id: groupId,
             });
             onClose();
         } catch {
@@ -210,22 +203,6 @@ export function ItemDialog({ open, groups, item, defaultGroupId, platform, onClo
                             </div>
                         </FormRow>
                     )}
-
-                    <FormRow>
-                        <FieldLabel htmlFor="item-group">{t("item.group")}</FieldLabel>
-                        <Select value={String(groupId)} onValueChange={(v) => setGroupId(Number(v))}>
-                            <SelectTrigger id="item-group" className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {groups.map((g) => (
-                                    <SelectItem key={g.id} value={String(g.id)}>
-                                        {g.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </FormRow>
 
                     <DialogFooter>
                         <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>

@@ -6,7 +6,7 @@
    敲敲视觉体系：GaN.UI 中性灰（来源 D:\MyCode\GaN.UI v1.5.4，HEAD 0edf835）
    深色为默认主主题（石墨），浅色固定薄雾（淡蓝灰底）。
    只取两套配色与 regular 一档密度；上游其余配色、compact/comfortable、
-   窗口失焦块、面板焦点块、.gan-surface-* 局部皮肤均不启用（见 GaN.UI-组件同步基线.md）。
+   窗口失焦块、面板焦点块、.gan-surface-* 局部皮肤均不启用。
    字体沿用敲敲自带体系（Outfit + IBM Plex Mono，本地 woff2 内嵌），不引入 MiSans / Geist Mono。
    令牌值与 GaN.UI src/index.css 同源，仅追加敲敲应用层令牌（终端实色、悬停填充、行选中）。
    顺序固定：@theme 字体栈 → @theme static 字号档 → @theme inline 颜色/阴影映射 →
@@ -208,6 +208,8 @@
     --canvas: #f1f5f8;
     --bar: #e1e7ee;
     --line: rgb(22 23 24 / 8%);
+    /* 当前工作区描边的混合强度：标签与停靠区共用；浅色底要更实才看得清 */
+    --ws-stroke: 60%;
     --dim-foreground: rgb(0 0 0 / 40%);
     --text-selection: color-mix(in srgb, var(--primary) 20%, transparent);
     /* 桌面控件材质；浅色沿用本库结构，颜色取 Darwin 浅色基线。 */
@@ -333,6 +335,8 @@
     --canvas: #1d1e21;
     --bar: #36373c;
     --line: #33343a;
+    /* 当前工作区描边的混合强度：标签与停靠区共用；深色底用略低的强度 */
+    --ws-stroke: 55%;
     --dim-foreground: #6f717a;
     --text-selection: color-mix(in srgb, var(--primary) 35%, transparent);
     --panel: #2b2c31;

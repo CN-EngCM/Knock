@@ -31,8 +31,6 @@ type Props = {
     /** 界面主题（App 状态）：提交走 onTheme（App 负责落库与全局换装） */
     theme: ThemeId;
     onTheme: (theme: ThemeId) => void;
-    /** 从设置里打开书签导入 */
-    onOpenImport: () => void;
     /** 终端设置：shell 候选与当前值；提交走 onTermPatch（App 负责落库与回填） */
     termCfg: TermConfig | null;
     onTermPatch: (patch: TermPatch) => Promise<boolean>;
@@ -75,7 +73,6 @@ export function SettingsDialog({
     platform,
     theme,
     onTheme,
-    onOpenImport,
     termCfg,
     onTermPatch,
     fontCfg,
@@ -132,7 +129,6 @@ export function SettingsDialog({
                                 platform={platform}
                                 theme={theme}
                                 onTheme={onTheme}
-                                onOpenImport={onOpenImport}
                                 termCfg={termCfg}
                                 onTermPatch={onTermPatch}
                                 fontCfg={fontCfg}

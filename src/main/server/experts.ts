@@ -86,7 +86,7 @@ export function listExperts(): ApiResult<Expert[]> {
 }
 
 export function createExpert(input: CreateExpertInput): ApiResult<Expert> {
-    // 新专家排到最后：MAX(position)+1（与 groups/items 同款）
+    // 新专家排到最后：MAX(position)+1（与 workspaces 同款）
     const info = db
         .prepare(
             "INSERT INTO experts (name, prompt, multi, recommend, effort, model_id, position) " +

@@ -4,11 +4,11 @@ import Database from "better-sqlite3";
 import { ensureSeeded } from "./experts";
 import { ensureSeeded as ensureWorkspacesSeeded } from "./workspaces";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
-import { parseNetscapeBookmarks } from "./bookmarks";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { searchSpotlight } from "./spotlight";
 import { applyHotkey, currentHotkey } from "../hotkey";
 import { launchItem } from "./launcher";
+import { getPinState as readPinState } from "./pin";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
 import { scanShortcuts, type Shortcut } from "./shortcuts";
 import { getSetting, setSetting } from "./util/settings";
@@ -79,7 +79,6 @@ import {
     changeDataDirSchema,
     clipPasteSchema,
     createExpertSchema,
-    createGroupSchema,
     createItemSchema,
     createWorkspaceSchema,
     galleryGroupSchema,
@@ -95,13 +94,11 @@ import {
     galleryTagsSchema,
     fileSearchSchema,
     fontPatchSchema,
-    importSchema,
     pathArgSchema,
     pickFileSchema,
     translateConfigPatchSchema,
     translateSchema,
     HOTKEY_IDS,
-    orderSchema,
     ptyResizeSchema,
     ptySpawnSchema,
     ptyWriteSchema,
@@ -110,7 +107,6 @@ import {
     themeSchema,
     toolAliasPatchSchema,
     updateExpertSchema,
-    updateGroupSchema,
     updateItemSchema,
     workspaceIdSchema,
     TOOL_IDS,
@@ -129,12 +125,10 @@ import {
     type GalleryImportStats,
     type GalleryPageResult,
     type GalleryQueryInput,
-    type Group,
     type HotkeyId,
     type Item,
     type CreateItemInput,
     type FileSearchInput,
-    type OrderInput,
     type PtySpawnInput,
     type TermConfig,
     type TermPatch,
@@ -157,7 +151,7 @@ import {
 
 export type ApiError =
     | { kind: "bad-request" } // 入参校验失败
-    | { kind: "not-found" } // 目标分组/条目/专家不存在，或 AI 模型配置未命中
+    | { kind: "not-found" } // 目标条目/专家不存在，或 AI 模型配置未命中
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
     | { kind: "unauthorized" } // macOS 辅助功能未授权：双击热键的键盘钩子无法启动（主进程已弹引导）
     | { kind: "missing"; path: string } // 启动目标路径不存在
@@ -172,8 +166,6 @@ export type ApiError =
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
-export type ImportStats = { createdGroups: number; importedItems: number; skipped: number };
-
 // 出厂数据播种（专家、临时工作区，均幂等）：主进程业务装载的必经之路就是本模块，
 // 在此显式调一次，避免依赖各 entry 的 import 次序
 ensureSeeded();
@@ -181,10 +173,7 @@ ensureWorkspacesSeeded();
 
 export interface MpApi {
     session(): Promise<ApiResult<{ platform: NodeJS.Platform }>>;
-    getData(): Promise<ApiResult<{ groups: Group[]; items: Item[] }>>;
-    createGroup(name: string): Promise<ApiResult<{ id: number }>>;
-    renameGroup(id: number, name: string): Promise<ApiResult<null>>;
-    deleteGroup(id: number): Promise<ApiResult<null>>;
+    getData(): Promise<ApiResult<{ items: Item[] }>>;
     // ── 工作区：每个工作区一套独立的停靠区；builtin 行是自带的「临时工作区」，不可删/改名 ──
     /** 全量工作区（临时的恒在首位）+ 生效 id；activeWorkspace 失效时只读回落到临时的 */
     getWorkspaces(): Promise<ApiResult<{ workspaces: Workspace[]; activeId: number }>>;
@@ -195,9 +184,7 @@ export interface MpApi {
     createItem(input: CreateItemInput): Promise<ApiResult<{ id: number }>>;
     updateItem(id: number, patch: UpdateItemInput): Promise<ApiResult<null>>;
     deleteItem(id: number): Promise<ApiResult<null>>;
-    reorder(payload: OrderInput): Promise<ApiResult<null>>;
     launch(id: number): Promise<ApiResult<null>>;
-    importBookmarks(html: string): Promise<ApiResult<ImportStats>>;
     getAutostart(): Promise<ApiResult<{ supported: boolean; enabled: boolean }>>;
     setAutostart(enabled: boolean): Promise<ApiResult<{ enabled: boolean }>>;
     getHotkey(): Promise<ApiResult<{ hotkey: HotkeyId; presets: readonly HotkeyId[] }>>;
@@ -231,6 +218,9 @@ export interface MpApi {
     //    server/util/settings 直读同一键定窗口底色/系统边线，渲染端首帧前套 .dark ──
     getTheme(): Promise<ApiResult<{ theme: ThemeId }>>;
     setTheme(theme: ThemeId): Promise<ApiResult<{ theme: ThemeId }>>;
+    // ── 钉住 / 置顶：置顶是钉住下的子状态。渲染端启动时读一次即可，
+    //    之后状态变更都由界面发起（mp:set-pinned / mp:set-topmost），无需主进程回推 ──
+    getPinState(): Promise<ApiResult<{ pinned: boolean; topmost: boolean }>>;
     // ── 文件搜索（工具 files）：es.exe 查询 Everything；打开/定位是结果行的动作，不经 DB 条目 ──
     fileSearch(input: FileSearchInput): Promise<ApiResult<{ hits: FileHit[] }>>;
     openPath(path: string): Promise<ApiResult<null>>;
@@ -332,7 +322,6 @@ type ApiHandlers = {
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界统一断言成行类型。
 // （字段由 schema 与 SQL 共同保证，是全项目唯一允许 as 的地方）
-const asGroups = (rows: unknown[]) => rows as Group[];
 const asItems = (rows: unknown[]) => rows as Item[];
 
 const badRequest = { ok: false, error: { kind: "bad-request" } } as const;
@@ -355,35 +344,9 @@ export const apiHandlers: ApiHandlers = {
     getData: async () => ({
         ok: true,
         data: {
-            groups: asGroups(db.prepare("SELECT * FROM groups ORDER BY position, id").all()),
-            items: asItems(db.prepare("SELECT * FROM items ORDER BY position, id").all()),
+            items: asItems(db.prepare("SELECT * FROM items ORDER BY id").all()),
         },
     }),
-
-    createGroup: async (name) => {
-        const v = guard(createGroupSchema, { name });
-        if (!v) return badRequest;
-        // 新分组排到最后：MAX(position)+1，空表时 COALESCE 兜底为 0
-        const info = db
-            .prepare(
-                "INSERT INTO groups (name, position) VALUES (?, (SELECT COALESCE(MAX(position), -1) + 1 FROM groups))",
-            )
-            .run(v.name);
-        return { ok: true, data: { id: Number(info.lastInsertRowid) } };
-    },
-
-    renameGroup: async (id, name) => {
-        const v = guard(updateGroupSchema, { name });
-        if (!v) return badRequest;
-        const info = db.prepare("UPDATE groups SET name = ? WHERE id = ?").run(v.name, id);
-        return info.changes === 0 ? notFound : { ok: true, data: null };
-    },
-
-    // 组内条目由外键 ON DELETE CASCADE 一并删除（db.ts 已开启 foreign_keys）
-    deleteGroup: async (id) => {
-        const info = db.prepare("DELETE FROM groups WHERE id = ?").run(id);
-        return info.changes === 0 ? notFound : { ok: true, data: null };
-    },
 
     // ── 工作区：入口只做 zod 校验与转发，行不存在 / builtin 拒删改的判定在 server/workspaces.ts ──
     getWorkspaces: async () => listWorkspaces(),
@@ -412,11 +375,8 @@ export const apiHandlers: ApiHandlers = {
         const v = guard(createItemSchema, input);
         if (!v) return badRequest;
         const info = db
-            .prepare(
-                "INSERT INTO items (group_id, kind, title, target, args, position) " +
-                    "VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM items WHERE group_id = ?))",
-            )
-            .run(v.group_id, v.kind, v.title, v.target, v.args ?? null, v.group_id);
+            .prepare("INSERT INTO items (kind, title, target, args) VALUES (?, ?, ?, ?)")
+            .run(v.kind, v.title, v.target, v.args ?? null);
         return { ok: true, data: { id: Number(info.lastInsertRowid) } };
     },
 
@@ -427,14 +387,12 @@ export const apiHandlers: ApiHandlers = {
         const row = db.prepare("SELECT * FROM items WHERE id = ?").get(id) as Item | undefined;
         if (!row) return notFound;
         const next = {
-            group_id: v.group_id ?? row.group_id,
             kind: v.kind ?? row.kind,
             title: v.title ?? row.title,
             target: v.target ?? row.target,
             args: v.args === undefined ? row.args : v.args,
         };
-        db.prepare("UPDATE items SET group_id = ?, kind = ?, title = ?, target = ?, args = ? WHERE id = ?").run(
-            next.group_id,
+        db.prepare("UPDATE items SET kind = ?, title = ?, target = ?, args = ? WHERE id = ?").run(
             next.kind,
             next.title,
             next.target,
@@ -447,19 +405,6 @@ export const apiHandlers: ApiHandlers = {
     deleteItem: async (id) => {
         const info = db.prepare("DELETE FROM items WHERE id = ?").run(id);
         return info.changes === 0 ? notFound : { ok: true, data: null };
-    },
-
-    // 拖拽排序：position 直接取数组下标，一个事务里批量写完
-    reorder: async (payload) => {
-        const v = guard(orderSchema, payload);
-        if (!v) return badRequest;
-        const updateGroup = db.prepare("UPDATE groups SET position = ? WHERE id = ?");
-        const updateItem = db.prepare("UPDATE items SET position = ?, group_id = ? WHERE id = ?");
-        db.transaction(() => {
-            v.groups?.forEach((id, index) => updateGroup.run(index, id));
-            v.items?.forEach((item, index) => updateItem.run(index, item.group_id, item.id));
-        })();
-        return { ok: true, data: null };
     },
 
     // ── 启动 / 打开（M3 核心）。书签由前端直接 window.open；应用与文件走这里 ──
@@ -476,58 +421,6 @@ export const apiHandlers: ApiHandlers = {
             return { ok: false, error: { kind: err.error, path: err.path ?? "" } };
         }
         return { ok: true, data: null };
-    },
-
-    // ── 书签导入（Chrome 导出的 Netscape HTML）──
-    // 文件夹 → 同名分组合并；URL 全局去重（库内已有或文件内重复都跳过）。
-    importBookmarks: async (html) => {
-        const v = guard(importSchema, { html });
-        if (!v) return badRequest;
-        const parsed = parseNetscapeBookmarks(v.html);
-
-        // 已有书签 URL 集合：全局去重基准
-        const existingUrls = new Set(
-            (db.prepare("SELECT target FROM items WHERE kind = 'bookmark'").all() as { target: string }[]).map(
-                (r) => r.target,
-            ),
-        );
-
-        const findGroup = db.prepare("SELECT id FROM groups WHERE name = ?");
-        const insertGroup = db.prepare(
-            "INSERT INTO groups (name, position) VALUES (?, (SELECT COALESCE(MAX(position), -1) + 1 FROM groups))",
-        );
-        const maxItemPos = db.prepare("SELECT COALESCE(MAX(position), -1) AS m FROM items WHERE group_id = ?");
-        const insertItem = db.prepare(
-            "INSERT INTO items (group_id, kind, title, target, args, position) VALUES (?, 'bookmark', ?, ?, NULL, ?)",
-        );
-
-        let createdGroups = 0;
-        let importedItems = 0;
-        let skipped = 0;
-
-        db.transaction(() => {
-            for (const [name, items] of parsed) {
-                // 重名分组直接合并进既有分组
-                let groupId = (findGroup.get(name) as { id: number } | undefined)?.id;
-                if (groupId === undefined) {
-                    groupId = Number(insertGroup.run(name).lastInsertRowid);
-                    createdGroups++;
-                }
-                let pos = (maxItemPos.get(groupId) as { m: number }).m;
-                for (const item of items) {
-                    if (existingUrls.has(item.url)) {
-                        skipped++;
-                        continue;
-                    }
-                    existingUrls.add(item.url); // 文件内重复同样只收一次
-                    pos++;
-                    insertItem.run(groupId, item.title || item.url, item.url, pos);
-                    importedItems++;
-                }
-            }
-        })();
-
-        return { ok: true, data: { createdGroups, importedItems, skipped } };
     },
 
     // ── 开机自启（仅当前用户级，可随时装卸）──
@@ -644,6 +537,9 @@ export const apiHandlers: ApiHandlers = {
         setSetting("theme", v);
         return { ok: true, data: { theme: v } };
     },
+
+    // 钉住/置顶状态在 server/pin.ts：钉住落库、置顶仅内存，这里只读快照
+    getPinState: async () => ({ ok: true, data: readPinState() }),
 
     // ── 文件搜索：Windows 走 Everything（es.exe），macOS 走 Spotlight（mdfind）；
     //     其余平台并入 everything 错误（前端提示页） ──

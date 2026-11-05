@@ -6,27 +6,19 @@ import { dataDir } from "./util/dataDir";
 // WAL 模式提升读写并发表现，对单用户应用无副作用。
 const db = new Database(join(dataDir(), "mypage.db"));
 db.pragma("journal_mode = WAL");
-// 开启外键约束（SQLite 默认关闭）：删除分组时级联删除其条目
+// 开启外键约束（SQLite 默认关闭）：删除图库分组/图片时级联删除其附属行
 db.pragma("foreign_keys = ON");
 
 // 建表语句（幂等）。
 // kind 用 CHECK 约束收窄为四种条目类型的联合，脏数据在数据库层就被挡住。
 db.exec(`
-  CREATE TABLE IF NOT EXISTS groups (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    name     TEXT    NOT NULL,
-    position INTEGER NOT NULL DEFAULT 0
-  );
-
   CREATE TABLE IF NOT EXISTS items (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_id  INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-    kind      TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
-    title     TEXT    NOT NULL,
-    target    TEXT    NOT NULL,          -- bookmark: URL / app: 程序路径 / file: 文件或文件夹路径 / command: 命令行
-    args      TEXT,                      -- app: 启动参数 / command: 工作目录，可空
-    icon      TEXT,                      -- 图标缓存文件名；空 = 用首字母回退
-    position  INTEGER NOT NULL DEFAULT 0
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind   TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
+    title  TEXT    NOT NULL,
+    target TEXT    NOT NULL,          -- bookmark: URL / app: 程序路径 / file: 文件或文件夹路径 / command: 命令行
+    args   TEXT,                      -- app: 启动参数 / command: 工作目录，可空
+    icon   TEXT                       -- 图标缓存文件名；空 = 用首字母回退
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -61,7 +53,7 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_workspaces_pos ON workspaces(position);
 
-  -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 groups/items 表。
+  -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 items 表。
   -- 图片字节级复制进数据目录 gallery/<组文件夹>/（server/gallery.ts），行里只存元数据；
   -- 图片经 mpimg:// 协议按 id 直读（注册见 src/main/index.ts），不经 IPC 传字节
   CREATE TABLE IF NOT EXISTS gallery_groups (
@@ -106,8 +98,6 @@ db.exec(`
 
   -- 分组级 tag 已随功能移除：旧库顺手清表（幂等），新库不再创建
   DROP TABLE IF EXISTS gallery_group_tags;
-
-  CREATE INDEX IF NOT EXISTS idx_items_group ON items(group_id, position);
 `);
 
 // 存量库幂等迁移：effort 列是后加的，CREATE IF NOT EXISTS 对已存在的表不补列，
@@ -131,40 +121,33 @@ if (!galleryGroupCols.some((c) => c.name === "private")) {
     }
 }
 
-// 存量库幂等迁移：items 的 CHECK 加入 'command' 需重建表（SQLite 改不了既有约束，
-// 标准做法是「建新表 → 拷数据 → 删旧表 → 改名」，包在一个事务里）。
-// 先查 sqlite_master 里 items 的 DDL 是否已含新值——新库由上面的 CREATE 直接建成
-// 新结构，同样命中跳过分支，重启可重入。
-const itemsDdl =
-    (
-        db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'items'").get() as
-            | {
-                  sql: string | null;
-              }
-            | undefined
-    )?.sql ?? "";
-if (!itemsDdl.includes("'command'")) {
-    db.transaction(() => {
-        // 新表完整复刻旧列定义（含 FK ON DELETE CASCADE）；旧表上的 idx_items_group
-        // 随 DROP 一并消失，改名后按同名重建
+// 存量库幂等迁移：启动器条目从「分组 → 条目」两层结构改成扁平列表，items 不再有
+// group_id/position 两列。SQLite 删列要重建表（标准做法：建新表 → 拷数据 → 删旧表 →
+// 改名），因此用 PRAGMA 探测 group_id 是否存在来决定是否重建；新库由上面的 CREATE
+// 直接建成扁平结构，命中跳过分支，重启可重入。
+// 这同一次重建顺带解决旧库 CHECK 可能不含 'command' 的问题——约束改不了，重建新表时
+// 直接写全四值，不必再单独跑一遍重建。
+// groups 表是已删除的概念，任何分支都清掉：留着只会让后续维护误以为仍有分组数据。
+const itemCols = db.prepare("PRAGMA table_info(items)").all() as { name: string }[];
+db.transaction(() => {
+    if (itemCols.some((c) => c.name === "group_id")) {
         db.exec(`
           CREATE TABLE items_new (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id  INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
-            kind      TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
-            title     TEXT    NOT NULL,
-            target    TEXT    NOT NULL,
-            args      TEXT,
-            icon      TEXT,
-            position  INTEGER NOT NULL DEFAULT 0
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind   TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
+            title  TEXT    NOT NULL,
+            target TEXT    NOT NULL,
+            args   TEXT,
+            icon   TEXT
           );
-          INSERT INTO items_new (id, group_id, kind, title, target, args, icon, position)
-            SELECT id, group_id, kind, title, target, args, icon, position FROM items;
+          INSERT INTO items_new (id, kind, title, target, args, icon)
+            SELECT id, kind, title, target, args, icon FROM items;
           DROP TABLE items;
           ALTER TABLE items_new RENAME TO items;
-          CREATE INDEX IF NOT EXISTS idx_items_group ON items(group_id, position);
         `);
-    })();
-}
+    }
+    // 先重建 items 再删 groups：开着外键时 DROP 父表会触发级联删除，顺序反了条目会被清空
+    db.exec("DROP TABLE IF EXISTS groups");
+})();
 
 export default db;
