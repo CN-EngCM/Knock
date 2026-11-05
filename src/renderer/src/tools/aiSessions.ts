@@ -12,6 +12,8 @@ import { api, onAiEvent, type AiEffortId } from "@/api/client";
 export type Msg = {
     role: "user" | "assistant";
     content: string;
+    /** 该条消息进入会话的时刻（毫秒），消息行 footer 显示 HH:mm */
+    createdAt: number;
     reasoning?: string;
     /** streaming=增量进行中；stopped=用户停止（已收部分保留）；缺省=完成 */
     status?: "streaming" | "stopped" | "error";
@@ -63,17 +65,19 @@ export function getActive(): number | null {
 }
 
 /** 发送一轮问答的 UI 先行：user + 占位 assistant（status streaming，delta 追加进占位）。
- *  两行总是一起 push —— 单轮界面的「一问一答一卡」分组依赖这个成对约定 */
+ *  两行总是一起 push —— turn 折叠靠用户消息开新轮，回滚也按整对撤销 */
 export function appendExchange(eid: number, userText: string): void {
     const cur = convs[eid] ?? { msgs: [], override: null, effortOverride: null };
+    // 一问一答共用同一时刻：footer 上的时间属于这一轮，不是两条独立消息
+    const now = Date.now();
     convs = {
         ...convs,
         [eid]: {
             ...cur,
             msgs: [
                 ...cur.msgs,
-                { role: "user", content: userText },
-                { role: "assistant", content: "", status: "streaming" },
+                { role: "user", content: userText, createdAt: now },
+                { role: "assistant", content: "", status: "streaming", createdAt: now },
             ],
         },
     };
@@ -148,9 +152,28 @@ export function setEffortOverride(eid: number, effort: AiEffortId | null): void 
 export function clearConv(eid: number): void {
     const cur = convs[eid];
     if (!cur) return;
+    // 清空后 delta 没有落点，先把在途流停掉，别让请求继续烧 token
+    stopExpertStreams(eid);
     convs = { ...convs, [eid]: { msgs: [], override: cur.override, effortOverride: cur.effortOverride } };
     lastEid = eid;
     commit();
+}
+
+/**
+ * 错误重试：把末条 error 助手消息换成新的流式占位，调用方随后用已有消息重建 history。
+ * 不可重试（已没有消息、末条不是 error 助手）返回 false。
+ */
+export function resetForRetry(eid: number): boolean {
+    const conv = convs[eid];
+    if (!conv || conv.msgs.length < 2) return false;
+    const last = conv.msgs[conv.msgs.length - 1];
+    if (last.role !== "assistant" || last.status !== "error") return false;
+    const msgs = conv.msgs.slice(0, -1);
+    msgs.push({ role: "assistant", content: "", status: "streaming", createdAt: Date.now() });
+    convs = { ...convs, [eid]: { ...conv, msgs } };
+    lastEid = eid;
+    commit();
+    return true;
 }
 
 /** 专家被删除：连带停掉在途流并抹掉整个会话（无处安放的会话不留残骸） */

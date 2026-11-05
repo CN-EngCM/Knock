@@ -27,6 +27,7 @@ pnpm dist:mac   # build + electron-builder → macOS 目录版（release/mac/，
 - 使用 electron-vite 5.x 与 Vite 7.x；`electron.vite.config.ts` 分别配置 main / preload / renderer，主进程为 ESM，预加载脚本为单文件 CommonJS，以兼容 `sandbox: true`。
 - **node-pty 是 NAPI 单二进制**（`prebuilds/` 随 npm 包分发，ABI 无关），不需要 electron-deps.mjs 做 ABI 切换；electron-vite 默认将 `dependencies` 排除在代码打包之外，electron-builder 必须 asarUnpack（见 electron-builder.yml）。
 - `postinstall` 会跑 `scripts/electron-deps.mjs`：把 better-sqlite3 的原生 binding 换成 **Electron ABI** 的预编译。pnpm 默认装的是 Node ABI，直接跑会报 NODE_MODULE_VERSION 不匹配。
+- **调试真实窗口**：应用有单实例锁，调试前可以直接结束已运行的实例，不必另搭夹具。启动 Electron 前若终端带着 `ELECTRON_RUN_AS_NODE=1`（部分代理/IDE 环境会注入），先 `Remove-Item Env:ELECTRON_RUN_AS_NODE`，否则 `electron .` 会按 Node 模式跑，主进程 import `BrowserWindow` 直接报错。窗口默认隐藏，起完再跑一个 `electron .` 触发 `second-instance` 即可呼出；需要自动化接管时，构建后用 `electron . --remote-debugging-port=9222` 启动，再 `npx playwright cli attach --cdp=http://127.0.0.1:9222`。
 
 ## 架构（electron-vite 三段式）
 
