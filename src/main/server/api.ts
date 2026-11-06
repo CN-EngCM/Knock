@@ -439,8 +439,8 @@ export const apiHandlers: ApiHandlers = {
             if (!ws || ws.builtin !== 0) return badRequest;
         }
         const info = db
-            .prepare("INSERT INTO items (kind, title, target, args, workspace_id) VALUES (?, ?, ?, ?, ?)")
-            .run(v.kind, v.title, v.target, v.args ?? null, workspaceId);
+            .prepare("INSERT INTO items (kind, title, target, args, icon, workspace_id) VALUES (?, ?, ?, ?, ?, ?)")
+            .run(v.kind, v.title, v.target, v.args ?? null, v.icon ?? null, workspaceId);
         return { ok: true, data: { id: Number(info.lastInsertRowid) } };
     },
 
@@ -456,12 +456,14 @@ export const apiHandlers: ApiHandlers = {
             title: v.title ?? row.title,
             target: v.target ?? row.target,
             args: v.args === undefined ? row.args : v.args,
+            icon: v.icon === undefined ? row.icon : v.icon,
         };
-        db.prepare("UPDATE items SET kind = ?, title = ?, target = ?, args = ? WHERE id = ?").run(
+        db.prepare("UPDATE items SET kind = ?, title = ?, target = ?, args = ?, icon = ? WHERE id = ?").run(
             next.kind,
             next.title,
             next.target,
             next.args,
+            next.icon,
             id,
         );
         return { ok: true, data: null };

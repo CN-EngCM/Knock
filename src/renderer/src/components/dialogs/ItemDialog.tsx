@@ -5,17 +5,20 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { IconPickerDialog } from "./IconPickerDialog";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
 import { api, type Item, type Kind } from "@/api/client";
+import { hasIcon, namedIconUrl } from "@/lib/fileIcon";
 import { useI18n } from "@/i18n/useI18n";
 import { FormRow } from "./settings/shared";
 
-// 表单值：提交前保证 args 为 null（而非空串），与数据库约定一致
+// 表单值：提交前保证 args 为 null（而非空串），与数据库约定一致；icon 为 null = 自动
 export type ItemFormValues = {
     kind: Kind;
     title: string;
     target: string;
     args: string | null;
+    icon: string | null;
 };
 
 type Props = {
@@ -28,6 +31,8 @@ type Props = {
     inWorkspace?: boolean;
     /** 工作区文件夹；空串表示这个工作区没有目录，不能提示「空 = 工作区文件夹」 */
     workspaceFolder?: string;
+    /** 浅色主题：图标行与选择器里的图标按主题换款 */
+    light: boolean;
     onClose: () => void;
     onSubmit: (values: ItemFormValues) => Promise<void>;
 };
@@ -38,14 +43,25 @@ function dirOf(path: string): string {
     return /^[A-Za-z]:$/.test(dir) ? `${dir}\\` : dir;
 }
 
-export function ItemDialog({ open, item, platform, inWorkspace = false, workspaceFolder, onClose, onSubmit }: Props) {
+export function ItemDialog({
+    open,
+    item,
+    platform,
+    inWorkspace = false,
+    workspaceFolder,
+    light,
+    onClose,
+    onSubmit,
+}: Props) {
     const { t } = useI18n();
     const [kind, setKind] = useState<Kind>("bookmark");
     const [title, setTitle] = useState("");
     const [target, setTarget] = useState("");
     const [args, setArgs] = useState("");
+    const [icon, setIcon] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
     // 每次打开时用 item / 默认值重置表单（编辑回填）。
     // 工作区里新建默认终端命令：项目启动项绝大多数是命令，省掉每次改下拉
@@ -55,6 +71,9 @@ export function ItemDialog({ open, item, platform, inWorkspace = false, workspac
         setTitle(item?.title ?? "");
         setTarget(item?.target ?? "");
         setArgs(item?.args ?? "");
+        // 库里认不得的图标名（旧版遗留、包升级删了）按「自动」回填：既与列表里的显示一致，
+        // 也不会把可能不合格式的旧值原样提交回去，保存一次顺便清掉
+        setIcon(item?.icon && hasIcon(item.icon) ? item.icon : null);
     }, [open, item, inWorkspace]);
 
     const targetLabel =
@@ -123,6 +142,7 @@ export function ItemDialog({ open, item, platform, inWorkspace = false, workspac
                         : target.trim(),
                 // 仅 app/command 复用 args 列（启动参数 / 工作目录），其余类型一律置 null
                 args: (kind === "app" || kind === "command") && args.trim() ? args.trim() : null,
+                icon,
             });
             onClose();
         } catch {
@@ -252,6 +272,28 @@ export function ItemDialog({ open, item, platform, inWorkspace = false, workspac
                         </FormRow>
                     )}
 
+                    <FormRow>
+                        <FieldLabel htmlFor="item-icon">{t("item.icon")}</FieldLabel>
+                        <Button
+                            id="item-icon"
+                            type="button"
+                            appearance="standard"
+                            variant="outline"
+                            size="default"
+                            className="w-full justify-start gap-2"
+                            onClick={() => setIconPickerOpen(true)}
+                        >
+                            {icon ? (
+                                <>
+                                    <img src={namedIconUrl(icon, light)} alt="" className="size-[18px] flex-none" />
+                                    <span className="min-w-0 truncate">{icon}</span>
+                                </>
+                            ) : (
+                                <span className="text-muted-foreground">{t("item.icon.auto")}</span>
+                            )}
+                        </Button>
+                    </FormRow>
+
                     <DialogFooter>
                         <Button type="button" appearance="standard" variant="outline" size="default" onClick={onClose}>
                             {t("common.cancel")}
@@ -262,6 +304,14 @@ export function ItemDialog({ open, item, platform, inWorkspace = false, workspac
                     </DialogFooter>
                 </form>
             </DialogContent>
+
+            <IconPickerDialog
+                open={iconPickerOpen}
+                onClose={() => setIconPickerOpen(false)}
+                current={icon}
+                light={light}
+                onPick={setIcon}
+            />
 
             {/* Windows 列开始菜单/桌面快捷方式，mac 列已安装应用（.app）；回填路径与标题 */}
             <ShortcutPickerDialog

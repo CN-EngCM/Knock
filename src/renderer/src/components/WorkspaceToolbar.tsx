@@ -10,8 +10,7 @@ import {
     ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import folderIcon from "@/assets/icons/folder.svg";
-import { KindIcon } from "@/lib/kindIcon";
+import { FolderIcon, KindIcon } from "@/lib/kindIcon";
 import { sortItems } from "@/lib/itemOrder";
 import type { Item, Workspace } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
@@ -32,6 +31,8 @@ type Props = {
     workspaces: Workspace[];
     /** 工具栏所属工作区：移动菜单据此排除当前归属 */
     currentWorkspaceId: number;
+    /** 浅色主题：图标包里少数图标有专为浅底画的款式 */
+    light: boolean;
     /** 文件树浮层是否打开：按钮据此显示按下态 */
     treeOpen: boolean;
     /** 按钮的 ref 交给浮层：它的「点外面收起」要放过这个按钮 */
@@ -60,6 +61,7 @@ export function WorkspaceToolbar({
     dirIds,
     workspaces,
     currentWorkspaceId,
+    light,
     treeOpen,
     treeButtonRef,
     onToggleTree,
@@ -105,7 +107,7 @@ export function WorkspaceToolbar({
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <button type="button" className={ITEM_CLASS} onClick={() => onOpenFolder(folder)}>
-                                <img src={folderIcon} alt="" className="size-[18px] flex-none" />
+                                <FolderIcon path={folder} light={light} />
                                 <span className="min-w-0 truncate">{t("ws.toolbar.openFolder")}</span>
                             </button>
                         </TooltipTrigger>
@@ -117,6 +119,7 @@ export function WorkspaceToolbar({
                         key={item.id}
                         item={item}
                         isDir={dirIds.has(item.id)}
+                        light={light}
                         workspaces={workspaces}
                         currentWorkspaceId={currentWorkspaceId}
                         onOpen={onOpen}
@@ -147,6 +150,7 @@ type ItemProps = {
     item: Item;
     /** 目标是本机目录：菜单多出「在此打开终端」一组 */
     isDir: boolean;
+    light: boolean;
     workspaces: Workspace[];
     currentWorkspaceId: number;
     onOpen: (item: Item) => void;
@@ -161,6 +165,7 @@ type ItemProps = {
 function WorkspaceToolbarItem({
     item,
     isDir,
+    light,
     workspaces,
     currentWorkspaceId,
     onOpen,
@@ -175,7 +180,7 @@ function WorkspaceToolbarItem({
         <ContextMenu>
             <ContextMenuTrigger asChild>
                 <button type="button" onClick={() => onOpen(item)} className={ITEM_CLASS}>
-                    <KindIcon item={item} />
+                    <KindIcon item={item} isDir={isDir} light={light} />
                     {/* Tooltip 只包标题：与 ContextMenuTrigger 各占一层 asChild，互不抢 props */}
                     <Tooltip>
                         <TooltipTrigger asChild>

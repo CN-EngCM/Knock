@@ -18,7 +18,9 @@ db.exec(`
     title  TEXT    NOT NULL,
     target TEXT    NOT NULL,          -- bookmark: URL / app: 程序路径 / file: 文件或文件夹路径 / command: 命令行
     args   TEXT,                      -- app: 启动参数 / command: 工作目录，可空
-    icon   TEXT,                      -- 图标缓存文件名；空 = 用首字母回退
+    -- 图标包（Material Icon Theme）里的图标名，空 = 自动匹配。旧版这里存过网站图标的缓存文件名，
+    -- 现已不用；渲染端认不得的值一律当「自动」，所以老库不用迁移
+    icon   TEXT,
     -- 空 = 左侧快捷启动；非空 = 该工作区的快捷启动工具栏。workspaces 表在后面才建，
     -- SQLite 允许外键前向引用，只要插数据时父表已存在
     workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE

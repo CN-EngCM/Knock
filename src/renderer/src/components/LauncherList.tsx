@@ -18,6 +18,8 @@ type Props = {
     items: Item[];
     /** 目标经运行时确认是本机目录的条目 id：只有这些条目才出现「在此打开终端」一组 */
     dirIds: ReadonlySet<number>;
+    /** 浅色主题：图标包里少数图标有专为浅底画的款式 */
+    light: boolean;
     /** 可移动到的普通工作区（不含临时工作区） */
     workspaces: Workspace[];
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
@@ -45,6 +47,7 @@ function rowId(listId: string, itemId: number): string {
 export function LauncherList({
     items,
     dirIds,
+    light,
     workspaces,
     onOpenInTerminal,
     onOpenExternal,
@@ -114,6 +117,7 @@ export function LauncherList({
                     active={index === boundedIndex}
                     focused={focused}
                     isDir={dirIds.has(item.id)}
+                    light={light}
                     workspaces={workspaces}
                     onActivate={() => setActiveIndex(index)}
                     onOpen={onOpen}
@@ -141,6 +145,7 @@ type RowProps = {
     focused: boolean;
     /** 目标是本机目录：菜单多出「在此打开终端」一组 */
     isDir: boolean;
+    light: boolean;
     /** 可移动到的普通工作区（不含临时工作区） */
     workspaces: Workspace[];
     onActivate: () => void;
@@ -160,6 +165,7 @@ function LauncherRow({
     active,
     focused,
     isDir,
+    light,
     workspaces,
     onActivate,
     onOpen,
@@ -193,7 +199,7 @@ function LauncherRow({
                     }}
                     onContextMenu={onActivate}
                 >
-                    <KindIcon item={item} />
+                    <KindIcon item={item} isDir={isDir} light={light} />
                     {/* Tooltip 只包标题文本：与 ContextMenuTrigger 各占一层 asChild，互不抢 props */}
                     <Tooltip>
                         <TooltipTrigger asChild>

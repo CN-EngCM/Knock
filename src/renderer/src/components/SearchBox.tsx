@@ -43,9 +43,9 @@ type Candidate =
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
     | { kind: "path"; label: "open" | "goto"; target: string };
 
-/** 候选行首图标：条目与工具取拟物图，专家和路径动作各配一张 */
-function candidateIcon(c: Candidate): React.ReactNode {
-    if (c.kind === "item") return <KindIcon item={c.item} />;
+/** 候选行首图标：条目取图标包里的图（同快捷启动列表），工具、专家和路径动作各配一张拟物图 */
+function candidateIcon(c: Candidate, dirIds: ReadonlySet<number>, light: boolean): React.ReactNode {
+    if (c.kind === "item") return <KindIcon item={c.item} isDir={dirIds.has(c.item.id)} light={light} />;
     if (c.kind === "tool") {
         const icon = TOOLS.find((x) => x.id === c.id)?.icon;
         return icon ? <img src={icon} alt="" className="size-[18px]" /> : null;
@@ -56,6 +56,10 @@ function candidateIcon(c: Candidate): React.ReactNode {
 
 type Props = {
     items: Item[];
+    /** 目标经运行时确认是本机目录的条目 id：这些条目的候选行显示文件夹图标 */
+    dirIds: ReadonlySet<number>;
+    /** 浅色主题：图标包里少数图标有专为浅底画的款式 */
+    light: boolean;
     /** 工具别名（设置页维护）：别名命中也算工具候选 */
     toolAliases: ToolAliases;
     onOpenItem: (item: Item) => void;
@@ -100,7 +104,7 @@ function chipLabel(text: string): string {
     return chars.length > CHIP_MAX_CHARS ? chars.slice(0, CHIP_MAX_CHARS).join("") + "…" : flat;
 }
 
-export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPath }: Props) {
+export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpenTool, onOpenPath }: Props) {
     const { t } = useI18n();
     const [query, setQuery] = useState("");
     const [clip, setClip] = useState<string | null>(null);
@@ -395,7 +399,7 @@ export function SearchBox({ items, toolAliases, onOpenItem, onOpenTool, onOpenPa
                                     }`}
                                 >
                                     <span className="grid w-[18px] flex-none place-items-center">
-                                        {candidateIcon(c)}
+                                        {candidateIcon(c, dirIds, light)}
                                     </span>
                                     <span className="min-w-0 flex-1 truncate">{title}</span>
                                     <span

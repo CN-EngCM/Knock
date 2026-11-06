@@ -799,6 +799,8 @@ export default function App() {
                         <TitlebarWell className="relative h-[34px] flex-row px-2.5 overflow-visible">
                             <SearchBox
                                 items={globalItems}
+                                dirIds={dirIds}
+                                light={theme === "light"}
                                 // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
                                 toolAliases={toolAliases ?? {}}
                                 onOpenItem={openItem}
@@ -909,6 +911,7 @@ export default function App() {
                                 <LauncherList
                                     items={globalItems}
                                     dirIds={dirIds}
+                                    light={theme === "light"}
                                     workspaces={workspaceTargets}
                                     onOpenInTerminal={openInTerminal}
                                     onOpenExternal={openInSystemBrowser}
@@ -948,6 +951,7 @@ export default function App() {
                                 dirIds={dirIds}
                                 workspaces={workspaceTargets}
                                 currentWorkspaceId={activeWorkspace.id}
+                                light={theme === "light"}
                                 treeOpen={treeOpen}
                                 treeButtonRef={treeButtonRef}
                                 onToggleTree={toggleTree}
@@ -1047,6 +1051,7 @@ export default function App() {
                     platform={platform}
                     inWorkspace={itemDialogInWorkspace}
                     workspaceFolder={itemDialogInWorkspace ? itemDialogWorkspace?.folder : undefined}
+                    light={theme === "light"}
                     onClose={() => setDialog({ kind: "none" })}
                     onSubmit={
                         dialog.kind === "item-edit"

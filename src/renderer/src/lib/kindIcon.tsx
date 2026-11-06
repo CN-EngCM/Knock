@@ -1,19 +1,33 @@
-import type { Item, Kind } from "@/api/client";
-import appWindowIcon from "@/assets/icons/app-window.svg";
-import folderIcon from "@/assets/icons/folder.svg";
-import globeIcon from "@/assets/icons/globe.svg";
-import terminalIcon from "@/assets/icons/terminal.svg";
+import type { Item } from "@/api/client";
+import { fileIconUrl, folderIconUrl, hasIcon, namedIconUrl } from "@/lib/fileIcon";
 
-// 四类各一个拟物图形，不区分具体站点或程序：图标只回答「这是什么类型」，
-// 认哪一条靠后面的标题。
-const KIND_ICON: Record<Kind, string> = {
-    bookmark: globeIcon,
-    app: appWindowIcon,
-    file: folderIcon,
-    command: terminalIcon,
-};
+// 快捷启动条目的图标取自文件树同一个图标包（Material Icon Theme），列表、工具栏、搜索候选
+// 与文件树里的同一个文件长得一样。用户手选了图标（item.icon）就用手选的；没选（自动）时，
+// 网页、应用、终端命令没有文件名可匹配，各用包里固定的一张，文件类条目按目标的文件名 / 文件夹名匹配。
+const FIXED_ICON = { bookmark: "http", app: "exe", command: "console" } as const;
 
-/** 行首类型图标：18px 彩色拟物图，颜色由图形自带，不随主题变化 */
-export function KindIcon({ item }: { item: Item }) {
-    return <img src={KIND_ICON[item.kind]} alt="" className="size-[18px] flex-none" />;
+/** 路径最后一段；末尾带分隔符（`D:\docs\`）时取它前面那段，否则文件夹图标会匹配到空名字 */
+function baseName(path: string): string {
+    return path.split(/[\\/]/).filter(Boolean).pop() ?? "";
+}
+
+function iconUrl(item: Item, isDir: boolean, light: boolean): string {
+    // 库里的图标名认不得（旧版遗留、包升级删了）就当没选，走自动
+    if (item.icon && hasIcon(item.icon)) return namedIconUrl(item.icon, light);
+    if (item.kind !== "file") return namedIconUrl(FIXED_ICON[item.kind], light);
+    const name = baseName(item.target);
+    return isDir ? folderIconUrl(name, false, light) : fileIconUrl(name, light);
+}
+
+/**
+ * 行首类型图标，18px。`isDir` 来自 App 的目录判定（只有 file 类才会是 true），
+ * 判定结果回来之前文件夹条目会先按文件显示，回来后换成文件夹图标。
+ */
+export function KindIcon({ item, isDir, light }: { item: Item; isDir: boolean; light: boolean }) {
+    return <img src={iconUrl(item, isDir, light)} alt="" className="size-[18px] flex-none" />;
+}
+
+/** 本机文件夹的图标，按文件夹名匹配，与文件树里同一个文件夹一致 */
+export function FolderIcon({ path, light }: { path: string; light: boolean }) {
+    return <img src={folderIconUrl(baseName(path), false, light)} alt="" className="size-[18px] flex-none" />;
 }
