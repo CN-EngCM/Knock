@@ -36,12 +36,16 @@ export function ToolsMenu({ getOpenTools, onOpen }: Props) {
                                         className={opened ? "text-foreground" : undefined}
                                     >
                                         <img src={tool.icon} alt="" className="size-4 flex-none" />
-                                        <span className="min-w-0 flex-1 truncate">{t(tool.nameKey)}</span>
+                                        {/* 名字不许缩、描述才缩：Badge 默认 shrink-0 且不换行，描述一长（浏览器那条）
+                                            就会把名字挤成 0 宽。所以名字 flex-none，Badge 改成可收缩，文字在里面截断 */}
+                                        <span className="flex-none">{t(tool.nameKey)}</span>
                                         <Badge
                                             variant="ghost"
-                                            className={`ms-auto ps-2 ${opened ? "text-primary" : "text-dim-foreground"}`}
+                                            className={`ms-auto min-w-0 shrink ps-2 ${opened ? "text-primary" : "text-dim-foreground"}`}
                                         >
-                                            {opened ? `● ${t("tools.opened")}` : t(tool.descKey)}
+                                            <span className="truncate">
+                                                {opened ? `● ${t("tools.opened")}` : t(tool.descKey)}
+                                            </span>
                                         </Badge>
                                     </MenuItem>
                                 );
