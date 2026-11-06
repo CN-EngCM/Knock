@@ -185,7 +185,7 @@ export const zh = {
     "common.name": "名称",
     "common.loading": "加载中…",
 
-    "search.noHit": "（无匹配条目）",
+    "search.noHit": "（无匹配）",
     "search.recommended": "推荐",
     "search.pathGroup": "路径",
     "search.openFile": "打开文件",

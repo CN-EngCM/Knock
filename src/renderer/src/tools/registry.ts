@@ -80,7 +80,6 @@ export const TOOLS: readonly ToolMeta[] = [
         icon: sparklesIcon,
         // 不标 acceptsText（2026-08 用户决策）：ai 不以工具行进推荐区，推荐位只留给专家行；
         // 素材注入不受影响——专家行走 onOpenTool("ai", text, expertId)，不经此标记。
-        // 副作用是 ai 重新回到搜索命中区（按名称/描述/别名匹配，同 scan）。
         Component: lazy(() => import("./AiTool")),
     },
     {

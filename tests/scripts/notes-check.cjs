@@ -1,4 +1,4 @@
-// 便签与搜索框规则的界面自检：搜索框推荐顺序、工具名完全一致、带入便签、保存、编辑、删除撤销。
+// 便签与搜索框规则的界面自检：搜索框推荐顺序、命中区只打开、无命中不预选、带入便签、保存、编辑、删除撤销。
 // 运行：先 node tests/scripts/launch-isolated.cjs notes --port=9222（隔离实例，不碰真实数据），
 //       再 node tests/scripts/notes-check.cjs [端口]
 // 只看当前工作区；全部通过退出码为 0。会在隔离库里新增几条便签，不碰系统剪贴板。
@@ -111,17 +111,39 @@ function check(name, ok, detail = "") {
         JSON.stringify(linkRows),
     );
 
-    // 工具名完全一致：命中行排第一、推荐区不变，选哪一行都只打开
+    // 命中区：吃文本的工具也能按名称命中，选中只打开；推荐区照常，所以同一个工具出现两次
     await search("便签");
     const exact = await rows();
     check("打「便签」：命中行 + 推荐行共两行便签", exact[0] === "便签" && exact[1] === "便签", JSON.stringify(exact));
     await c.key("Enter");
     await c.sleep(1000);
-    check("工具名完全一致：只打开不带入", (await draft()) === "", JSON.stringify(await draft()));
+    check("命中区的工具行：只打开不带入", (await draft()) === "", JSON.stringify(await draft()));
 
-    // 普通文字：带入便签输入框，不自动保存，焦点在输入框
+    // 部分匹配也命中（原先 trans 显示「无匹配」的回归）：translate 排命中区第一行，推荐区里还有一行
+    await search("trans");
+    const partial = await rows();
+    check(
+        "打 trans：命中区第一行是 translate，推荐区里还有一行",
+        partial[0] === "translate" && partial.filter((r) => r === "translate").length === 2,
+        JSON.stringify(partial),
+    );
+    check(
+        "打 trans：不再显示「无匹配」",
+        await c.eval(`!document.querySelector('.drop-anim').innerText.includes('无匹配')`),
+    );
+    await c.key("Escape");
+
+    // 没有任何命中：显示「无匹配」、不预选行，Enter 不做事，手打的字不会进便签
+    await search("zzqq无命中");
+    check("无命中：显示「无匹配」", await c.eval(`document.querySelector('.drop-anim').innerText.includes('无匹配')`));
+    await c.key("Enter");
+    await c.sleep(500);
+    check("无命中：Enter 不带入便签", (await draft()) === "", JSON.stringify(await draft()));
+
+    // 普通文字：无命中时先 ↓ 选推荐行再 Enter，带入便签输入框，不自动保存，焦点在输入框
     const before = await noteCount();
     await search("检查文字");
+    await c.key("ArrowDown");
     await c.key("Enter");
     await c.sleep(800);
     check("普通文字带入输入框", (await draft()) === "检查文字");
@@ -130,6 +152,7 @@ function check(name, ok, detail = "") {
 
     // 再带入一次：已有草稿时换行追加
     await search("第二段");
+    await c.key("ArrowDown");
     await c.key("Enter");
     await c.sleep(800);
     check("已有草稿时换行追加", (await draft()) === "检查文字\n第二段", JSON.stringify(await draft()));

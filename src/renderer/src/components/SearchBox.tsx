@@ -16,18 +16,18 @@ import type { MessageKey } from "@/i18n";
 import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
-// 候选 = 匹配条目（标题/目标）+ 匹配的内置工具（名称/描述/id/别名）。
-// 布局（用户决策）：推荐工具区恒在。纯手打时命中在上、推荐沉底——Enter 落
-//   命中项（开条目是主用途），↓ 到底进推荐；素材 chip 在场时推荐置顶——
-//   Enter 即注入，保住「复制 → 呼出 → Enter」的素材流契约。
-// 注入契约：只要从推荐工具进入，一律注入「chip ?? 手打 query」，
-//   没有旧的「无命中升格为素材」隐形规则。
-// 工具名完全一致（用户决策，对所有工具一样）：没有素材 chip、且打的字等于某工具的显示名 / id / 别名时，
-//   该工具排在搜索结果第一位（吃文本的工具平时不进搜索结果，只有这种情况才进），选它只打开、不带入文字；
-//   推荐区不受影响，所以同一个工具可能出现两次，选哪一行都只打开。选其他工具的推荐行仍照常带入。
+// 下拉分三块，各答一件事：
+//   命中区（我想找什么）= 匹配的条目（标题；文件夹条目的目标路径也算）+ 匹配的全部内置工具（名称/描述/id/别名）。
+//     选中只打开、不带入文字，不管工具吃不吃文本。
+//   推荐区（这段字交给谁）= 能吃文本的工具 + 勾了推荐的 AI 专家，恒在。
+//     选中一律注入「chip ?? 手打 query」。同一个工具可能在两块各出现一次，意思不同。
+//   路径区：输入像绝对路径且真实存在时的动作行（文件 = 打开文件 + 前往所在目录；文件夹 = 前往）。
+// 布局（用户决策）：路径区恒在最上（复制或手打的是存在的本地路径时，Enter 就是打开它）。
+//   纯手打：路径区 + 命中区在上、推荐沉底——Enter 落第一个路径/命中行（开条目是主用途），↓ 到底进推荐。
+//     没有任何命中时不预选行、Enter 不做事（手打的字不会悄悄带进便签），要带字先按 ↓。
+//   素材 chip 在场：路径区、推荐区、命中区依次排列，高亮第一行。不是路径时第一行就是推荐，
+//     Enter 即注入，保住「复制 → 呼出 → Enter」的素材流契约。
 // 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query。
-// 本地路径直达：输入像绝对路径且真实存在时，命中区顶部多一组「── 路径 ──」
-//   动作行（文件 = 打开文件 + 前往所在目录；文件夹 = 前往），纯手打时 Enter 直接落第一行。
 
 const MAX_CANDIDATES = 9;
 const CHIP_MAX_CHARS = 32;
@@ -37,7 +37,8 @@ const REC_FIRST: ToolId = "notes";
 
 type Candidate =
     | { kind: "item"; item: Item }
-    | { kind: "tool"; id: ToolId; name: string; desc: MessageKey; exact?: boolean }
+    /** carry 为真 = 推荐区的行，选中带入文字；否则是命中区的行，只打开 */
+    | { kind: "tool"; id: ToolId; name: string; desc: MessageKey; carry?: boolean }
     /** 勾了「推荐到搜索栏」的 AI 专家：进推荐区一行 */
     | { kind: "expert"; expert: Expert }
     /** label 是动作名，target 是该动作真正要交给 onOpenPath 的完整路径 */
@@ -126,12 +127,16 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
     // 匹配源：素材 chip 优先（chip 在场时用完整剪贴板文本去匹配条目/工具）
     const q = (clip ?? query).trim().toLowerCase();
 
-    const { matches } = useMemo(() => {
+    // 命中区：条目在前、工具在后；工具不论吃不吃文本都在这里，选中只打开
+    const hits = useMemo(() => {
         const out: Candidate[] = [];
         if (q) {
-            // 先按侧栏同一套规则排序再匹配：候选顺序与列表顺序一致，不会随数据落库次序跳动
+            // 先按侧栏同一套规则排序再匹配：候选顺序与列表顺序一致，不会随数据落库次序跳动。
+            // 目标只对文件夹条目参与匹配（用路径找文件夹）；网址、应用、命令、文件的目标一律不匹配，
+            // 否则打 "com"、"exe" 之类会命中一大片。目录判定是异步的，回来之前文件夹条目只按标题命中
             for (const item of sortItems(items)) {
-                if (item.title.toLowerCase().includes(q) || item.target.toLowerCase().includes(q)) {
+                const targetHit = dirIds.has(item.id) && item.target.toLowerCase().includes(q);
+                if (item.title.toLowerCase().includes(q) || targetHit) {
                     out.push({ kind: "item", item });
                     if (out.length >= MAX_CANDIDATES) break;
                 }
@@ -149,39 +154,8 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
                 if (hit) out.push({ kind: "tool", id: tool.id, name, desc });
             }
         }
-        return { matches: out };
-    }, [q, items, t, toolAliases]);
-
-    // 工具名完全一致：只在没有素材 chip 时生效（有 chip 时「带复制内容」优先，见文件头注释）
-    const exactTool = useMemo(() => {
-        const typed = query.trim().toLowerCase();
-        if (clip !== null || !typed) return null;
-        return (
-            TOOLS.find(
-                (tool) =>
-                    t(tool.nameKey).toLowerCase() === typed ||
-                    tool.id === typed ||
-                    aliasesOf(toolAliases, tool.id).some((a) => a.toLowerCase() === typed),
-            ) ?? null
-        );
-    }, [clip, query, t, toolAliases]);
-
-    // 命中区：条目 + 不吃素材的工具；能吃素材的工具恒住推荐区，不在命中区重复出现。
-    // 唯一例外是工具名完全一致的那个工具：排在命中区第一位，压在同名快捷启动前面
-    const hits = useMemo(() => {
-        const rest = matches.filter(
-            (m) => m.kind !== "tool" || (m.id !== exactTool?.id && !TOOLS.find((x) => x.id === m.id)?.acceptsText),
-        );
-        if (!exactTool) return rest;
-        const exactRow: Candidate = {
-            kind: "tool",
-            id: exactTool.id,
-            name: t(exactTool.nameKey),
-            desc: exactTool.descKey,
-            exact: true,
-        };
-        return [exactRow, ...rest];
-    }, [matches, exactTool, t]);
+        return out;
+    }, [q, items, dirIds, t, toolAliases]);
 
     // 推荐工具：能吃文本素材的工具，基础顺序便签在前，再按嗅探结果把命中项置顶（其余相对顺序不变）
     const recTools = useMemo(() => {
@@ -232,24 +206,31 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
             id: tool.id,
             name: t(tool.nameKey),
             desc: tool.descKey,
+            carry: true,
         })); // 勾了推荐的专家排在工具行之后、同一推荐区里（下标数学不用动）
         for (const expert of experts.filter((e) => e.recommend)) {
             rec.push({ kind: "expert", expert });
         }
-        // 分组标签插入点：chip 在场推荐置顶；纯手打 = 路径区+命中区在上、推荐沉底
+        // 路径区恒在最上；chip 在场时其后是推荐区、命中区，纯手打时其后是命中区、推荐区沉底。
+        // 分组标签插在各区第一行前，下标随布局算
         return {
-            candidates: recOnTop ? [...rec, ...pathRows, ...hits] : [...pathRows, ...hits, ...rec],
-            pathStart: pathRows.length > 0 ? (recOnTop ? rec.length : 0) : -1,
-            recStart: recOnTop ? 0 : pathRows.length + hits.length,
+            candidates: recOnTop ? [...pathRows, ...rec, ...hits] : [...pathRows, ...hits, ...rec],
+            pathStart: pathRows.length > 0 ? 0 : -1,
+            recStart: recOnTop ? pathRows.length : pathRows.length + hits.length,
         };
     }, [recOnTop, hits, pathRows, recTools, experts, t]);
 
     // 注入源：素材 chip 优先，否则手打 query——从推荐工具进入就注入
     const injectSource = clip ?? (query.trim() || null);
 
-    // 匹配源 / 素材 / 路径探测结论 / 专家行数变化后高亮回到第一项（chip 在场即推荐工具，
-    // Enter 直接注入；探测结论与推荐专家进出会增删行，旧高亮序号可能指错行，一并重置）
-    useEffect(() => setHi(0), [q, clip, pathHit, experts]);
+    // 默认高亮第一行：chip 在场时，是路径就落路径区第一行（Enter 直接打开），否则是推荐第一行（Enter 直接注入）；
+    // 纯手打 = 第一个路径/命中行。手打且路径区、命中区都空时不预选（-1），
+    // 否则 Enter 会把手打的字悄悄带进推荐区第一行
+    const defaultHi = recOnTop || pathRows.length + hits.length > 0 ? 0 : -1;
+
+    // 匹配源 / 素材 / 路径探测结论 / 专家行数变化后高亮回到默认位置
+    // （探测结论与推荐专家进出会增删行，旧高亮序号可能指错行，一并重置）
+    useEffect(() => setHi(defaultHi), [q, clip, pathHit, experts, defaultHi]);
 
     const open = q.length > 0 && focused;
 
@@ -257,9 +238,8 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
         if (c.kind === "item") {
             onOpenItem(c.item);
         } else if (c.kind === "tool") {
-            const accepts = TOOLS.find((x) => x.id === c.id)?.acceptsText;
-            // 工具名完全一致时选哪一行（命中区或推荐区）都只打开，不带入打的字
-            onOpenTool(c.id, accepts && c.id !== exactTool?.id ? injectSource : null);
+            // 推荐区的行带字，命中区的行只打开
+            onOpenTool(c.id, c.carry ? injectSource : null);
         } else if (c.kind === "expert") {
             // 专家行：素材 chip ?? query 一起交给 ai（没有则 null——只切到该专家正常打开）
             onOpenTool("ai", injectSource, c.expert.id);
@@ -276,7 +256,8 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
             setHi((h) => Math.min(h + 1, candidates.length - 1));
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            setHi((h) => Math.max(h - 1, 0));
+            // 未预选（-1）时 ↑ 保持不动，不要凭空跳到第一行
+            setHi((h) => (h <= 0 ? h : h - 1));
         } else if (e.key === "Enter") {
             const c = candidates[hi];
             if (c) select(c);
@@ -332,7 +313,7 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
             <Kbd className="flex-none">/</Kbd>
             {open && (
                 <div className="drop-anim absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[0_12px_30px_rgb(0_0_0/40%)]">
-                    {/* 只剩推荐工具或路径动作行时不算「无匹配」——指的是没有条目/工具命中 */}
+                    {/* 「无匹配」指命中区和路径区都空；下面照常列推荐区，让用户能 ↓ 选一行带字 */}
                     {hits.length === 0 && pathRows.length === 0 && (
                         <Empty className="px-2.5 py-2">
                             <EmptyDescription>{t("search.noHit")}</EmptyDescription>
@@ -363,7 +344,7 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
                                     c.kind === "item"
                                         ? `i${c.item.id}`
                                         : c.kind === "tool"
-                                          ? `t${c.id}${c.exact ? "-hit" : ""}`
+                                          ? `t${c.id}${c.carry ? "-rec" : ""}`
                                           : c.kind === "expert"
                                             ? `e${c.expert.id}`
                                             : `p${c.label}${c.target}`
