@@ -256,8 +256,9 @@ export interface MpApi {
     /** 文件树读一层目录：根目录由主进程按工作区 id 查，dir 必须在其内（越界 bad-request，目录没了 missing） */
     listDir(workspaceId: number, dir: string): Promise<ApiResult<{ entries: DirEntry[] }>>;
     pickDirectory(defaultPath?: string): Promise<ApiResult<string | null>>;
-    /** 原生文件选择框（条目编辑目标「浏览…」用）：app = 过滤可执行文件，path = 文件/文件夹皆可选；取消返回 null */
-    pickFile(purpose: "app" | "path"): Promise<ApiResult<string | null>>;
+    /** 原生文件选择框（条目编辑目标「浏览…」用）：app = 过滤可执行文件，path = 文件/文件夹皆可选，
+     *  script = 只放行 .ps1；defaultPath 是起始目录；取消返回 null */
+    pickFile(purpose: "app" | "path" | "script", defaultPath?: string): Promise<ApiResult<string | null>>;
     // ── 数据目录（设置页展示与迁移）：目录由默认根下的指针文件决定（dataLocation.ts）──
     /** dir = 当前生效数据目录；isDefault = 是否就在默认根（决定「恢复默认」按钮显隐） */
     getDataDir(): Promise<ApiResult<{ dir: string; isDefault: boolean }>>;
@@ -700,19 +701,24 @@ export const apiHandlers: ApiHandlers = {
     },
 
     // 原生文件选择框：app 过滤 Windows 可执行文件（exe 直启/带参 spawn 均可，lnk 仅直启）；
-    // path 同时开 openFile+openDirectory，文件与文件夹都能选。过滤名只用扩展名本身，主进程不引入界面文案。
-    // macOS 不加过滤：.app 走应用选择器体验更好（文件框双击 bundle 会直接启动而不是选中），
+    // path 同时开 openFile+openDirectory，文件与文件夹都能选；script 只放行 .ps1，不给「所有文件」——
+    // 选了别的类型也会被前端填成 pwsh -File，那是错的。过滤名只用扩展名本身，主进程不引入界面文案。
+    // macOS 的 app 不加过滤：.app 走应用选择器体验更好（文件框双击 bundle 会直接启动而不是选中），
     // 且命令行工具/脚本常无扩展名，过滤反而挡路
-    pickFile: async (purpose) => {
-        const v = guard(pickFileSchema, { purpose });
+    pickFile: async (purpose, defaultPath) => {
+        const v = guard(pickFileSchema, { purpose, defaultPath });
         if (!v) return badRequest;
+        const filters =
+            v.purpose === "script"
+                ? [{ name: "PS1", extensions: ["ps1"] }]
+                : v.purpose === "app" && process.platform === "win32"
+                  ? [{ name: "EXE / LNK / BAT / CMD", extensions: ["exe", "lnk", "bat", "cmd"] }]
+                  : undefined;
         const r = await withNativeDialog(() =>
             dialog.showOpenDialog({
-                properties: v.purpose === "app" ? ["openFile"] : ["openFile", "openDirectory"],
-                filters:
-                    v.purpose === "app" && process.platform === "win32"
-                        ? [{ name: "EXE / LNK / BAT / CMD", extensions: ["exe", "lnk", "bat", "cmd"] }]
-                        : undefined,
+                properties: v.purpose === "path" ? ["openFile", "openDirectory"] : ["openFile"],
+                filters,
+                defaultPath: v.defaultPath || undefined,
             }),
         );
         return { ok: true, data: r.canceled ? null : (r.filePaths[0] ?? null) };

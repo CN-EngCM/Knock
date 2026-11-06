@@ -150,8 +150,12 @@ export const listDirSchema = z.object({
     dir: z.string().trim().min(1).max(1000),
 });
 
-// 原生文件选择框的目的（条目编辑「浏览…」）：app = 过滤可执行文件；path = 文件/文件夹皆可选
-export const pickFileSchema = z.object({ purpose: z.enum(["app", "path"]) });
+// 原生文件选择框的目的（条目编辑「浏览…」）：app = 过滤可执行文件；path = 文件/文件夹皆可选；
+// script = 只放行 .ps1（终端命令条目的「选择脚本…」）。defaultPath 是对话框起始目录，不传 = 系统默认位置
+export const pickFileSchema = z.object({
+    purpose: z.enum(["app", "path", "script"]),
+    defaultPath: z.string().max(1000).optional(),
+});
 
 // 数据目录迁移（设置页「数据目录」行）：target 为 null = 恢复默认位置。
 // 路径只限长不做字符白名单——存在性 / 是否为空由主进程按真实文件系统校验。

@@ -155,6 +155,7 @@ export const en: Record<MessageKey, string> = {
     "item.cwd": "Working directory (optional, empty = home)",
     "item.cwdInWorkspace": "Working directory (optional, empty = workspace folder)",
     "item.pickShortcut": "Pick from Start Menu",
+    "item.pickScript": "Pick script…",
     "picker.title": "Pick a shortcut",
     "picker.placeholder": "filter by name…",
     "picker.loading": "scanning…",

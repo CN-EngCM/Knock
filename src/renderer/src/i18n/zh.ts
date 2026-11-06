@@ -151,6 +151,7 @@ export const zh = {
     "item.cwd": "工作目录（可选，空 = 主目录）",
     "item.cwdInWorkspace": "工作目录（可选，空 = 工作区文件夹）",
     "item.pickShortcut": "从开始菜单选择",
+    "item.pickScript": "选择脚本…",
     "picker.title": "选择快捷方式",
     "picker.placeholder": "输入名称过滤…",
     "picker.loading": "扫描中…",
