@@ -148,7 +148,7 @@ export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSett
     }
 
     // 终端标签改名：dock 的默认标签菜单不提供改名，这里只给 term 面板在最前面插一项。
-    // 名字只存在面板标题里（布局与会话都不持久化），空名忽略、超长截断，
+    // 名字只存在面板标题里（面板与会话都不持久化），空名忽略、超长截断，
     // 与终端程序 OSC 标题共用同一套长度上限
     const [renaming, setRenaming] = useState<{ api: IDockviewPanelHeaderProps["api"]; value: string } | null>(null);
 

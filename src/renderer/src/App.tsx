@@ -49,6 +49,13 @@ import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDia
 import { applyFonts } from "./lib/fonts";
 import { cleanTermTitle } from "./lib/termTitle";
 import { applyTheme, currentTheme } from "./lib/theme";
+import {
+    addPanelPreferEmptyGroup,
+    clearDockLayout,
+    hasMultipleGroups,
+    restoreDockLayout,
+    watchDockLayout,
+} from "./lib/dockLayout";
 import { hostOf } from "./lib/webUrl";
 import { workspaceStroke } from "./lib/workspaceColor";
 import { useI18n } from "./i18n/useI18n";
@@ -209,7 +216,8 @@ export default function App() {
     }
 
     // 工具区停靠容器：首次打开面板时挂载（懒加载 dockview），此后常驻——面板清空
-    // 由 dock 空态水印（ToolHome）兜底。已开面板与布局是纯运行时状态，不落盘不还原（用户决策）
+    // 由 dock 空态水印（ToolHome）兜底。已开面板是纯运行时状态，不落盘不还原（用户决策）；
+    // 格子的排法单独记在 lib/dockLayout.ts，启动时还原成一排空格子
     const [dockWanted, setDockWanted] = useState(false);
     // dock 命令桥：面板开/关/激活都走所属工作区的 dockview api；该工作区实例懒加载就绪前的
     // 调用按工作区分队列，onReady 只冲刷自己那一条
@@ -476,7 +484,7 @@ export default function App() {
     }, []);
 
     // ── 工具生命周期：激活权威是 dockview——已开的面板 setActive，未开 addPanel ──
-    //（默认进当前激活组）；关闭走面板 × / 右键菜单，App 只订阅面板移除做善后。
+    //（有空格子优先进空格子，全满了进第一格，见 lib/dockLayout.ts）；关闭走面板 × / 右键菜单，App 只订阅面板移除做善后。
     // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
     // 已开的面板（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
     // expertId 仅 ai 工具有意义（进入指定专家）；它与 input 相互独立，
@@ -520,7 +528,7 @@ export default function App() {
             const panel = dock.getPanel(`tool:${id}`);
             if (panel) panel.api.setActive();
             else
-                dock.addPanel({
+                addPanelPreferEmptyGroup(dock, {
                     id: `tool:${id}`,
                     component: "tool",
                     title: t(toolMeta(id).nameKey),
@@ -544,7 +552,7 @@ export default function App() {
         setDockWanted(true);
         const id = nextWebId.current++;
         whenDockApi(ws, (dock) => {
-            dock.addPanel({
+            addPanelPreferEmptyGroup(dock, {
                 id: `web:${id}`,
                 component: "web",
                 title: url ? hostOf(url) : t("tool.browser.name"),
@@ -583,7 +591,7 @@ export default function App() {
         }
         setDockWanted(true);
         whenDockApi(ws, (dock) => {
-            dock.addPanel({
+            addPanelPreferEmptyGroup(dock, {
                 id: `term:${r.data.id}`,
                 component: "term",
                 title: r.data.label,
@@ -597,7 +605,10 @@ export default function App() {
     // （终端面板 = 结束 pty + 释放 xterm 实例，工具面板组件自卸载无需善后）
     const handleDockReady = useCallback((workspaceId: number, dock: DockviewApi) => {
         const ctl = dockCtl.current;
+        // 先还原上次记下的格子，再冲刷排队的开面板命令：新面板才能落进还原出来的激活格子里
+        restoreDockLayout(workspaceId, dock);
         ctl.apis.set(workspaceId, dock);
+        watchDockLayout(workspaceId, dock, () => ctl.apis.get(workspaceId) === dock);
         // 面板数只能按实例现状重算：面板增删发生在 dockview 内部，React 收不到通知；
         // 数字没变就返回原对象，避免每次面板增删都触发一轮无意义的渲染
         const syncPanelCount = () => {
@@ -656,6 +667,7 @@ export default function App() {
             toast.error(t("toast.error"));
             return;
         }
+        clearDockLayout(workspace.id);
         await refreshWorkspaces();
         // 条目随工作区外键级联删除：再拉一次全量，左侧与工具栏里别留着已不存在的行
         await refresh();
@@ -694,6 +706,12 @@ export default function App() {
     useEffect(() => {
         setTermFont(fontCfg?.monoFont ?? "", termCfg?.fontSize ?? 13);
     }, [fontCfg, termCfg]);
+
+    // 当前工作区记下的布局不止一个格子时，不等开面板就把停靠区挂出来，让格子在启动时就还原；
+    // 单个格子或没存过则保持懒加载（此时没有可画的格子，首页卡片就是入口）
+    useEffect(() => {
+        if (!dockWanted && activeWorkspaceId !== null && hasMultipleGroups(activeWorkspaceId)) setDockWanted(true);
+    }, [dockWanted, activeWorkspaceId]);
 
     // dock chunk 闲时预取：首个面板打开不用现等 dockview 下载
     useEffect(() => {
