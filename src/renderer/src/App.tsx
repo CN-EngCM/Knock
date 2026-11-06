@@ -49,6 +49,7 @@ import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDia
 import { applyFonts } from "./lib/fonts";
 import { cleanTermTitle } from "./lib/termTitle";
 import { applyTheme, currentTheme } from "./lib/theme";
+import { hostOf } from "./lib/webUrl";
 import { workspaceStroke } from "./lib/workspaceColor";
 import { useI18n } from "./i18n/useI18n";
 
@@ -405,17 +406,16 @@ export default function App() {
     // 停手超过 500ms 后的下一次点击才真正打开；侧栏与搜索候选共用此入口
     const lastOpenRef = useRef<{ id: number; at: number } | null>(null);
 
-    // ── 打开条目：书签前端直开；终端命令驱动终端执行；应用/文件走后端启动器 ──
-    // 启动成功后隐藏窗口（用户决策 2026-08）：失败保留窗口让 toast 可见；
-    // 书签是 fire-and-forget 拿不到失败信号，打开即藏；终端命令就在本窗口里执行，不藏
+    // ── 打开条目：书签在应用内开网页面板；终端命令驱动终端执行；应用/文件走后端启动器 ──
+    // 应用/文件启动成功后隐藏窗口（用户决策 2026-08）：失败保留窗口让 toast 可见；
+    // 终端命令和网页面板都开在本窗口里，不藏
     async function openItem(item: Item) {
         const now = Date.now();
         const blocked = lastOpenRef.current?.id === item.id && now - lastOpenRef.current.at < 500;
         lastOpenRef.current = { id: item.id, at: now };
         if (blocked) return;
         if (item.kind === "bookmark") {
-            window.open(item.target, "_blank", "noreferrer");
-            window.knock.hideWindow();
+            openWeb(item.target);
             return;
         }
         if (item.kind === "command") {
@@ -507,6 +507,11 @@ export default function App() {
             void spawnSession({ cwd: workspaceFolderOf(activeWorkspaceId) });
             return;
         }
+        // 浏览器可多开：每次新开一块空白网页面板
+        if (id === "browser") {
+            openWeb();
+            return;
+        }
         // 工作区数据还没到时不知道该往哪开：直接忽略这次点击（此时 dock 也还没挂出来）
         const ws = activeWorkspaceId;
         if (ws === null) return;
@@ -527,6 +532,37 @@ export default function App() {
             dispatchToolInput({ tool: id, text: input ?? "", expertId, workspaceId: ws });
         else clearToolInput(id, ws);
         dispatchToolFocus(id, ws);
+    }
+
+    // ── 网页面板：每次都新开一块（web:<号>），开在当前激活工作区的停靠区，不去找已开的 ──
+    // 已开的那块可能早就跳去别的页了，找它反而容易错。不带 url 是「浏览器」工具的空白页。
+    // renderer: "always" 让内容画在 dockview 的覆盖层上，拖拽分屏时不被搬动，网页不会重载
+    const nextWebId = useRef(1);
+    function openWeb(url?: string) {
+        const ws = activeWorkspaceId;
+        if (ws === null) return;
+        setDockWanted(true);
+        const id = nextWebId.current++;
+        whenDockApi(ws, (dock) => {
+            dock.addPanel({
+                id: `web:${id}`,
+                component: "web",
+                title: url ? hostOf(url) : t("tool.browser.name"),
+                params: { url },
+                renderer: "always",
+            });
+        });
+    }
+
+    // 网页里的 target=_blank / window.open：主进程转来，只会是 http/https 地址
+    const openWebRef = useRef(openWeb);
+    openWebRef.current = openWeb;
+    useEffect(() => window.knock.onWebOpen((url) => openWebRef.current(url)), []);
+
+    // 右键菜单「在系统浏览器中打开」：交给系统默认浏览器，同时藏起本窗口（与旧版点书签的行为一致）
+    function openInSystemBrowser(item: Item) {
+        window.open(item.target, "_blank", "noreferrer");
+        window.knock.hideWindow();
     }
 
     // ── 终端会话生命周期：每个会话一块 dock 面板（term:<会话号>）──
@@ -875,6 +911,7 @@ export default function App() {
                                     dirIds={dirIds}
                                     workspaces={workspaceTargets}
                                     onOpenInTerminal={openInTerminal}
+                                    onOpenExternal={openInSystemBrowser}
                                     onOpen={openItem}
                                     onEditItem={(item) => setDialog({ kind: "item-edit", item })}
                                     onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
@@ -918,6 +955,7 @@ export default function App() {
                                 onOpenFolder={(folder) => void openLocalPath(folder)}
                                 onOpen={openItem}
                                 onOpenInTerminal={openInTerminal}
+                                onOpenExternal={openInSystemBrowser}
                                 onEditItem={(item) => setDialog({ kind: "item-edit", item })}
                                 onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
                                 onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}

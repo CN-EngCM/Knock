@@ -35,3 +35,4 @@ node tests/scripts/test-site.cjs                            # 网址导入的本
 - 隐藏窗口、未关后台节流时，页面线程里的部分异步操作可能一直不返回，写探测脚本时给每一步加超时。
 - 调用 `galleryChromeSync`、`galleryChromeClear` 会操作 9333 端口上真实的专用 Chrome，自动化里不要随手调。
 - 实际点复制按钮会写系统剪贴板，隔离实例和真实应用共用一个，只查权限状态即可。
+- 调试协议派发的鼠标事件**不经过**系统对 `-webkit-app-region` 的判断，所以「点击被拖拽区吞掉」「双击放大窗口」这类问题用 `cdp.cjs` 点不出来。要验证就查计算样式：`getComputedStyle(el).webkitAppRegion` 应为 `no-drag`（或 `none` 且祖先是 `no-drag`）。

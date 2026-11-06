@@ -33,6 +33,7 @@
 - 生命周期铁律：**关闭 tab = 卸载组件**，状态与代码库一起释放，重开回初始态；切换 tab 是 `display:none` 保活，草稿不丢。禁止做「重开还原上次内容」——每次启动从空开始是用户决策。
 - 面板所在的工作区 id 经 `ToolWorkspaceContext`（`toolInput.ts`）提供：`App.openTool` 把它放进面板 `params`，`DockZone` 用 context 包住工具组件。工具代码不用感知，`useToolInput` 与 `useToolFocus` 自己从 context 读。
 - 终端是可多开的工具：注册表只提供入口信息，`Component` 为 `null`，由 App 每次新建独立会话，开成独立 dock 面板（xterm 实例归 termStore，见 components/DockTerm.tsx）。工具菜单、首页卡片和工具搜索共用该入口；关闭面板结束对应会话。
+- 浏览器（`browser`）同样可多开、`Component` 为 `null`：`App.openTool` 遇到它就调 `openWeb()` 新开一块空白网页面板（`web:<号>`，组件 `components/WebPanel.tsx`），不走 `tool:<id>` 面板，不注入素材。网页收藏也开成同样的面板，细节见 `docs/spec/ui.md` 的「网页面板」。
 - 唯一例外（同为用户决策，2026-08）：AI 助手的会话经模块级内存 store（`src/renderer/src/tools/aiSessions.ts`）在关 tab 后保留、流继续推进、重开恢复；应用重启仍从空开始（不落盘）。
 
 ## 4. 素材注入（acceptsText）

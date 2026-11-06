@@ -113,7 +113,18 @@ export type FontConfig = { uiFont: string; monoFont: string };
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/renderer/src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai", "gallery", "terminal", "notes"] as const;
+export const TOOL_IDS = [
+    "json",
+    "qr",
+    "scan",
+    "files",
+    "translate",
+    "ai",
+    "gallery",
+    "terminal",
+    "notes",
+    "browser",
+] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配

@@ -23,6 +23,7 @@ import { ToolWorkspaceContext } from "@/tools/toolInput";
 import { ToolHome } from "./ToolHome";
 
 const DockTerm = lazy(() => import("./DockTerm").then((m) => ({ default: m.DockTerm })));
+const WebPanel = lazy(() => import("./WebPanel"));
 
 type Props = {
     /** 当前存在的工作区 id：已删除的工作区要从实例列表里剪掉 */
@@ -34,7 +35,7 @@ type Props = {
 };
 
 // 工具区停靠容器：GaN.UI DockLayout 的业务封装，一个工作区一个实例。
-// 面板 id 约定仍为 tool:<ToolId>（单实例）与 term:<会话号>——id 的唯一性只在各自实例内
+// 面板 id 约定仍为 tool:<ToolId>（单实例）、term:<会话号> 与 web:<号>（后两者可多开）——id 的唯一性只在各自实例内
 // 校验，不同工作区出现同 id 不冲突。激活权威是 dockview，App 只经 api 开/关/激活。
 // 空态水印 = 工具首页。组头不挂任何动作：开工具走顶栏「工具集」，关面板走标签上的 × 或右键菜单。
 
@@ -122,6 +123,11 @@ export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSett
             term: (props: IDockviewPanelProps) => (
                 <Suspense fallback={null}>
                     <DockTerm {...props} />
+                </Suspense>
+            ),
+            web: (props: IDockviewPanelProps) => (
+                <Suspense fallback={null}>
+                    <WebPanel {...props} />
                 </Suspense>
             ),
         }),

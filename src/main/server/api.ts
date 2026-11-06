@@ -22,11 +22,13 @@ import {
     NOTES_NAME,
     canAcceptAsDataDir,
     defaultDataRoot,
+    removeDataFiles,
     removeDbArtifacts,
     samePath,
     writePointer,
 } from "./util/dataLocation";
 import { currentWindowState } from "../windowState";
+import { flushBrowserData } from "../webView";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
 import {
@@ -776,8 +778,10 @@ export const apiHandlers: ApiHandlers = {
                 copy.close();
             }
 
-            // 副本验证通过才写指针：此刻起新目录成为唯一事实来源
-            writePointer(dest);
+            // 副本验证通过才写指针：此刻起新目录成为唯一事实来源。
+            // 旧目录里的 browser-data 与 chrome-profile 正被进程占着（cookie 文件独占，实测关掉所有
+            // 网页也不放），当场复制必败，所以只记下来源，重启后在 Chromium 起来之前搬（settleBrowserData）
+            writePointer(dest, oldDir);
         } catch (e) {
             // 3–5 步任何失败：清掉本次在目标目录产生的残留即返回。指针未写、
             // 旧库未动 → 前端解除 pending 后原样重试即可；失败原因落主进程日志
@@ -795,10 +799,12 @@ export const apiHandlers: ApiHandlers = {
         // 残留只是垃圾不是错误源，无论成败都必须重启到新目录
         try {
             db.close();
-            removeDbArtifacts(oldDir);
+            removeDataFiles(oldDir);
         } catch (e) {
             console.error("[changeDataDir] old db close/cleanup failed:", e);
         }
+        // 会话数据刷盘：cookie 默认攒一阵才写，exit 不等；不刷的话重启后搬过去的是旧登录态
+        await flushBrowserData();
         app.relaunch();
         app.exit(0);
         return { ok: true, data: null }; // exit(0) 立即生效，实际到不了这里

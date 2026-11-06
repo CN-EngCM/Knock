@@ -41,6 +41,8 @@ type Props = {
     onOpenFolder: (folder: string) => void;
     onOpen: (item: Item) => void;
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
+    /** 网页收藏改用系统浏览器打开 */
+    onOpenExternal: (item: Item) => void;
     onEditItem: (item: Item) => void;
     onDeleteItem: (item: Item) => void;
     onMoveItem: (item: Item, workspaceId: number | null) => void;
@@ -65,6 +67,7 @@ export function WorkspaceToolbar({
     onOpenFolder,
     onOpen,
     onOpenInTerminal,
+    onOpenExternal,
     onEditItem,
     onDeleteItem,
     onMoveItem,
@@ -118,6 +121,7 @@ export function WorkspaceToolbar({
                         currentWorkspaceId={currentWorkspaceId}
                         onOpen={onOpen}
                         onOpenInTerminal={onOpenInTerminal}
+                        onOpenExternal={onOpenExternal}
                         onEdit={onEditItem}
                         onDelete={onDeleteItem}
                         onMove={onMoveItem}
@@ -147,6 +151,7 @@ type ItemProps = {
     currentWorkspaceId: number;
     onOpen: (item: Item) => void;
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
+    onOpenExternal: (item: Item) => void;
     onEdit: (item: Item) => void;
     onDelete: (item: Item) => void;
     onMove: (item: Item, workspaceId: number | null) => void;
@@ -160,6 +165,7 @@ function WorkspaceToolbarItem({
     currentWorkspaceId,
     onOpen,
     onOpenInTerminal,
+    onOpenExternal,
     onEdit,
     onDelete,
     onMove,
@@ -183,6 +189,9 @@ function WorkspaceToolbarItem({
             </ContextMenuTrigger>
             <ContextMenuContent>
                 <ContextMenuItem onClick={() => onOpen(item)}>{t("menu.open")}</ContextMenuItem>
+                {item.kind === "bookmark" && (
+                    <ContextMenuItem onClick={() => onOpenExternal(item)}>{t("menu.openExternal")}</ContextMenuItem>
+                )}
                 {isDir && (
                     <>
                         <ContextMenuSeparator />

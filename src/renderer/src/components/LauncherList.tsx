@@ -21,6 +21,8 @@ type Props = {
     /** 可移动到的普通工作区（不含临时工作区） */
     workspaces: Workspace[];
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
+    /** 网页收藏改用系统浏览器打开（应用内打不开的站用得上） */
+    onOpenExternal: (item: Item) => void;
     onOpen: (item: Item) => void;
     onEditItem: (item: Item) => void;
     onDeleteItem: (item: Item) => void;
@@ -45,6 +47,7 @@ export function LauncherList({
     dirIds,
     workspaces,
     onOpenInTerminal,
+    onOpenExternal,
     onOpen,
     onEditItem,
     onDeleteItem,
@@ -115,6 +118,7 @@ export function LauncherList({
                     onActivate={() => setActiveIndex(index)}
                     onOpen={onOpen}
                     onOpenInTerminal={onOpenInTerminal}
+                    onOpenExternal={onOpenExternal}
                     onEdit={onEditItem}
                     onDelete={onDeleteItem}
                     onMove={onMoveItem}
@@ -142,6 +146,7 @@ type RowProps = {
     onActivate: () => void;
     onOpen: (item: Item) => void;
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
+    onOpenExternal: (item: Item) => void;
     onEdit: (item: Item) => void;
     onDelete: (item: Item) => void;
     onMove: (item: Item, workspaceId: number | null) => void;
@@ -159,6 +164,7 @@ function LauncherRow({
     onActivate,
     onOpen,
     onOpenInTerminal,
+    onOpenExternal,
     onEdit,
     onDelete,
     onMove,
@@ -201,6 +207,9 @@ function LauncherRow({
             </ContextMenuTrigger>
             <ContextMenuContent>
                 <ContextMenuItem onClick={() => onOpen(item)}>{t("menu.open")}</ContextMenuItem>
+                {item.kind === "bookmark" && (
+                    <ContextMenuItem onClick={() => onOpenExternal(item)}>{t("menu.openExternal")}</ContextMenuItem>
+                )}
                 {isDir && (
                     <>
                         <ContextMenuSeparator />

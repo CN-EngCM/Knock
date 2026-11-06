@@ -7,7 +7,22 @@
 - SQLite（WAL），默认与 Electron userData 同目录：Windows `%APPDATA%\Knock\mypage.db`，macOS/Linux 对应 Application Support / .config 下的 `Knock`。
 - 实际位置由默认根下 `data-location.json` 指针文件决定，设置里可更改并自动迁移。首次启动弹原生引导选位置。
 - 旧目录名 MyPage 的一次性升级迁移在 `src/main/server/util/dataLocation.ts`。
+- 指针文件内容是 `{"dir": "<数据目录>"}`；刚改过数据目录时多一个 `moveFrom`（旧目录），见下面「浏览器数据」。
 - 库结构升级是单向的：旧版本程序打开升级过的库可能启动失败，换最新版本即可。
+
+## 浏览器数据
+
+Chromium 的会话数据（缓存、cookie、`localStorage`、网页面板的 `persist:web` 分区、图库抓取的 `persist:gallery-import` 分区）统一存在 `<数据目录>/browser-data/`，不散在系统里。做法：`src/main/index.ts` 在拿到单实例锁之后、app ready 之前设 `app.setPath("sessionData", ...)`；网页和图库都用普通的 `persist:` 分区，分区会自动落在它下面的 `Partitions/`。
+
+- **默认根里仍有几个极小的文件**：指针、锁文件、`Local State`。应用要先读指针才知道数据目录在哪，没法全放进去。
+- **ready 之前要知道数据目录**：全新安装和旧名升级这两种「这次启动才写指针」的情形，引导完成后重启一次（`index.ts`），之后从第一帧起就生效；老用户没有这一步。指针有效但数据目录里没有 `mypage.db`（比如移动硬盘没插）时同样不设，走恢复流程。
+- **老版本的散落文件**：旧版把这些 Chromium 文件直接放在默认根里。新版首次启动时，若 `browser-data` 还不存在，`settleBrowserData` 按 `LEGACY_CHROMIUM_NAMES` 这份写死的清单一次性搬进去，搬失败只写日志。
+- **改数据目录时，`browser-data` 与 `chrome-profile` 不当场复制，重启后再搬。** 原因：它们正被进程占着，实测 cookie 文件独占，关掉所有网页也不放（整目录复制报 `EACCES`，单文件复制报 `EBUSY`，目录改名报 `EPERM`），Electron 又没有销毁会话的接口。做法：
+  - `changeDataDir` 其余数据照旧复制，只在指针里记 `moveFrom`（旧目录），再把会话数据刷盘（`webView.ts` 的 `flushBrowserData`，cookie 默认攒一阵才写、`app.exit` 不等）后重启；
+  - 下次启动在 Chromium 起来之前，`settleBrowserData` 把旧目录的这两个目录搬进新目录（同盘改名，跨盘复制再删），然后清掉 `moveFrom`；
+  - 搬失败只写日志，网页数据和界面存储从空开始；标记不管成败都清掉，不反复重试；新目录里已有同名目录时不覆盖；
+  - `changeDataDir` 收尾清旧目录用 `removeDataFiles`（只删库、favicons、gallery、notes），不碰这两个目录。
+- 缓存也在里面，数据目录会随网页浏览变大。没有「清除浏览数据」入口，要清就关掉应用后删 `browser-data/`。
 
 ## settings 表
 
@@ -43,7 +58,7 @@
 - 图片字节原样写进数据目录 `notes/<图片id>.<format>`，与图库完全分开，经 `mpimg://note/<图片id>` 读取，不走 IPC 传字节（`mpimg` 的 host 除 `orig|thumb|cand` 外多一个 `note`）。
 - 为什么这样存：放项目文件夹的话，临时工作区没有文件夹，改工作区文件夹后便签会「丢」，密钥还可能被误提交进 git；放图库会混进分组和去重规则，删除互相牵扯；图片放 SQLite 的话，一条能有多张图，库涨得快，读写也都压在主进程上。
 - 外键级联只删行不删文件，所以删便签、删工作区时代码先查出文件再删行、之后尽力删文件，删失败不报错。保存失败不留半截：先写行再写文件，文件写失败就删掉本次的行和已写文件。
-- `notes/` 与 `gallery/`、favicons 同在改数据目录的三处：`util/dataLocation.ts` 的 `migrateDataFiles`、`removeDbArtifacts`，和 `api.ts` 的 `changeDataDir`（它自己单独复制 favicons、gallery、notes，新增数据目录别漏）。
+- `notes/` 与 `gallery/`、favicons 同在改数据目录的三处：`util/dataLocation.ts` 的 `migrateDataFiles`、`removeDbArtifacts`，和 `api.ts` 的 `changeDataDir`（它自己单独复制 favicons、gallery、notes，新增数据目录别漏）。`browser-data` 与 `chrome-profile` 是例外，见上一节：不复制，重启后搬。
 
 ## 图库文件
 
@@ -62,7 +77,7 @@
 
 ## 渲染端 localStorage
 
-界面语言、布局偏好（工作区块列表高度）、翻译语言和图库操作偏好存这里，键名统一 `mypage-` 开头。换 origin 会重置，已知。
+界面语言、布局偏好（工作区块列表高度）、翻译语言和图库操作偏好存这里，键名统一 `mypage-` 开头。换 origin 会重置，已知。它存在 `browser-data` 里，改数据目录时跟着搬。
 
 ## 不落库的运行时状态
 

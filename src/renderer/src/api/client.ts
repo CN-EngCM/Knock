@@ -69,6 +69,8 @@ declare global {
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
+            /** 网页要新开窗口（target=_blank / window.open）：只会是 http/https 地址 */
+            onWebOpen: (cb: (url: string) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;
             onAiEvent: (cb: (e: AiEvent) => void) => () => void;
         };

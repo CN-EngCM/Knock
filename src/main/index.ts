@@ -1,5 +1,8 @@
 import { app, dialog, protocol } from "electron";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { resolveDataDirOnBoot } from "./dataBoot";
+import { DB_NAME, readPointer, settleBrowserData } from "./server/util/dataLocation";
 
 // ── Electron 主进程入口 ──
 // 只做必须赶在「开库之前」的事：注册 scheme、抢单实例锁、确定数据目录。
@@ -22,14 +25,34 @@ protocol.registerSchemesAsPrivileged([
 
 app.setAppUserModelId("com.knock.app"); // Windows 托盘/任务栏分组标识
 
+/**
+ * 把 Chromium 的会话数据（缓存、cookie、localStorage、网页分区）收进数据目录下的 browser-data，
+ * 系统里不另外散落。sessionData 必须赶在 app ready 之前设，而 ready 之后才能弹首次引导，
+ * 所以指针还不存在（全新安装、旧名升级）或数据目录不可用时设不了，返回 false，由下面重启一次补上。
+ */
+function redirectSessionData(): boolean {
+    const dir = readPointer();
+    if (!dir || !existsSync(join(dir, DB_NAME))) return false;
+    app.setPath("sessionData", settleBrowserData(dir));
+    return true;
+}
+
 // ── 单实例锁：二次启动只唤起已有实例的窗口（second-instance 监听在 app.ts） ──
 if (!app.requestSingleInstanceLock()) {
     app.quit();
 } else {
+    // 放在拿到锁之后：二次启动的进程不能去搬文件
+    const sessionDataReady = redirectSessionData();
     app.whenReady()
         .then(async () => {
             // 开库前先确定数据目录：无指针弹首次引导，指针失效走恢复流程（可能重启/退出）
             await resolveDataDirOnBoot();
+            // 指针是这次启动才写下的：sessionData 还没指过去，重启一次让它从第一帧起就生效
+            if (!sessionDataReady) {
+                app.relaunch();
+                app.exit(0);
+                return;
+            }
             // 目录已定，此刻才加载会开库的模块
             (await import("./app")).startApp();
         })

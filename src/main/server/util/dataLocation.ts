@@ -1,4 +1,14 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+    cpSync,
+    existsSync,
+    mkdirSync,
+    readdirSync,
+    readFileSync,
+    renameSync,
+    rmSync,
+    statSync,
+    writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -18,6 +28,32 @@ export const GALLERY_NAME = "gallery";
 export const NOTES_NAME = "notes";
 // 受限站登录态（专用 Chrome 实例的持久 profile，见 server/chromeLogin.ts）
 export const CHROME_PROFILE_NAME = "chrome-profile";
+// Chromium 会话数据（缓存、cookie、localStorage 和网页分区），经 app.setPath("sessionData") 收进数据目录
+export const BROWSER_DATA_NAME = "browser-data";
+
+// 旧版本把 Chromium 的这些文件直接散在默认根里；新版第一次启动时一次性搬进 browser-data。
+// 清单是写死的名字：Local State、锁文件、指针不在其内，它们必须留在默认根
+const LEGACY_CHROMIUM_NAMES = [
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+    "Shared Dictionary",
+    "blob_storage",
+    "Local Storage",
+    "Session Storage",
+    "IndexedDB",
+    "Service Worker",
+    "WebStorage",
+    "SharedStorage",
+    "SharedStorage-wal",
+    "Network",
+    "Partitions",
+    "Dictionaries",
+    "DIPS",
+    "DIPS-wal",
+];
 
 const POINTER_NAME = "data-location.json";
 
@@ -62,10 +98,22 @@ function legacyPointerPath(): string {
     return join(legacyDataRoot(), POINTER_NAME);
 }
 
-/** 写指针（只在引导 / 迁移的成功路径上调用）；默认根必须存在才能放下指针文件 */
-export function writePointer(dir: string): void {
+/** 写指针（只在引导 / 迁移的成功路径上调用）；默认根必须存在才能放下指针文件。
+ *  moveFrom 只在改数据目录时传：旧目录里的 browser-data 与 chrome-profile 此刻被进程占着搬不动，
+ *  记下来，等下次启动在 Chromium 起来之前搬（见 settleBrowserData） */
+export function writePointer(dir: string, moveFrom?: string): void {
     mkdirSync(defaultDataRoot(), { recursive: true });
-    writeFileSync(pointerPath(), JSON.stringify({ dir }));
+    writeFileSync(pointerPath(), JSON.stringify(moveFrom ? { dir, moveFrom } : { dir }));
+}
+
+/** 指针里记的「待搬来源目录」；没有或损坏返回 null */
+function readMoveFrom(): string | null {
+    try {
+        const raw = JSON.parse(readFileSync(pointerPath(), "utf8")) as { moveFrom?: unknown };
+        return typeof raw?.moveFrom === "string" && raw.moveFrom ? raw.moveFrom : null;
+    } catch {
+        return null;
+    }
 }
 
 /** 路径等同判断：resolve 归一化后比较；Windows 文件系统大小写不敏感，一并折掉 */
@@ -181,14 +229,81 @@ export function upgradeLegacyData(): boolean {
     return false;
 }
 
-/** 删某目录下的库文件、图标缓存、图库与便签图片（只删具名路径，目录里其他东西一概不碰） */
-export function removeDbArtifacts(dir: string): void {
+/** 搬一个文件或目录：同盘直接改名；跨盘（改名报错）退回复制再删。
+ *  复制中途失败要清掉不完整的目标，源保持原样，由调用方记日志 */
+function moveEntry(src: string, dst: string): void {
+    try {
+        renameSync(src, dst);
+        return;
+    } catch {
+        /* 跨盘或被占用：走复制 */
+    }
+    try {
+        cpSync(src, dst, { recursive: true });
+    } catch (e) {
+        rmSync(dst, { recursive: true, force: true });
+        throw e;
+    }
+    rmSync(src, { recursive: true, force: true });
+}
+
+/**
+ * 启动最早期调用（app ready 之前，此刻本进程还没有 Chromium 存储占着文件）：
+ *  1. 改数据目录后的待搬：把旧目录的 browser-data 与 chrome-profile 搬进新目录，之后清掉指针里的标记
+ *     （不管搬没搬成都清，不反复重试；搬失败只写日志，网页数据从空开始）；
+ *  2. 否则若 browser-data 还不存在：把旧版本散在默认根里的 Chromium 文件搬进来。
+ * 返回 browser-data 的路径，调用方拿去 app.setPath("sessionData")。
+ * 本模块保持纯 fs，所以 setPath 留给 index.ts。
+ */
+export function settleBrowserData(dir: string): string {
+    const target = join(dir, BROWSER_DATA_NAME);
+    const from = readMoveFrom();
+    if (from) {
+        if (!samePath(from, dir)) {
+            for (const name of [BROWSER_DATA_NAME, CHROME_PROFILE_NAME]) {
+                const src = join(from, name);
+                const dst = join(dir, name);
+                // 目标已有数据时不覆盖：宁可旧的留着，也不把新的冲掉
+                if (!existsSync(src) || existsSync(dst)) continue;
+                try {
+                    moveEntry(src, dst);
+                } catch (e) {
+                    console.error(`[dataLocation] move ${name} failed:`, e);
+                }
+            }
+        }
+        writePointer(dir);
+    } else if (!existsSync(target)) {
+        mkdirSync(target, { recursive: true });
+        const root = defaultDataRoot();
+        for (const name of LEGACY_CHROMIUM_NAMES) {
+            const src = join(root, name);
+            if (!existsSync(src)) continue;
+            try {
+                moveEntry(src, join(target, name));
+            } catch (e) {
+                console.error(`[dataLocation] adopt ${name} failed:`, e);
+            }
+        }
+    }
+    mkdirSync(target, { recursive: true });
+    return target;
+}
+
+/** 删某目录下的库文件、图标缓存、图库与便签图片（只删具名路径，目录里其他东西一概不碰）。
+ *  不含 chrome-profile 与 browser-data：改数据目录时它们要留给下次启动搬走 */
+export function removeDataFiles(dir: string): void {
     for (const name of [DB_NAME, `${DB_NAME}-wal`, `${DB_NAME}-shm`]) {
         rmSync(join(dir, name), { force: true });
     }
     rmSync(join(dir, FAVICONS_NAME), { recursive: true, force: true });
     rmSync(join(dir, GALLERY_NAME), { recursive: true, force: true });
     rmSync(join(dir, NOTES_NAME), { recursive: true, force: true });
+}
+
+/** removeDataFiles 加上 Chrome 专用 profile：用于「数据已复制走 / 迁移失败清残留」的收尾 */
+export function removeDbArtifacts(dir: string): void {
+    removeDataFiles(dir);
     // Chrome profile 可能正被专用实例锁着（迁移前用户没关）：残留不挡迁移，
     // 下次 chromeClear 或手动清理；其余具名数据此刻没有进程持有
     try {
