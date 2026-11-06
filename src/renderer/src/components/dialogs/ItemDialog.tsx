@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { IconPickerDialog } from "./IconPickerDialog";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
 import { api, type Item, type Kind } from "@/api/client";
@@ -19,6 +20,8 @@ export type ItemFormValues = {
     target: string;
     args: string | null;
     icon: string | null;
+    /** 仅终端命令有意义，其余类型一律 false */
+    autoClose: boolean;
 };
 
 type Props = {
@@ -59,6 +62,7 @@ export function ItemDialog({
     const [target, setTarget] = useState("");
     const [args, setArgs] = useState("");
     const [icon, setIcon] = useState<string | null>(null);
+    const [autoClose, setAutoClose] = useState(false);
     const [saving, setSaving] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
@@ -74,6 +78,7 @@ export function ItemDialog({
         // 库里认不得的图标名（旧版遗留、包升级删了）按「自动」回填：既与列表里的显示一致，
         // 也不会把可能不合格式的旧值原样提交回去，保存一次顺便清掉
         setIcon(item?.icon && hasIcon(item.icon) ? item.icon : null);
+        setAutoClose(item?.autoClose ?? false);
     }, [open, item, inWorkspace]);
 
     const targetLabel =
@@ -143,6 +148,8 @@ export function ItemDialog({
                 // 仅 app/command 复用 args 列（启动参数 / 工作目录），其余类型一律置 null
                 args: (kind === "app" || kind === "command") && args.trim() ? args.trim() : null,
                 icon,
+                // 只有终端命令才有「自动关闭」：切到别的类型后开关看不见了，也不能把旧值存下去
+                autoClose: kind === "command" && autoClose,
             });
             onClose();
         } catch {
@@ -269,6 +276,22 @@ export function ItemDialog({
                                     </Button>
                                 )}
                             </div>
+                        </FormRow>
+                    )}
+
+                    {/* 命令是敲进交互终端里执行的，跑完面板默认留着；勾上则命令成功后自动关，失败仍保留 */}
+                    {kind === "command" && (
+                        <FormRow>
+                            <FieldLabel htmlFor="item-autoclose">{t("item.autoClose")}</FieldLabel>
+                            <span className="flex min-h-[25px] items-center gap-2.5">
+                                <Switch id="item-autoclose" checked={autoClose} onCheckedChange={setAutoClose} />
+                                <label
+                                    htmlFor="item-autoclose"
+                                    className="cursor-pointer text-xs font-normal text-muted-foreground"
+                                >
+                                    {t("item.autoClose.hint")}
+                                </label>
+                            </span>
                         </FormRow>
                     )}
 

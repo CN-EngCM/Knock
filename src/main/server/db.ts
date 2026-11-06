@@ -23,7 +23,9 @@ db.exec(`
     icon   TEXT,
     -- 空 = 左侧快捷启动；非空 = 该工作区的快捷启动工具栏。workspaces 表在后面才建，
     -- SQLite 允许外键前向引用，只要插数据时父表已存在
-    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE
+    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
+    -- 仅 command：1 = 命令成功后自动关掉终端面板（失败时保留，方便看报错）
+    auto_close INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS settings (
@@ -189,6 +191,12 @@ db.transaction(() => {
 const itemColsAfterRebuild = db.prepare("PRAGMA table_info(items)").all() as { name: string }[];
 if (!itemColsAfterRebuild.some((c) => c.name === "workspace_id")) {
     db.exec("ALTER TABLE items ADD COLUMN workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE");
+}
+
+// 存量库幂等迁移：auto_close 是后加的（命令跑完自动关终端），同样要在 items 重建之后补；
+// 已有条目一律 0，行为不变。
+if (!itemColsAfterRebuild.some((c) => c.name === "auto_close")) {
+    db.exec("ALTER TABLE items ADD COLUMN auto_close INTEGER NOT NULL DEFAULT 0");
 }
 
 export default db;

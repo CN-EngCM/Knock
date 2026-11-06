@@ -443,7 +443,7 @@ export default function App() {
     //    左侧条目（无归属）留空仍回主目录。cwd 不存在由服务端按 missing 拒绝 ──
     function runCommand(item: Item) {
         const cwd = item.args || workspaceFolderOf(item.workspaceId);
-        void spawnSession({ cwd, label: item.title, command: item.target });
+        void spawnSession({ cwd, label: item.title, command: item.target, autoClose: item.autoClose });
     }
 
     // ── 文件夹条目：在应用内终端打开该目录（标签名取文件夹名），opencode / claude
@@ -578,7 +578,7 @@ export default function App() {
     // 开新会话（工具菜单 / 终端命令条目共用）：cwd 由调用方决定（工作区文件夹或条目自带的
     // 工作目录），缺省主目录；命令条目的整行命令在建好后写入执行——首屏输出由 termStore
     // 的缓冲兜住，面板挂载后回放
-    async function spawnSession(req?: { cwd?: string; label?: string; command?: string }) {
+    async function spawnSession(req?: { cwd?: string; label?: string; command?: string; autoClose?: boolean }) {
         // 没有当前工作区就不起会话：pty 起来了却没有面板接，等于留一个看不见的 shell
         const ws = activeWorkspaceId;
         if (ws === null) return;
@@ -598,7 +598,12 @@ export default function App() {
                 params: { sessionId: r.data.id },
             });
         });
-        if (req?.command) void api.ptyWrite(r.data.id, `${req.command}\r`);
+        // 自动关闭：命令后面追加「成功才退出 shell」，shell 一退出，下面的 exit 事件处理就会关掉面板；
+        // 命令失败时 shell 留着，报错还看得见。追加什么由主进程按实际 shell 给出
+        if (req?.command) {
+            const tail = req.autoClose ? r.data.exitSuffix : "";
+            void api.ptyWrite(r.data.id, `${req.command}${tail}\r`);
+        }
     }
 
     // dock 就绪：存下这个工作区的实例、冲刷它排队的命令；面板移除善后按实例各挂一次

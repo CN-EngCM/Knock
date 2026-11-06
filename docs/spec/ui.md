@@ -154,7 +154,12 @@ GaN.UI `DockLayout`，业务封装 `DockZone.tsx`，底座 dockview-react。
   - 命令栏：`pwsh -NoProfile -ExecutionPolicy Bypass -File "脚本路径"`；设置页查到本机没有 pwsh 就写成 `powershell`（Windows 自带的 5.1，读无 BOM 的 UTF-8 脚本会乱码，所以排在后面）。写成子进程调用而不是 `& 脚本`，是为了不管终端程序选 cmd 还是 PowerShell 都能跑，执行策略只对这一次放行。
   - 工作目录栏：脚本所在目录，**每次选都覆盖**（换脚本不留旧目录）；填完仍可手改。没走按钮、手敲的命令不自动带目录，仍按上面的规则。
   - 标题栏：为空时用脚本文件名（去扩展名）。
-  - 命令照常敲进新开的终端面板，脚本跑完面板保留（shell 没退出），由用户自己关。「应用」「文件」类型和搜索框里的 `.ps1` 路径不变，仍用系统默认方式打开。
+  - 命令照常敲进新开的终端面板，脚本跑完面板默认保留（shell 没退出），由用户自己关；想自动关见下一条「自动关闭」。「应用」「文件」类型和搜索框里的 `.ps1` 路径不变，仍用系统默认方式打开。
+- **自动关闭**（仅终端命令，条目弹窗里的开关，默认关）：勾上后，命令**成功**结束就自动关掉那块终端面板；命令失败则面板保留，方便看报错。
+  - **做法**：命令后面追加「成功才退出 shell」，PowerShell 是 `; if ($?) { exit }`，cmd 和各类 POSIX shell 是 ` && exit`。PowerShell 5.1 没有 `&&`，所以不能一律写它。
+  - **追加什么由主进程给**：`ptySpawn` 的返回里带 `exitSuffix`（`pty.ts` 的 `exitOnSuccess`）。设置里选「自动」时实际用哪个 shell 只有主进程知道，渲染端不猜。命令仍由渲染端在 pty 起来后写入，没挪到主进程，免得改变写入时序。
+  - **怎么关面板**：shell 一退出，`App.tsx` 里已有的 pty `exit` 事件处理就会 dispose xterm 并关面板，没有另外的关面板机制。
+  - 弹窗里这一行只在类型为「终端命令」时显示，其他类型一律存 0；编辑时按存的值回填。已实测 PowerShell 7、Windows PowerShell 5.1、cmd 三种终端程序。macOS 的 zsh / bash 走 `&& exit`，未实测。
 - **环境变量**：新建会话将 `TERM` 设为 `xterm-256color`、`COLORTERM` 设为 `truecolor`，并清除继承的 `NO_COLOR`，避免启动环境禁用彩色输出。
 - **xterm 实例归 `termStore.ts`**，与面板生命周期解耦：面板拖动重组只重挂 DOM，不丢回滚缓冲；会话结束才 dispose；实例未就绪前的 pty 输出由它缓冲回放。
 - 主题切换经 html 类监听热更新 xterm 配色，不重建进程，不清缓冲。

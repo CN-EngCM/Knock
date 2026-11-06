@@ -156,6 +156,9 @@ export const en: Record<MessageKey, string> = {
     "item.cwdInWorkspace": "Working directory (optional, empty = workspace folder)",
     "item.pickShortcut": "Pick from Start Menu",
     "item.pickScript": "Pick script…",
+    "item.autoClose": "Auto close",
+    "item.autoClose.hint":
+        "Close the terminal when the command succeeds; kept open on failure so you can read the error",
     "item.icon": "Icon",
     "item.icon.auto": "Auto (by type and name)",
     "iconPicker.title": "Pick an icon",

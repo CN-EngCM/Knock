@@ -152,6 +152,8 @@ export const zh = {
     "item.cwdInWorkspace": "工作目录（可选，空 = 工作区文件夹）",
     "item.pickShortcut": "从开始菜单选择",
     "item.pickScript": "选择脚本…",
+    "item.autoClose": "自动关闭",
+    "item.autoClose.hint": "命令成功后关闭终端面板，失败时保留，方便看报错",
     "item.icon": "图标",
     "item.icon.auto": "自动（按类型和名称匹配）",
     "iconPicker.title": "选择图标",

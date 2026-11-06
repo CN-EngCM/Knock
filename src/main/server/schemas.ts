@@ -38,6 +38,8 @@ const itemFieldsSchema = z.object({
         .trim()
         .regex(/^[\w.-]{1,64}$/)
         .nullish(),
+    // 仅 command 有意义：命令成功后自动关掉终端面板；缺省 = 不关
+    autoClose: z.boolean().optional(),
 });
 
 // 新建时可选归属：空 = 左侧快捷启动，数字 = 该工作区的快捷启动工具栏
@@ -417,6 +419,8 @@ export type Item = {
     target: string;
     args: string | null;
     icon: string | null;
+    /** 仅 command：命令成功后自动关掉终端面板。SQL 列名 auto_close（0/1），下发前转成布尔 */
+    autoClose: boolean;
     /** 空 = 左侧快捷启动；数字 = 工作区工具栏。SQL 列名 workspace_id，下发前别名成这个字段 */
     workspaceId: number | null;
 };

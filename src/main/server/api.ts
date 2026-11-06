@@ -220,7 +220,9 @@ export interface MpApi {
     // opts 带 cwd 与 label：工作区里开终端时 cwd 取工作区文件夹；命令条目有显式工作目录时传它，
     // 留空则不传。不传时 cwd 缺省主目录、label 用 shell 标签。
     // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
-    ptySpawn(opts?: PtySpawnInput): Promise<ApiResult<{ id: number; label: string }>>;
+    // exitSuffix：拼在命令后面、让 shell 在命令成功后自己退出的那段文字（各 shell 写法不同，
+    // 只有主进程知道实际用的是哪个）；命令条目勾了「自动关闭」时前端才用它
+    ptySpawn(opts?: PtySpawnInput): Promise<ApiResult<{ id: number; label: string; exitSuffix: string }>>;
     ptyWrite(id: number, data: string): Promise<ApiResult<null>>;
     ptyResize(id: number, cols: number, rows: number): Promise<ApiResult<null>>;
     ptyKill(id: number): Promise<ApiResult<null>>;
@@ -373,8 +375,12 @@ type ApiHandlers = {
 // （字段由 schema 与 SQL 共同保证，是全项目唯一允许 as 的地方）
 // 列名 workspace_id 与前端字段 workspaceId 不一致，显式列出并别名，避免 SELECT * 把 snake_case
 // 原样返回后靠断言骗过类型系统。
-const ITEM_COLUMNS = "id, kind, title, target, args, icon, workspace_id AS workspaceId";
-const asItems = (rows: unknown[]) => rows as Item[];
+const ITEM_COLUMNS = "id, kind, title, target, args, icon, auto_close AS autoClose, workspace_id AS workspaceId";
+// SQLite 没有布尔：auto_close 读出来是 0/1，统一在这里转成 Item 声明的 boolean 再往外给，
+// 别让数字顶着布尔的类型流到渲染端
+type ItemRow = Omit<Item, "autoClose"> & { autoClose: number };
+const toItem = (row: ItemRow): Item => ({ ...row, autoClose: row.autoClose === 1 });
+const asItems = (rows: unknown[]) => (rows as ItemRow[]).map(toItem);
 
 const badRequest = { ok: false, error: { kind: "bad-request" } } as const;
 const notFound = { ok: false, error: { kind: "not-found" } } as const;
@@ -439,8 +445,10 @@ export const apiHandlers: ApiHandlers = {
             if (!ws || ws.builtin !== 0) return badRequest;
         }
         const info = db
-            .prepare("INSERT INTO items (kind, title, target, args, icon, workspace_id) VALUES (?, ?, ?, ?, ?, ?)")
-            .run(v.kind, v.title, v.target, v.args ?? null, v.icon ?? null, workspaceId);
+            .prepare(
+                "INSERT INTO items (kind, title, target, args, icon, auto_close, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            )
+            .run(v.kind, v.title, v.target, v.args ?? null, v.icon ?? null, v.autoClose ? 1 : 0, workspaceId);
         return { ok: true, data: { id: Number(info.lastInsertRowid) } };
     },
 
@@ -449,23 +457,20 @@ export const apiHandlers: ApiHandlers = {
     updateItem: async (id, patch) => {
         const v = guard(updateItemSchema, patch);
         if (!v) return badRequest;
-        const row = db.prepare(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id) as Item | undefined;
-        if (!row) return notFound;
+        const raw = db.prepare(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id) as ItemRow | undefined;
+        if (!raw) return notFound;
+        const row = toItem(raw);
         const next = {
             kind: v.kind ?? row.kind,
             title: v.title ?? row.title,
             target: v.target ?? row.target,
             args: v.args === undefined ? row.args : v.args,
             icon: v.icon === undefined ? row.icon : v.icon,
+            autoClose: v.autoClose === undefined ? row.autoClose : v.autoClose,
         };
-        db.prepare("UPDATE items SET kind = ?, title = ?, target = ?, args = ?, icon = ? WHERE id = ?").run(
-            next.kind,
-            next.title,
-            next.target,
-            next.args,
-            next.icon,
-            id,
-        );
+        db.prepare(
+            "UPDATE items SET kind = ?, title = ?, target = ?, args = ?, icon = ?, auto_close = ? WHERE id = ?",
+        ).run(next.kind, next.title, next.target, next.args, next.icon, next.autoClose ? 1 : 0, id);
         return { ok: true, data: null };
     },
 
@@ -491,8 +496,9 @@ export const apiHandlers: ApiHandlers = {
     // ── 启动 / 打开（M3 核心）。书签由前端直接 window.open；应用与文件走这里 ──
     launch: async (id) => {
         if (!Number.isInteger(id) || id <= 0) return badRequest;
-        const item = db.prepare(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id) as Item | undefined;
-        if (!item) return notFound;
+        const raw = db.prepare(`SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`).get(id) as ItemRow | undefined;
+        if (!raw) return notFound;
+        const item = toItem(raw);
         // 书签由前端 window.open、终端命令由前端驱动 pty 执行，走到这里都是误用；
         // 提前 return 后 item.kind 已窄化为 app/file，kind 显式取出才能过 launchItem 的参数类型
         if (item.kind === "bookmark" || item.kind === "command") return badRequest;

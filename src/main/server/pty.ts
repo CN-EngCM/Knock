@@ -133,10 +133,24 @@ export function readTermConfig(): TermConfig {
     };
 }
 
-/** 新建会话；返回 id 与 shell 标签（渲染端做 tab 名）。
+/**
+ * 拼在用户命令后面、「命令成功了才让 shell 退出」的那段文字。命令条目勾了自动关闭就用它：
+ * shell 一退出，渲染端已有的处理就会关掉终端面板；命令失败时 exit 不执行，shell 和面板都留着，报错还看得见。
+ * PowerShell 5.1 没有 &&，用 $? 判断（原生程序退出码非 0 时为假）；cmd 和各类 POSIX shell 都认 &&（fish 3.0 起也认）。
+ * 只有主进程知道实际用的是哪个 shell（设置里选「自动」时要探测），所以由这里给出，不让渲染端猜。
+ */
+function exitOnSuccess(label: string): string {
+    return label === "pwsh" || label === "powershell" ? "; if ($?) { exit }" : " && exit";
+}
+
+/** 新建会话；返回 id、会话标签（渲染端做 tab 名）和 exitSuffix（见 exitOnSuccess）。
  *  opts 带 cwd（工作目录：工作区文件夹或命令条目显式填的目录，缺省主目录）与 label（会话标签）；
  *  不传时 label 用 shell 标签 */
-export function spawnSession(opts?: { cwd?: string; label?: string }): { id: number; label: string } {
+export function spawnSession(opts?: { cwd?: string; label?: string }): {
+    id: number;
+    label: string;
+    exitSuffix: string;
+} {
     const shell = resolveShell();
     const id = nextId++;
     // 会话支持彩色输出，不能沿用启动进程禁色或精简终端的环境设置。
@@ -158,7 +172,7 @@ export function spawnSession(opts?: { cwd?: string; label?: string }): { id: num
         emit?.({ type: "exit", id });
     });
     sessions.set(id, p);
-    return { id, label: opts?.label || shell.label };
+    return { id, label: opts?.label || shell.label, exitSuffix: exitOnSuccess(shell.label) };
 }
 
 export function writeSession(id: number, data: string): boolean {
