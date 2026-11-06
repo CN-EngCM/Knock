@@ -144,6 +144,12 @@ export type FileSearchInput = z.infer<typeof fileSearchSchema>;
 // 打开/定位动作的目标路径（文件搜索结果的行级动作，不走 DB 条目）
 export const pathArgSchema = z.object({ path: z.string().trim().min(1).max(1000) });
 
+// 文件树读目录：根目录不由渲染端传，主进程按 workspaceId 自己查工作区文件夹，再校验 dir 在其内
+export const listDirSchema = z.object({
+    workspaceId: z.number().int().positive(),
+    dir: z.string().trim().min(1).max(1000),
+});
+
 // 原生文件选择框的目的（条目编辑「浏览…」）：app = 过滤可执行文件；path = 文件/文件夹皆可选
 export const pickFileSchema = z.object({ purpose: z.enum(["app", "path"]) });
 

@@ -49,6 +49,7 @@ export type {
 export type { ApiResult, ApiError } from "../../../main/server/api";
 export type { Shortcut } from "../../../main/server/shortcuts";
 export type { FileHit } from "../../../main/server/everything";
+export type { DirEntry } from "../../../main/server/fileTree";
 export type { TranslateResult } from "../../../main/server/youdao";
 export type { PtyEvent } from "../../../main/server/pty";
 export type { AiEvent } from "../../../main/server/ai";
@@ -124,6 +125,7 @@ export const api: MpApi = {
     openPath: (path) => invoke("openPath", path),
     revealPath: (path) => invoke("revealPath", path),
     statPath: (path) => invoke("statPath", path),
+    listDir: (workspaceId, dir) => invoke("listDir", workspaceId, dir),
     pickDirectory: (defaultPath) => invoke("pickDirectory", defaultPath),
     pickFile: (purpose) => invoke("pickFile", purpose),
     getDataDir: () => invoke("getDataDir"),

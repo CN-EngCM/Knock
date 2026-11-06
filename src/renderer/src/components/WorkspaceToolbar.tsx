@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Plus } from "lucide-react";
+import { useMemo, type RefObject } from "react";
+import { FolderTree, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Scopebar } from "@/components/ui/toolbar";
 import {
@@ -32,6 +32,11 @@ type Props = {
     workspaces: Workspace[];
     /** 工具栏所属工作区：移动菜单据此排除当前归属 */
     currentWorkspaceId: number;
+    /** 文件树浮层是否打开：按钮据此显示按下态 */
+    treeOpen: boolean;
+    /** 按钮的 ref 交给浮层：它的「点外面收起」要放过这个按钮 */
+    treeButtonRef: RefObject<HTMLButtonElement | null>;
+    onToggleTree: () => void;
     onCreate: () => void;
     onOpenFolder: (folder: string) => void;
     onOpen: (item: Item) => void;
@@ -53,6 +58,9 @@ export function WorkspaceToolbar({
     dirIds,
     workspaces,
     currentWorkspaceId,
+    treeOpen,
+    treeButtonRef,
+    onToggleTree,
     onCreate,
     onOpenFolder,
     onOpen,
@@ -71,6 +79,22 @@ export function WorkspaceToolbar({
             aria-label={t("ws.toolbar.title")}
             className="h-9 flex-none gap-1 overflow-hidden px-2"
         >
+            {/* 文件树入口固定在最左，不随条目滚动；工作区没有文件夹时没东西可看，不显示 */}
+            {folder && (
+                <Button
+                    ref={treeButtonRef}
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 flex-none"
+                    active={treeOpen}
+                    onClick={onToggleTree}
+                    title={t("ws.toolbar.fileTree")}
+                    aria-label={t("ws.toolbar.fileTree")}
+                >
+                    <FolderTree className="size-3.5" />
+                </Button>
+            )}
             {/* 工具条只有 36px：横向滚动条会占掉 10px，条目按钮取 24px 才不会被挤掉。
                 滑块保持可见，条目多了可以直接拖动滑块滚到末尾 */}
             <div className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden">

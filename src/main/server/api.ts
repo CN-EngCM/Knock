@@ -6,6 +6,7 @@ import { ensureSeeded as ensureWorkspacesSeeded } from "./workspaces";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { searchSpotlight } from "./spotlight";
+import { listDir, type DirEntry } from "./fileTree";
 import { applyHotkey, currentHotkey } from "../hotkey";
 import { launchItem } from "./launcher";
 import { getPinState as readPinState } from "./pin";
@@ -35,6 +36,7 @@ import {
     renameWorkspace,
     setActiveWorkspace,
     updateWorkspaceFolder,
+    workspaceFolder,
 } from "./workspaces";
 import { countNotes, createNote, deleteNote, listNotes, openImage as noteOpenImage, updateNote } from "./notes";
 import {
@@ -109,6 +111,7 @@ import {
     fileSearchSchema,
     fontPatchSchema,
     moveItemSchema,
+    listDirSchema,
     pathArgSchema,
     pickFileSchema,
     translateConfigPatchSchema,
@@ -250,6 +253,8 @@ export interface MpApi {
     /** 路径探测（搜索框直达动作）：只回答「存在与否 + 是否目录」；不存在走 not-found */
     statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
     /** 原生目录选择框（条目编辑与工作区文件夹用）：取消返回 null */
+    /** 文件树读一层目录：根目录由主进程按工作区 id 查，dir 必须在其内（越界 bad-request，目录没了 missing） */
+    listDir(workspaceId: number, dir: string): Promise<ApiResult<{ entries: DirEntry[] }>>;
     pickDirectory(defaultPath?: string): Promise<ApiResult<string | null>>;
     /** 原生文件选择框（条目编辑目标「浏览…」用）：app = 过滤可执行文件，path = 文件/文件夹皆可选；取消返回 null */
     pickFile(purpose: "app" | "path"): Promise<ApiResult<string | null>>;
@@ -673,6 +678,15 @@ export const apiHandlers: ApiHandlers = {
         } catch {
             return notFound;
         }
+    },
+
+    // 文件树：工作区不存在或没有文件夹按 not-found；范围校验与读取失败的分类见 fileTree.ts
+    listDir: async (workspaceId, dir) => {
+        const v = guard(listDirSchema, { workspaceId, dir });
+        if (!v) return badRequest;
+        const folder = workspaceFolder(v.workspaceId);
+        if (!folder) return notFound;
+        return listDir(folder, v.dir);
     },
 
     // 原生目录选择框（条目编辑与工作区文件夹）：取消 = data null，前端保持原值不动。

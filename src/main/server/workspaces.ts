@@ -35,6 +35,12 @@ export function ensureSeeded(): void {
     db.prepare("INSERT INTO workspaces (name, position, builtin) VALUES ('', 0, 1)").run();
 }
 
+/** 工作区的文件夹；工作区不存在、临时工作区或旧库没补过文件夹（空串）都返回 undefined */
+export function workspaceFolder(id: number): string | undefined {
+    const row = db.prepare("SELECT folder FROM workspaces WHERE id = ?").get(id) as { folder: string } | undefined;
+    return row?.folder || undefined;
+}
+
 /** 全量工作区（临时的恒在第一）+ 生效 id。activeWorkspace 无效时只读回落到临时的，不写回 */
 export function listWorkspaces(): ApiResult<{ workspaces: Workspace[]; activeId: number }> {
     const rows = db.prepare("SELECT * FROM workspaces ORDER BY builtin DESC, position, id").all() as WorkspaceRow[];

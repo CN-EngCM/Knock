@@ -171,11 +171,12 @@ export default function NotesTool() {
                 draft.addFiles(Array.from(e.dataTransfer.files));
             }}
         >
-            <div className="flex-none px-3 pt-3 pb-2">
+            {/* 输入区单独成一条浅色横带加底边线：输入框本身比面板底色还深，不加横带就和下面的列表混在一起 */}
+            <div className="flex-none border-b border-line bg-background px-3 py-3 shadow-sm">
                 <NoteInput draft={draft} textareaRef={textareaRef} saving={saving} onSave={() => void saveNew()} />
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto px-3 pb-3">
+            <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
                 {notes !== null && visible.length === 0 && (
                     <Empty className="py-8">
                         <EmptyHeader>

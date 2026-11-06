@@ -11,7 +11,7 @@ import {
     type CSSProperties,
 } from "react";
 import { toast } from "sonner";
-import { BringToFront, Moon, PanelLeft, Pin, PinOff, Plus, Settings2, Sun } from "lucide-react";
+import { ArrowUpToLine, Pin, Plus, Settings2 } from "lucide-react";
 import {
     api,
     onPtyEvent,
@@ -55,6 +55,8 @@ import { useI18n } from "./i18n/useI18n";
 // 工具区停靠容器懒加载：dockview 与面板组件都不进首屏 chunk；
 // 空态（从未开过面板）直接渲染 ToolHome，不挂 dock
 const DockZone = lazy(() => import("./components/DockZone").then((m) => ({ default: m.DockZone })));
+// 文件树浮层同样懒加载：图标映射表约 450KB，第一次点开文件树时才载入
+const FileTreePanel = lazy(() => import("./components/FileTreePanel"));
 
 // 工具内「打开设置」引导要直达的分节：工具有缺配置态就登记一行；
 // 未收录的 ToolId 保持旧行为落回翻译分节
@@ -75,26 +77,6 @@ type DialogState =
     | { kind: "ws-delete"; workspace: Workspace }
     // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
     | { kind: "settings"; section?: SectionId };
-
-// ── 布局状态：快捷启动列表显隐 ──
-// 与界面语言一样存 localStorage——布局偏好属于本机个人设置，不进 SQLite。
-type Layout = {
-    sidebarVisible: boolean;
-};
-
-function loadLayout(): Layout {
-    const fallback: Layout = { sidebarVisible: true };
-    try {
-        const raw = localStorage.getItem("mypage-layout");
-        if (!raw) return fallback;
-        const s = JSON.parse(raw) as Partial<Layout>;
-        return {
-            sidebarVisible: s.sidebarVisible !== false,
-        };
-    } catch {
-        return fallback;
-    }
-}
 
 /** 启动期只读一次的设置类 RPC：挂载即拉一次，失败保持 null（界面以 … 占位，不阻塞首帧） */
 function useRpcValue<T>(load: () => Promise<ApiResult<T>>): [T | null, Dispatch<SetStateAction<T | null>>] {
@@ -118,8 +100,13 @@ export default function App() {
     // 右键菜单据此决定要不要显示「在此打开终端」一组
     const [dirIds, setDirIds] = useState<ReadonlySet<number>>(() => new Set());
     const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
+    // 文件树浮层：记的是「为哪个工作区打开的」，换工作区（含删除当前工作区）后自然就不再匹配、等于收起；
+    // 面板挂载后常驻（关闭只是不渲染内容），这样各工作区的展开状态能在本次运行内留住
+    const [treeOpenFor, setTreeOpenFor] = useState<number | null>(null);
+    const [treeMounted, setTreeMounted] = useState(false);
+    const treeButtonRef = useRef<HTMLButtonElement>(null);
+    const treeAnchorRef = useRef<HTMLDivElement>(null);
     const [platform, setPlatform] = useState("");
-    const [layout, setLayout] = useState<Layout>(loadLayout);
     // 界面主题：初始值来自 index.html 首帧前套好的 <html> 类；切换经 settings 表持久化
     const [theme, setTheme] = useState<ThemeId>(currentTheme);
     // ── 工作区：每个工作区一套独立的停靠区实例，同一时刻只显示当前那个 ──
@@ -138,6 +125,16 @@ export default function App() {
     );
     // 移动菜单的目标：临时工作区没有工具栏，不作为目标
     const workspaceTargets = useMemo(() => (wsData?.workspaces ?? []).filter((w) => !w.builtin), [wsData]);
+    // 文件树只给有文件夹的普通工作区；断线态与工具栏一样不提供
+    const treeWorkspace =
+        serverOk !== false && activeWorkspace && !activeWorkspace.builtin && activeWorkspace.folder
+            ? { id: activeWorkspace.id, folder: activeWorkspace.folder }
+            : null;
+    const treeOpen = treeOpenFor !== null && treeOpenFor === treeWorkspace?.id;
+    function toggleTree() {
+        setTreeMounted(true);
+        setTreeOpenFor(treeOpen ? null : (treeWorkspace?.id ?? null));
+    }
     // 工作区文件夹是该工作区新终端与命令条目的默认工作目录；临时工作区、旧的无文件夹工作区
     // 返回 undefined，调用方据此回落到主目录
     function workspaceFolderOf(workspaceId: number | null): string | undefined {
@@ -149,6 +146,8 @@ export default function App() {
     // 切换工作区：先落库再重拉；停靠区实例常驻，切换只是换显示，不动任何面板与终端
     const switchWorkspace = useCallback(
         async (id: number) => {
+            // 切回原工作区时不能让浮层自己弹出来
+            setTreeOpenFor(null);
             const r = await api.setActiveWorkspace(id);
             if (!r.ok) {
                 toast.error(t("toast.error"));
@@ -224,15 +223,6 @@ export default function App() {
     const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
     // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈同步喂 termStore
     const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
-
-    // 快捷启动列表显隐变化后保存，下次启动沿用。
-    useEffect(() => {
-        try {
-            localStorage.setItem("mypage-layout", JSON.stringify(layout));
-        } catch {
-            /* 忽略存储失败 */
-        }
-    }, [layout]);
 
     // 全量拉取：个人工具规模下最简单的数据同步方式（每次变更后重拉）
     const refresh = useCallback(async () => {
@@ -451,10 +441,14 @@ export default function App() {
     // ── 文件夹条目：在应用内终端打开该目录（标签名取文件夹名），opencode / claude
     //    作为会话首条命令送入。目录不存在由 spawnSession 按 launch.missing 提示。
     //    名字按标签上限截断，ptySpawn 的 label 本身也有长度上限 ──
+    function openFolderInTerminal(folderPath: string, command?: "opencode" | "claude") {
+        const trimmed = folderPath.replace(/[\\/]+$/, "");
+        const folder = cleanTermTitle(trimmed.split(/[\\/]/).pop() || folderPath) ?? folderPath;
+        void spawnSession({ cwd: folderPath, label: command ? `${command} · ${folder}` : folder, command });
+    }
+    // 条目版只是取出 target 转给路径版；文件树右键菜单直接用路径版
     function openInTerminal(item: Item, command?: "opencode" | "claude") {
-        const trimmed = item.target.replace(/[\\/]+$/, "");
-        const folder = cleanTermTitle(trimmed.split(/[\\/]/).pop() || item.target) ?? item.target;
-        void spawnSession({ cwd: item.target, label: command ? `${command} · ${folder}` : folder, command });
+        openFolderInTerminal(item.target, command);
     }
 
     // ── 搜索框路径直达动作（打开文件 / 前往文件夹）：同样走 openPath，报错口径与 openItem 一致 ──
@@ -671,6 +665,15 @@ export default function App() {
         return () => cancelIdleCallback(id);
     }, []);
 
+    // 文件树面板闲时先挂上（没打开时什么都不画）：代码包提前加载并执行完，第一次点开不用现等，
+    // 面板也趁此后台预读工作区文件夹的第一层。实测冷启动后首次点开约 335ms，之后每次约 30ms，差的主要是代码包
+    const hasTreeWorkspace = treeWorkspace !== null;
+    useEffect(() => {
+        if (treeMounted || !hasTreeWorkspace) return;
+        const id = requestIdleCallback(() => setTreeMounted(true));
+        return () => cancelIdleCallback(id);
+    }, [treeMounted, hasTreeWorkspace]);
+
     // 工具内「打开设置」引导：分节跟随当前工作区实例里激活的工具面板（translate/ai 有缺配置态）
     function openSettingsForActiveTool() {
         const dock = activeWorkspaceId === null ? undefined : dockCtl.current.apis.get(activeWorkspaceId);
@@ -737,7 +740,7 @@ export default function App() {
                     trafficLights={false}
                     className="z-20 h-[61px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:flex-none [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:flex-1"
                     left={
-                        <span className="gan-drag flex h-full w-[178px] flex-none select-none items-center gap-2.5 pr-2">
+                        <span className="gan-drag flex h-full w-[178px] flex-none select-none items-center justify-center gap-2.5">
                             <span
                                 className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
                                 aria-hidden
@@ -747,8 +750,12 @@ export default function App() {
                                 <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
                                 <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
                             </span>
-                            <strong className="text-base font-medium tracking-wider">敲敲</strong>
-                            <span className="text-[11px] tracking-wide text-dim-foreground">Knock</span>
+                            <strong className="text-base font-medium tracking-wider">{t("app.brand")}</strong>
+                            {t("app.brandSub") !== "" && (
+                                <span className="text-[11px] tracking-wide text-dim-foreground">
+                                    {t("app.brandSub")}
+                                </span>
+                            )}
                         </span>
                     }
                     center={
@@ -778,7 +785,7 @@ export default function App() {
                                         onClick={togglePin}
                                         aria-label={t(pinned ? "btn.unpin" : "btn.pin")}
                                     >
-                                        {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+                                        <Pin className="size-4" />
                                     </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>{t(pinned ? "btn.unpin" : "btn.pin")}</TooltipContent>
@@ -797,42 +804,11 @@ export default function App() {
                                             onClick={toggleTopmost}
                                             aria-label={topmostLabel}
                                         >
-                                            <BringToFront className="size-4" />
+                                            <ArrowUpToLine className="size-4" />
                                         </Button>
                                     </span>
                                 </TooltipTrigger>
                                 <TooltipContent>{topmostLabel}</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-7"
-                                        active={layout.sidebarVisible}
-                                        onClick={() => setLayout((l) => ({ ...l, sidebarVisible: !l.sidebarVisible }))}
-                                        aria-label={t("btn.sidebar")}
-                                    >
-                                        <PanelLeft className="size-4" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>{t("btn.sidebar")}</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        className="size-7"
-                                        onClick={() => void switchTheme(theme === "dark" ? "light" : "dark")}
-                                        aria-label={t("btn.theme")}
-                                    >
-                                        {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>{t("btn.theme")}</TooltipContent>
                             </Tooltip>
                             <Tooltip>
                                 <TooltipTrigger asChild>
@@ -855,60 +831,58 @@ export default function App() {
 
                 {/* 两区工作区 */}
                 <div className="relative z-10 flex min-h-0 flex-1">
-                    {layout.sidebarVisible && (
-                        <aside className="app-no-drag flex min-h-0 w-[246px] flex-none flex-col bg-background">
-                            {/* 工作区块固定在侧栏顶部：侧栏隐藏时跟着消失，不另做入口 */}
-                            <WorkspaceBar
-                                workspaces={wsData?.workspaces ?? []}
-                                activeId={activeWorkspaceId}
-                                panelCounts={panelCounts}
-                                onSwitch={(id) => void switchWorkspace(id)}
-                                onCreate={openCreateWorkspace}
-                                onRename={(workspace) => setDialog({ kind: "ws-rename", workspace })}
-                                onChangeFolder={(workspace) => void changeWorkspaceFolder(workspace)}
-                                onDelete={(workspace) => setDialog({ kind: "ws-delete", workspace })}
-                            />
+                    <aside className="app-no-drag flex min-h-0 w-[246px] flex-none flex-col bg-background">
+                        {/* 工作区块固定在侧栏顶部 */}
+                        <WorkspaceBar
+                            workspaces={wsData?.workspaces ?? []}
+                            activeId={activeWorkspaceId}
+                            panelCounts={panelCounts}
+                            onSwitch={(id) => void switchWorkspace(id)}
+                            onCreate={openCreateWorkspace}
+                            onRename={(workspace) => setDialog({ kind: "ws-rename", workspace })}
+                            onChangeFolder={(workspace) => void changeWorkspaceFolder(workspace)}
+                            onDelete={(workspace) => setDialog({ kind: "ws-delete", workspace })}
+                        />
 
-                            <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
-                                <span className="text-xs font-medium">{t("side.title")}</span>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-7"
-                                    onClick={() => setDialog({ kind: "item-create", workspaceId: null })}
-                                    title={t("side.addItem")}
-                                    aria-label={t("side.addItem")}
-                                >
-                                    <Plus className="size-3.5" />
-                                </Button>
-                            </div>
+                        <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
+                            <span className="text-xs font-medium">{t("side.title")}</span>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-7"
+                                onClick={() => setDialog({ kind: "item-create", workspaceId: null })}
+                                title={t("side.addItem")}
+                                aria-label={t("side.addItem")}
+                            >
+                                <Plus className="size-3.5" />
+                            </Button>
+                        </div>
 
-                            {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器） */}
-                            <div className="min-h-0 flex-1">
-                                {globalItems.length === 0 ? (
-                                    /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
-                                    <Empty className="px-3 py-8">
-                                        <EmptyHeader>
-                                            <EmptyTitle>{t("side.empty")}</EmptyTitle>
-                                            <EmptyDescription>{t("side.emptyHint")}</EmptyDescription>
-                                        </EmptyHeader>
-                                    </Empty>
-                                ) : (
-                                    <LauncherList
-                                        items={globalItems}
-                                        dirIds={dirIds}
-                                        workspaces={workspaceTargets}
-                                        onOpenInTerminal={openInTerminal}
-                                        onOpen={openItem}
-                                        onEditItem={(item) => setDialog({ kind: "item-edit", item })}
-                                        onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
-                                        onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
-                                    />
-                                )}
-                            </div>
-                        </aside>
-                    )}
+                        {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器） */}
+                        <div className="min-h-0 flex-1">
+                            {globalItems.length === 0 ? (
+                                /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响 */
+                                <Empty className="px-3 py-8">
+                                    <EmptyHeader>
+                                        <EmptyTitle>{t("side.empty")}</EmptyTitle>
+                                        <EmptyDescription>{t("side.emptyHint")}</EmptyDescription>
+                                    </EmptyHeader>
+                                </Empty>
+                            ) : (
+                                <LauncherList
+                                    items={globalItems}
+                                    dirIds={dirIds}
+                                    workspaces={workspaceTargets}
+                                    onOpenInTerminal={openInTerminal}
+                                    onOpen={openItem}
+                                    onEditItem={(item) => setDialog({ kind: "item-edit", item })}
+                                    onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
+                                    onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
+                                />
+                            )}
+                        </div>
+                    </aside>
 
                     {/* 停靠区四周 1px 描边取当前工作区的标识色：整块区域的归属靠这圈线表达，
                         侧栏原来那条右边线由它兼任，所以 aside 去掉了 border-r */}
@@ -937,6 +911,9 @@ export default function App() {
                                 dirIds={dirIds}
                                 workspaces={workspaceTargets}
                                 currentWorkspaceId={activeWorkspace.id}
+                                treeOpen={treeOpen}
+                                treeButtonRef={treeButtonRef}
+                                onToggleTree={toggleTree}
                                 onCreate={() => setDialog({ kind: "item-create", workspaceId: activeWorkspace.id })}
                                 onOpenFolder={(folder) => void openLocalPath(folder)}
                                 onOpen={openItem}
@@ -946,7 +923,7 @@ export default function App() {
                                 onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
                             />
                         )}
-                        <div className="flex min-h-0 flex-1 flex-col">
+                        <div ref={treeAnchorRef} className="flex min-h-0 flex-1 flex-col">
                             {serverOk === false ? (
                                 /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
                                 <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
@@ -986,6 +963,25 @@ export default function App() {
                         </div>
                     </main>
                 </div>
+
+                {treeMounted && (
+                    <Suspense fallback={null}>
+                        <FileTreePanel
+                            open={treeOpen}
+                            onOpenChange={(open) => setTreeOpenFor(open ? activeWorkspaceId : null)}
+                            workspace={treeWorkspace}
+                            stroke={dockStroke}
+                            light={theme === "light"}
+                            anchorRef={treeAnchorRef}
+                            toggleRef={treeButtonRef}
+                            onOpenPath={(path) => void openLocalPath(path)}
+                            onOpenFolderInTerminal={(path) => openFolderInTerminal(path)}
+                            onChangeFolder={() => {
+                                if (activeWorkspace) void changeWorkspaceFolder(activeWorkspace);
+                            }}
+                        />
+                    </Suspense>
+                )}
 
                 {/* ── 弹窗区 ── */}
                 <NameDialog

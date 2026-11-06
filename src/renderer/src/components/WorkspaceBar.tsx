@@ -12,7 +12,7 @@ const MIN_LIST_HEIGHT = 32;
 const DEFAULT_LIST_HEIGHT = 192;
 const MAX_LIST_HEIGHT_RATIO = 0.7;
 
-// 布局偏好和 sidebarVisible 一样存 localStorage，不进 SQLite：高度只对本机这块侧栏有意义，
+// 布局偏好存 localStorage，不进 SQLite：高度只对本机这块侧栏有意义，
 // 也没必要跟工作区数据一起备份。
 function loadListHeight(): number {
     try {

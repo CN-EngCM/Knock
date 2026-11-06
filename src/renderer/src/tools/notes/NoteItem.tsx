@@ -182,7 +182,7 @@ export function NoteItem({ note, onDelete, onChanged }: Props) {
                                 src={`mpimg://note/${img.id}`}
                                 alt=""
                                 loading="lazy"
-                                className="max-h-60 max-w-full cursor-pointer rounded-md border border-line object-contain"
+                                className="max-h-[120px] max-w-full cursor-pointer rounded-md border border-line object-contain"
                                 onClick={() => void openImage(img.id)}
                             />
                             <TipButton
