@@ -215,6 +215,16 @@ export default function App() {
         await refreshWorkspaces();
     }
 
+    // 改标识色：null = 恢复自动取色。成功后重拉列表，侧栏色条与停靠区描边随数据一起换
+    async function changeWorkspaceColor(workspace: Workspace, color: string | null) {
+        const r = await api.setWorkspaceColor(workspace.id, color);
+        if (!r.ok) {
+            toast.error(t("toast.error"));
+            return;
+        }
+        await refreshWorkspaces();
+    }
+
     // 工具区停靠容器：首次打开面板时挂载（懒加载 dockview），此后常驻——面板清空
     // 由 dock 空态水印（ToolHome）兜底。已开面板是纯运行时状态，不落盘不还原（用户决策）；
     // 格子的排法单独记在 lib/dockLayout.ts，启动时还原成一排空格子
@@ -792,14 +802,15 @@ export default function App() {
 
                 {/* Titlebar 根节点即 gan-drag 拖拽区；搜索井、右侧按钮在 no-drag 插槽内。
                     左槽单独改回 drag 并拉满行高，保住原「品牌区可拖窗」的手感；
-                    overflow-visible 让搜索下拉能悬出 61px 顶栏。 */}
+                    中槽限宽 + mx-auto：搜索框不必铺满整行，在品牌与右侧按钮之间居中；
+                    overflow-visible 让搜索下拉能悬出 40px 顶栏。 */}
                 <Titlebar
                     role="banner"
                     windowControls="none"
                     trafficLights={false}
-                    className="z-20 h-[61px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:flex-none [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:flex-1"
+                    className="z-20 h-[40px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:flex-none [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:mx-auto [&>[data-slot=titlebar-center]]:max-w-[540px] [&>[data-slot=titlebar-center]]:flex-1"
                     left={
-                        <span className="gan-drag flex h-full w-[178px] flex-none select-none items-center justify-center gap-2.5">
+                        <span className="gan-drag flex h-full flex-none select-none items-center gap-2.5">
                             <span
                                 className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
                                 aria-hidden
@@ -818,8 +829,9 @@ export default function App() {
                         </span>
                     }
                     center={
-                        /* 34px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px） */
-                        <TitlebarWell className="relative h-[34px] flex-row px-2.5 overflow-visible">
+                        /* 28px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px）。
+                           再矮会挤到素材 chip（约 20px，井上下内边距各 4px） */
+                        <TitlebarWell className="relative h-[28px] flex-row px-2.5 overflow-visible">
                             <SearchBox
                                 items={globalItems}
                                 dirIds={dirIds}
@@ -902,6 +914,7 @@ export default function App() {
                             onCreate={openCreateWorkspace}
                             onRename={(workspace) => setDialog({ kind: "ws-rename", workspace })}
                             onChangeFolder={(workspace) => void changeWorkspaceFolder(workspace)}
+                            onChangeColor={(workspace, color) => void changeWorkspaceColor(workspace, color)}
                             onDelete={(workspace) => setDialog({ kind: "ws-delete", workspace })}
                         />
 

@@ -1,9 +1,18 @@
 import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuSeparator,
+    ContextMenuSub,
+    ContextMenuSubContent,
+    ContextMenuSubTrigger,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import type { Workspace } from "@/api/client";
-import { workspaceColor, workspaceStroke } from "@/lib/workspaceColor";
+import { WORKSPACE_PALETTE, workspaceColor, workspaceStroke } from "@/lib/workspaceColor";
 import { useI18n } from "@/i18n/useI18n";
 
 // 列表高度（不含标题行）：最小一行，默认六行；上限按侧栏的实时高度算。
@@ -46,6 +55,8 @@ type Props = {
     onCreate: () => void;
     onRename: (workspace: Workspace) => void;
     onChangeFolder: (workspace: Workspace) => void;
+    /** color 为 null = 恢复按 id 自动取色 */
+    onChangeColor: (workspace: Workspace, color: string | null) => void;
     onDelete: (workspace: Workspace) => void;
 };
 
@@ -62,6 +73,7 @@ export function WorkspaceBar({
     onCreate,
     onRename,
     onChangeFolder,
+    onChangeColor,
     onDelete,
 }: Props) {
     const { t } = useI18n();
@@ -171,6 +183,7 @@ export function WorkspaceBar({
                         onSwitch={onSwitch}
                         onRename={onRename}
                         onChangeFolder={onChangeFolder}
+                        onChangeColor={onChangeColor}
                         onDelete={onDelete}
                     />
                 ))}
@@ -196,10 +209,20 @@ type RowProps = {
     onSwitch: (id: number) => void;
     onRename: (workspace: Workspace) => void;
     onChangeFolder: (workspace: Workspace) => void;
+    onChangeColor: (workspace: Workspace, color: string | null) => void;
     onDelete: (workspace: Workspace) => void;
 };
 
-function WorkspaceRow({ workspace, active, count, onSwitch, onRename, onChangeFolder, onDelete }: RowProps) {
+function WorkspaceRow({
+    workspace,
+    active,
+    count,
+    onSwitch,
+    onRename,
+    onChangeFolder,
+    onChangeColor,
+    onDelete,
+}: RowProps) {
     const { t } = useI18n();
     const color = workspaceColor(workspace);
     // builtin 的名字在库里存的是空串，显示名必须走 i18n
@@ -248,6 +271,38 @@ function WorkspaceRow({ workspace, active, count, onSwitch, onRename, onChangeFo
             <ContextMenuContent>
                 <ContextMenuItem onClick={() => onRename(workspace)}>{t("ws.rename")}</ContextMenuItem>
                 <ContextMenuItem onClick={() => onChangeFolder(workspace)}>{t("ws.changeFolder")}</ContextMenuItem>
+                <ContextMenuSub>
+                    <ContextMenuSubTrigger>{t("ws.color")}</ContextMenuSubTrigger>
+                    <ContextMenuSubContent>
+                        {/* 两排五个色块；当前生效的颜色（含自动取到的那格）外圈描一圈。
+                            用 ContextMenuItem 当色块，键盘方向键与选中后自动收起菜单都是现成的 */}
+                        <div className="grid grid-cols-5 gap-1 p-1">
+                            {WORKSPACE_PALETTE.map((swatch) => (
+                                <ContextMenuItem
+                                    key={swatch}
+                                    className="size-6 justify-center p-0"
+                                    aria-label={swatch}
+                                    onClick={() => onChangeColor(workspace, swatch)}
+                                >
+                                    <span
+                                        className={`size-3.5 rounded-full ${
+                                            swatch === color ? "outline-2 outline-offset-2 outline-foreground" : ""
+                                        }`}
+                                        style={{ backgroundColor: swatch }}
+                                    />
+                                </ContextMenuItem>
+                            ))}
+                        </div>
+                        <ContextMenuSeparator />
+                        {/* 没手选过时本来就是自动取色，恢复默认无事可做 */}
+                        <ContextMenuItem
+                            disabled={workspace.color === null}
+                            onClick={() => onChangeColor(workspace, null)}
+                        >
+                            {t("ws.colorReset")}
+                        </ContextMenuItem>
+                    </ContextMenuSubContent>
+                </ContextMenuSub>
                 <ContextMenuItem variant="destructive" onClick={() => onDelete(workspace)}>
                     {t("common.delete")}
                 </ContextMenuItem>

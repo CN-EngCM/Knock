@@ -22,6 +22,14 @@ export const updateWorkspaceFolderSchema = z.object({
     id: z.number().int().positive(),
     folder: workspaceFolderSchema,
 });
+// 改颜色：null = 恢复自动取色。只查 #rrggbb 格式；调色板只在渲染端，这里不认具体是哪一格
+export const setWorkspaceColorSchema = z.object({
+    id: z.number().int().positive(),
+    color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .nullable(),
+});
 // 删除、设为当前只认 id
 export const workspaceIdSchema = z.object({ id: z.number().int().positive() });
 
@@ -404,6 +412,10 @@ export type HotkeyId = (typeof HOTKEY_IDS)[number];
 
 export const hotkeySchema = z.object({ hotkey: z.enum(HOTKEY_IDS) });
 
+// 前台程序屏蔽名单：这些程序在最前面时呼出热键不响应。条目是程序文件名，
+// 具体整理规则（小写、补 .exe、去重）在 hotkey.ts 的 normalizeBlockApps，这里只限长防乱写
+export const hotkeyBlockSchema = z.array(z.string().max(260)).max(200);
+
 // ── RPC 输入类型（由 zod schema 推导，主进程处理器与渲染进程共用）──
 export type CreateItemInput = z.infer<typeof createItemSchema>;
 export type UpdateItemInput = z.infer<typeof updateItemSchema>;
@@ -411,10 +423,6 @@ export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 // ── 行类型（与 SQLite 查询结果一一对应，前端经类型化 RPC 复用）──
 
 export type Kind = z.infer<typeof kindSchema>;
-
-// 前台程序屏蔽名单：这些程序在最前面时呼出热键不响应。条目是程序文件名，
-// 具体整理规则（小写、补 .exe、去重）在 hotkey.ts 的 normalizeBlockApps，这里只限长防乱写
-export const hotkeyBlockSchema = z.array(z.string().max(260)).max(200);
 
 export type Item = {
     id: number;
@@ -437,6 +445,8 @@ export type Workspace = {
     /** 自带的「临时工作区」：显示名走渲染端 i18n（库里存空串），不可删除/改名，恒排第一 */
     builtin: boolean;
     position: number;
+    /** 用户选的标识色（#rrggbb）；null = 渲染端按 id 自动取色 */
+    color: string | null;
 };
 
 export type Expert = {

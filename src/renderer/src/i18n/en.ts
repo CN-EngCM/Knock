@@ -525,6 +525,8 @@ export const en: Record<MessageKey, string> = {
     "ws.folderPlaceholder": "Pick an existing folder",
     "ws.rename": "Rename",
     "ws.changeFolder": "Change folder",
+    "ws.color": "Color",
+    "ws.colorReset": "Reset to default",
     "ws.deleteTitle": "Delete workspace",
     "ws.deleteHint": "Terminals open in this workspace will be ended and its panels closed.",
     "ws.deleteItemsPrefix": "Also deletes ",

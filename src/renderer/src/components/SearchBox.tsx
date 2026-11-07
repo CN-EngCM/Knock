@@ -269,7 +269,7 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
     }
 
     return (
-        /* 搜索行：井体（34px、内边距、聚焦底色）由外层 TitlebarWell 提供，
+        /* 搜索行：井体（28px、内边距、聚焦底色）由外层 TitlebarWell 提供，
            这里只保留布局；下拉用 absolute 锚定到 TitlebarWell（App 的 center 槽）。 */
         <div className="flex min-w-0 flex-1 items-center gap-2">
             <Search className="flex-none text-muted-foreground" size={15} aria-hidden />

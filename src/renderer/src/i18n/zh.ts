@@ -514,6 +514,8 @@ export const zh = {
     "ws.folderPlaceholder": "选择一个现存文件夹",
     "ws.rename": "重命名",
     "ws.changeFolder": "修改文件夹",
+    "ws.color": "颜色",
+    "ws.colorReset": "恢复默认",
     "ws.deleteTitle": "删除工作区",
     "ws.deleteHint": "该工作区里打开的终端会被结束，面板会被关闭。",
     "ws.deleteItemsPrefix": "会同时删除 ",

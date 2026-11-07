@@ -37,6 +37,7 @@ import {
     listWorkspaces,
     renameWorkspace,
     setActiveWorkspace,
+    setWorkspaceColor,
     updateWorkspaceFolder,
     workspaceFolder,
 } from "./workspaces";
@@ -119,11 +120,12 @@ import {
     translateConfigPatchSchema,
     translateSchema,
     HOTKEY_IDS,
-    ptyResizeSchema,
     hotkeyBlockSchema,
+    ptyResizeSchema,
     ptySpawnSchema,
     ptyWriteSchema,
     renameWorkspaceSchema,
+    setWorkspaceColorSchema,
     termPatchSchema,
     themeSchema,
     toolAliasPatchSchema,
@@ -203,6 +205,8 @@ export interface MpApi {
     getWorkspaces(): Promise<ApiResult<{ workspaces: Workspace[]; activeId: number }>>;
     createWorkspace(name: string, folder: string): Promise<ApiResult<{ id: number }>>;
     renameWorkspace(id: number, name: string): Promise<ApiResult<null>>;
+    /** 改工作区标识色（#rrggbb）；null = 恢复按 id 自动取色。临时工作区不可改 */
+    setWorkspaceColor(id: number, color: string | null): Promise<ApiResult<null>>;
     updateWorkspaceFolder(id: number, folder: string): Promise<ApiResult<null>>;
     deleteWorkspace(id: number): Promise<ApiResult<null>>;
     setActiveWorkspace(id: number): Promise<ApiResult<null>>;
@@ -216,13 +220,13 @@ export interface MpApi {
     setAutostart(enabled: boolean): Promise<ApiResult<{ enabled: boolean }>>;
     getHotkey(): Promise<ApiResult<{ hotkey: HotkeyId; presets: readonly HotkeyId[] }>>;
     setHotkey(hotkey: HotkeyId): Promise<ApiResult<{ hotkey: HotkeyId }>>;
+    // 屏蔽名单：这些程序（文件名，如 game.exe）在前台时呼出热键不响应；set 返回整理后的名单
+    getHotkeyBlock(): Promise<ApiResult<{ apps: string[] }>>;
+    setHotkeyBlock(apps: string[]): Promise<ApiResult<{ apps: string[] }>>;
     listShortcuts(refresh: boolean): Promise<ApiResult<{ shortcuts: Shortcut[] }>>;
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
     // opts 带 cwd 与 label：工作区里开终端时 cwd 取工作区文件夹；命令条目有显式工作目录时传它，
     // 留空则不传。不传时 cwd 缺省主目录、label 用 shell 标签。
-    // 屏蔽名单：这些程序（文件名，如 game.exe）在前台时呼出热键不响应；set 返回整理后的名单
-    getHotkeyBlock(): Promise<ApiResult<{ apps: string[] }>>;
-    setHotkeyBlock(apps: string[]): Promise<ApiResult<{ apps: string[] }>>;
     // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
     // exitSuffix：拼在命令后面、让 shell 在命令成功后自己退出的那段文字（各 shell 写法不同，
     // 只有主进程知道实际用的是哪个）；命令条目勾了「自动关闭」时前端才用它
@@ -422,6 +426,11 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         return renameWorkspace(v.id, v.name);
     },
+    setWorkspaceColor: async (id, color) => {
+        const v = guard(setWorkspaceColorSchema, { id, color });
+        if (!v) return badRequest;
+        return setWorkspaceColor(v.id, v.color);
+    },
     updateWorkspaceFolder: async (id, folder) => {
         const v = guard(updateWorkspaceFolderSchema, { id, folder });
         if (!v) return badRequest;
@@ -533,6 +542,12 @@ export const apiHandlers: ApiHandlers = {
         setSetting("hotkey", hotkey);
         return { ok: true, data: { hotkey: currentHotkey() } };
     },
+    getHotkeyBlock: async () => ({ ok: true, data: { apps: readBlockApps() } }),
+    setHotkeyBlock: async (apps) => {
+        const v = guard(hotkeyBlockSchema, apps);
+        if (!v) return badRequest;
+        return { ok: true, data: { apps: writeBlockApps(v) } };
+    },
 
     // Windows 快捷方式列表（添加应用时的辅助选择器；其余平台返回空数组）
     listShortcuts: async (refresh) => {
@@ -542,12 +557,6 @@ export const apiHandlers: ApiHandlers = {
 
     // ── 终端会话：spawn 失败（shell 丢失等）按 not-found 语义返回；
     //    cwd 指定但目录不存在 → missing 带路径返回，不建会话 ──
-    getHotkeyBlock: async () => ({ ok: true, data: { apps: readBlockApps() } }),
-    setHotkeyBlock: async (apps) => {
-        const v = guard(hotkeyBlockSchema, apps);
-        if (!v) return badRequest;
-        return { ok: true, data: { apps: writeBlockApps(v) } };
-    },
     ptySpawn: async (opts) => {
         const v = guard(ptySpawnSchema, opts ?? {});
         if (!v) return badRequest;

@@ -12,11 +12,25 @@ import type { ApiResult } from "./api";
 
 const ACTIVE_KEY = "activeWorkspace";
 
-type WorkspaceRow = { id: number; name: string; folder: string; builtin: number; position: number };
+type WorkspaceRow = {
+    id: number;
+    name: string;
+    folder: string;
+    builtin: number;
+    position: number;
+    color: string | null;
+};
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界断言成行类型（同 experts.ts 约定）
 function toWorkspace(row: WorkspaceRow): Workspace {
-    return { id: row.id, name: row.name, folder: row.folder, builtin: row.builtin !== 0, position: row.position };
+    return {
+        id: row.id,
+        name: row.name,
+        folder: row.folder,
+        builtin: row.builtin !== 0,
+        position: row.position,
+        color: row.color,
+    };
 }
 
 /** 工作区文件夹必须是现存目录：失效路径在启动/开终端时另有提示，创建与修改阶段直接拒绝 */
@@ -69,6 +83,16 @@ export function renameWorkspace(id: number, name: string): ApiResult<null> {
     if (!row) return { ok: false, error: { kind: "not-found" } };
     if (row.builtin !== 0) return { ok: false, error: { kind: "bad-request" } };
     db.prepare("UPDATE workspaces SET name = ? WHERE id = ?").run(name, id);
+    return { ok: true, data: null };
+}
+
+// 改标识色：null = 恢复自动。临时工作区的灰色是为了和用户建的区分开，不给改
+export function setWorkspaceColor(id: number, color: string | null): ApiResult<null> {
+    const row = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(id) as { builtin: number } | undefined;
+    if (!row) return { ok: false, error: { kind: "not-found" } };
+    if (row.builtin !== 0) return { ok: false, error: { kind: "bad-request" } };
+    // 统一存小写，避免同一个颜色因大小写不同被当成两个
+    db.prepare("UPDATE workspaces SET color = ? WHERE id = ?").run(color?.toLowerCase() ?? null, id);
     return { ok: true, data: null };
 }
 

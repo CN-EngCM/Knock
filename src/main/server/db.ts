@@ -56,7 +56,8 @@ db.exec(`
     name     TEXT    NOT NULL,
     folder   TEXT    NOT NULL DEFAULT '',  -- 工作区文件夹；临时工作区为空串
     position INTEGER NOT NULL DEFAULT 0,
-    builtin  INTEGER NOT NULL DEFAULT 0
+    builtin  INTEGER NOT NULL DEFAULT 0,
+    color    TEXT                          -- 用户选的标识色 #rrggbb；NULL = 按 id 自动取色
   );
 
   CREATE INDEX IF NOT EXISTS idx_workspaces_pos ON workspaces(position);
@@ -133,6 +134,10 @@ db.exec(`
 const workspaceCols = db.prepare("PRAGMA table_info(workspaces)").all() as { name: string }[];
 if (!workspaceCols.some((c) => c.name === "folder")) {
     db.exec("ALTER TABLE workspaces ADD COLUMN folder TEXT NOT NULL DEFAULT ''");
+}
+// color 列同理后加：旧工作区保持 NULL，颜色仍按 id 自动取，升级后一个都不变
+if (!workspaceCols.some((c) => c.name === "color")) {
+    db.exec("ALTER TABLE workspaces ADD COLUMN color TEXT");
 }
 
 // 存量库幂等迁移：effort 列是后加的，CREATE IF NOT EXISTS 对已存在的表不补列，

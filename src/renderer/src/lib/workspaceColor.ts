@@ -1,8 +1,10 @@
 // ── 工作区标识色 ──
 // 侧栏标签、选中描边与停靠区边框共用同一份取色规则：一处定义，三处引用，
 // 避免调色板散落在组件里各写一份、改色时漏掉某处。
-// 普通工作区按 id 取色而不是按列表下标——删掉一个工作区后，其余工作区的颜色不会跟着变。
-const PALETTE = [
+// 没手选颜色的普通工作区按 id 取色而不是按列表下标——删掉一个工作区后，其余工作区的颜色不会跟着变。
+// 用户手选的颜色存在工作区行的 color 里（存色值不存下标，调色板日后增删也不影响已选的）；
+// 右键菜单里的可选色块就是这份调色板。
+export const WORKSPACE_PALETTE = [
     "#ff2d78",
     "#ff7a1a",
     "#f5a300",
@@ -18,11 +20,12 @@ const PALETTE = [
 // 自带的临时工作区不参与调色循环：中性灰让它与用户建的工作区一眼区分开
 const BUILTIN_COLOR = "var(--muted-foreground)";
 
-/** 只依赖取色需要的两个字段，调用方不必传整行工作区数据 */
-type ColorSource = { id: number; builtin: boolean };
+/** 只依赖取色需要的字段，调用方不必传整行工作区数据 */
+type ColorSource = { id: number; builtin: boolean; color: string | null };
 
 export function workspaceColor(workspace: ColorSource): string {
-    return workspace.builtin ? BUILTIN_COLOR : PALETTE[workspace.id % PALETTE.length];
+    if (workspace.builtin) return BUILTIN_COLOR;
+    return workspace.color ?? WORKSPACE_PALETTE[workspace.id % WORKSPACE_PALETTE.length];
 }
 
 // 描边用同色半透明：实色 1px 在高饱和色下会显得生硬，半透明叠在底色上更接近「染了一层光」。
