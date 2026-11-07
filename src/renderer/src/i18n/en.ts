@@ -31,6 +31,9 @@ export const en: Record<MessageKey, string> = {
     "settings.hotkey.ctrl-alt-space": "Ctrl+Alt+Space",
     "settings.hotkey.conflict": "Hotkey already taken by another app, keeping the previous one",
     "settings.hotkey.saved": "Hotkey updated",
+    "settings.hotkeyBlock": "Blocked apps",
+    "settings.hotkeyBlockHint":
+        "The summon hotkey does nothing while one of these apps is in front (e.g. a fullscreen game, so a slip of the finger won't pop it up). One program file name per line, like game.exe; you can find it on the Details tab of Task Manager.",
     "settings.clip": "Auto-paste window",
     "settings.clipHint":
         "On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)",

@@ -29,6 +29,9 @@ export const zh = {
     "settings.hotkey.ctrl-alt-space": "Ctrl+Alt+Space",
     "settings.hotkey.conflict": "该热键被其他程序占用，已保持原热键",
     "settings.hotkey.saved": "热键已更新",
+    "settings.hotkeyBlock": "屏蔽程序",
+    "settings.hotkeyBlockHint":
+        "这些程序在最前面时，呼出热键不响应（比如全屏游戏，免得手滑弹出来）。一行一个程序文件名，如 game.exe，可在任务管理器的「详细信息」页签里看到。",
     "settings.clip": "自动粘贴时限",
     "settings.clipHint": "呼出时，时限内复制的文本自动填入搜索框（秒；0 = 关闭）",
     "settings.info": "运行环境",

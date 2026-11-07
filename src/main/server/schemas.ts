@@ -412,6 +412,10 @@ export type UpdateItemInput = z.infer<typeof updateItemSchema>;
 
 export type Kind = z.infer<typeof kindSchema>;
 
+// 前台程序屏蔽名单：这些程序在最前面时呼出热键不响应。条目是程序文件名，
+// 具体整理规则（小写、补 .exe、去重）在 hotkey.ts 的 normalizeBlockApps，这里只限长防乱写
+export const hotkeyBlockSchema = z.array(z.string().max(260)).max(200);
+
 export type Item = {
     id: number;
     kind: Kind;

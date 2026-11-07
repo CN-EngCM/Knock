@@ -11,7 +11,7 @@ import { setAiSink } from "./server/ai";
 import { serveCandidate, serveImage } from "./server/gallery";
 import { serveNoteImage } from "./server/notes";
 import { freshClipboardText, startClipWatch } from "./clipWatch";
-import { initHotkey, shutdownHotkey, unlockForeground } from "./hotkey";
+import { initHotkey, isBlockedByForeground, shutdownHotkey, unlockForeground } from "./hotkey";
 import { loadWindowState, trackWindowState } from "./windowState";
 import { initPin, isPinned, isTopmost, setPinned, setTopmost } from "./server/pin";
 import { createTray } from "./tray";
@@ -145,7 +145,7 @@ export function startApp(): void {
         toggleWindow,
         showWindow,
     );
-    initHotkey(toggleWindow);
+    initHotkey(toggleByHotkey);
 
     app.on("before-quit", () => {
         quitting = true;
@@ -281,15 +281,29 @@ function hideMainWindow(): void {
     win?.hide();
 }
 
-// 热键切换：未钉住时可见即藏（不判 isFocused——激活被拒的僵死窗口也能被收掉）；
-// 钉住时窗口是工作台，已在最前就不动，藏起/最小化/失焦才呼出
-function toggleWindow(): void {
+// 显隐切换（热键与托盘共用）：未钉住时可见即藏（不判 isFocused——激活被拒的僵死窗口也能被收掉）；
+// 钉住时窗口是工作台，已在最前就不动，藏起/最小化/失焦才呼出。
+// summon 是「呼出」动作，由调用方决定要不要加限制，「收起」始终不受限
+function toggle(summon: () => void): void {
     if (isPinned()) {
         if (nativeDialogOpen()) return;
         if (win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()) return;
-        showWindow();
+        summon();
         return;
     }
     if (win && win.isVisible() && !win.isMinimized()) hideMainWindow();
-    else showWindow();
+    else summon();
+}
+
+/** 托盘点击：用户主动操作，不受屏蔽名单约束 */
+function toggleWindow(): void {
+    toggle(showWindow);
+}
+
+/** 呼出热键：前台是屏蔽名单里的程序（比如全屏游戏）时，只拦「呼出」，收起照常。
+ *  被拦时一声不吭——任何提示都会再盖到游戏上 */
+function toggleByHotkey(): void {
+    toggle(() => {
+        if (!isBlockedByForeground()) showWindow();
+    });
 }

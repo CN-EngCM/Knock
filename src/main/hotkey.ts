@@ -1,6 +1,7 @@
 import { globalShortcut, systemPreferences, dialog } from "electron";
 import { uIOhook, UiohookKey } from "uiohook-napi";
 import { getSetting, setSetting } from "./server/util/settings";
+import { foregroundExeName } from "./server/foreground";
 import type { HotkeyId } from "./server/schemas";
 
 // ── 全局呼出热键 ──
@@ -160,6 +161,46 @@ export function currentHotkey(): HotkeyId {
 /** 退出前反注册，否则组合键注册会残留在系统里直到进程死亡 */
 export function shutdownHotkey(): void {
     deactivate();
+}
+
+// ── 前台程序屏蔽名单 ──
+// 名单里的程序在最前面（典型：全屏游戏）时，呼出热键不响应，免得手滑双击 Ctrl 把窗口盖到游戏上。
+// 存 settings 表的 hotkeyBlockApps（JSON 字符串数组），每次呼出现读，改了立刻生效。
+// 只管「呼出」：守卫的接入点在 app.ts 的 toggleByHotkey。
+const BLOCK_KEY = "hotkeyBlockApps";
+
+/** 整理成统一形状：去引号与空白、只留路径最后一段（粘贴整条路径也行）、小写、补 .exe、去重。
+ *  存和读都过一遍，匹配时就只需 includes */
+export function normalizeBlockApps(raw: string[]): string[] {
+    const names = raw
+        .map((s) => (s.replace(/"/g, "").trim().split(/[\\/]/).at(-1) ?? "").toLowerCase())
+        .filter((s) => s !== "")
+        .map((s) => (s.endsWith(".exe") ? s : `${s}.exe`));
+    return [...new Set(names)];
+}
+
+export function readBlockApps(): string[] {
+    try {
+        const v: unknown = JSON.parse(getSetting(BLOCK_KEY, "[]"));
+        return Array.isArray(v) ? normalizeBlockApps(v.filter((x): x is string => typeof x === "string")) : [];
+    } catch {
+        return []; // 库里的值被手改坏了，当空名单
+    }
+}
+
+/** 保存名单，返回整理后的结果（设置页据此刷新文本框） */
+export function writeBlockApps(raw: string[]): string[] {
+    const list = normalizeBlockApps(raw);
+    setSetting(BLOCK_KEY, JSON.stringify(list));
+    return list;
+}
+
+/** 前台程序在名单里吗？查不到前台（非 Windows、权限不足）当作不在，宁可漏拦也不能让热键失灵 */
+export function isBlockedByForeground(): boolean {
+    const list = readBlockApps();
+    if (list.length === 0) return false; // 空名单不必去问系统
+    const exe = foregroundExeName();
+    return exe !== null && list.includes(exe);
 }
 
 /** Windows 前台锁兜底：合成一次 F13 击键。后台进程的 SetForegroundWindow 会被

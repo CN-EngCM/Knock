@@ -29,6 +29,7 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、网页面板的 `p
 | 键 | 内容 |
 | --- | --- |
 | `hotkey` | 呼出热键预设 |
+| `hotkeyBlockApps` | 呼出热键屏蔽名单：程序文件名的 JSON 字符串数组（小写、带 `.exe`、去重），缺省 `[]`；每次呼出现读，不缓存 |
 | `termShell` / `termFontSize` | 终端程序 / 字号 |
 | `uiFont` / `monoFont` | 界面字体 / 等宽字体（旧键 `termFont` 由 `fontsMigrated` 标记迁到 `monoFont`） |
 | `toolAlias:<id>` | 工具别名 |

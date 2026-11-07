@@ -5,6 +5,7 @@ import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
     api,
@@ -70,6 +71,10 @@ export function BasicSection({
     // Radix Dialog 关闭即卸载分节内容，挂载时拉一次即可，每次打开都会重新拉取
     const [autostart, setAutostart] = useState<AutostartStatus | null>(null);
     const [hotkey, setHotkey] = useState<HotkeyId | null>(null);
+    // 呼出热键的屏蔽名单（一行一个程序文件名）：blockSaved 是已落库的整理结果（null = 尚未读到），
+    // blockText 是文本框编辑态，失焦才提交
+    const [blockSaved, setBlockSaved] = useState<string[] | null>(null);
+    const [blockText, setBlockText] = useState("");
     const [busy, setBusy] = useState(false);
     // 终端设置的本地编辑态：shell 即选即存；字号失焦（或回车）才提交
     const [shell, setShell] = useState<ShellId | null>(null);
@@ -86,6 +91,11 @@ export function BasicSection({
         api.getAutostart().then((r) => setAutostart(r.ok ? r.data : { supported: false, enabled: false }));
         api.getHotkey().then((r) => {
             if (r.ok) setHotkey(r.data.hotkey);
+        });
+        api.getHotkeyBlock().then((r) => {
+            if (!r.ok) return;
+            setBlockSaved(r.data.apps);
+            setBlockText(r.data.apps.join("\n"));
         });
         api.getDataDir().then((r) => {
             if (r.ok) setDataDirInfo(r.data);
@@ -140,6 +150,22 @@ export function BasicSection({
         } catch {
             if (prev) setHotkey(prev);
             toast.error(t("toast.error"));
+        }
+    }
+
+    /** 屏蔽名单提交：没改动不请求；服务端会整理格式（小写、补 .exe、去重），用返回值刷新文本框 */
+    async function commitBlock() {
+        if (blockSaved === null) return;
+        const lines = blockText.split("\n");
+        if (lines.join("\n") === blockSaved.join("\n")) return;
+        try {
+            const r = await api.setHotkeyBlock(lines);
+            if (!r.ok) throw new Error(r.error.kind);
+            setBlockSaved(r.data.apps);
+            setBlockText(r.data.apps.join("\n"));
+        } catch {
+            toast.error(t("toast.error"));
+            setBlockText(blockSaved.join("\n"));
         }
     }
 
@@ -282,6 +308,34 @@ export function BasicSection({
                     </Select>
                 )}
             </FormRow>
+
+            {/* 前台程序屏蔽名单：只有 Windows 能查到前台程序，其他平台不显示，免得设了不生效 */}
+            {platform === "win32" && (
+                <>
+                    <FormRow className="items-start">
+                        <FieldLabel htmlFor="hotkey-block" className="pt-1.5">
+                            {t("settings.hotkeyBlock")}
+                        </FieldLabel>
+                        {blockSaved === null ? (
+                            <Spinner decorative className="size-3.5 text-dim-foreground" />
+                        ) : (
+                            <Textarea
+                                id="hotkey-block"
+                                rows={3}
+                                spellCheck={false}
+                                value={blockText}
+                                placeholder="game.exe"
+                                onChange={(e) => setBlockText(e.target.value)}
+                                onBlur={() => void commitBlock()}
+                                className="font-mono"
+                            />
+                        )}
+                    </FormRow>
+                    <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                        {t("settings.hotkeyBlockHint")}
+                    </FieldDescription>
+                </>
+            )}
 
             <FormRow>
                 <FieldLabel htmlFor="clip-sec">{t("settings.clip")}</FieldLabel>

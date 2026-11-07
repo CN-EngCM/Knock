@@ -43,6 +43,9 @@ asarUnpack:
     - node_modules/better-sqlite3/**
     - node_modules/uiohook-napi/**
     - node_modules/node-pty/**
+    # koffi 3.x 的原生二进制放在 @koromix/koffi-<平台> 分包里，两处都要解出来
+    - node_modules/koffi/**
+    - node_modules/@koromix/**
 # es.exe（Everything CLI，MIT，见 assets/es-LICENSE.txt）→ resources/es.exe，
 # 运行时位置见 src/main/server/everything.ts 的 esExePath()
 extraResources:

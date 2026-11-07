@@ -7,7 +7,7 @@ import { autostartStatus, disableAutostart, enableAutostart } from "./autostart"
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { searchSpotlight } from "./spotlight";
 import { listDir, type DirEntry } from "./fileTree";
-import { applyHotkey, currentHotkey } from "../hotkey";
+import { applyHotkey, currentHotkey, readBlockApps, writeBlockApps } from "../hotkey";
 import { launchItem } from "./launcher";
 import { getPinState as readPinState } from "./pin";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
@@ -120,6 +120,7 @@ import {
     translateSchema,
     HOTKEY_IDS,
     ptyResizeSchema,
+    hotkeyBlockSchema,
     ptySpawnSchema,
     ptyWriteSchema,
     renameWorkspaceSchema,
@@ -219,6 +220,9 @@ export interface MpApi {
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
     // opts 带 cwd 与 label：工作区里开终端时 cwd 取工作区文件夹；命令条目有显式工作目录时传它，
     // 留空则不传。不传时 cwd 缺省主目录、label 用 shell 标签。
+    // 屏蔽名单：这些程序（文件名，如 game.exe）在前台时呼出热键不响应；set 返回整理后的名单
+    getHotkeyBlock(): Promise<ApiResult<{ apps: string[] }>>;
+    setHotkeyBlock(apps: string[]): Promise<ApiResult<{ apps: string[] }>>;
     // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
     // exitSuffix：拼在命令后面、让 shell 在命令成功后自己退出的那段文字（各 shell 写法不同，
     // 只有主进程知道实际用的是哪个）；命令条目勾了「自动关闭」时前端才用它
@@ -538,6 +542,12 @@ export const apiHandlers: ApiHandlers = {
 
     // ── 终端会话：spawn 失败（shell 丢失等）按 not-found 语义返回；
     //    cwd 指定但目录不存在 → missing 带路径返回，不建会话 ──
+    getHotkeyBlock: async () => ({ ok: true, data: { apps: readBlockApps() } }),
+    setHotkeyBlock: async (apps) => {
+        const v = guard(hotkeyBlockSchema, apps);
+        if (!v) return badRequest;
+        return { ok: true, data: { apps: writeBlockApps(v) } };
+    },
     ptySpawn: async (opts) => {
         const v = guard(ptySpawnSchema, opts ?? {});
         if (!v) return badRequest;

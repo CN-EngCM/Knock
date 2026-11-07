@@ -43,7 +43,7 @@ pnpm dist:win   # 打包目录版到 release/win-unpacked/（dist:mac 到 releas
 ```
 
 - 只用 pnpm，版本 **≥11**。`pnpm-workspace.yaml` 里的 `allowBuilds` 和 `nodeLinker: hoisted` 都是必要的，别删。
-- **`dependencies` 只放原生模块**（better-sqlite3 / uiohook-napi / node-pty），其余一律 `devDependencies`：electron-vite 会把它们打进产物，放错位置包体积暴涨约 40MB。
+- **`dependencies` 只放原生模块**（better-sqlite3 / uiohook-napi / node-pty / koffi），其余一律 `devDependencies`：electron-vite 会把它们打进产物，放错位置包体积暴涨约 40MB。
 - `postinstall`（`scripts/electron-deps.mjs`）负责把 better-sqlite3 换成 Electron ABI 的预编译，报 `NODE_MODULE_VERSION` 不匹配就是这步没生效。
 
 ## 架构
@@ -66,7 +66,7 @@ scripts/                         构建、打包和资源生成脚本（测试�
 - **改接口**：`MpApi` → 同文件的 `apiHandlers` → `client.ts` 转发。漏一处 `pnpm typecheck` 即报错。
 - **错误约定**：可预期错误返回 `ApiResult<T>` 判别联合（`{ok:false, error:{kind:...}}`），不靠抛异常。入参在处理器入口做 zod 校验。
 - **GaN.UI**：`components/ui/` 与上游支撑模块（清单见 `.prettierignore`）保持上游原样，改了就没法整文件比对下次同步。
-- **跨平台**：开发平台是 Windows 与 macOS。平台差异集中在 `src/main/server/` 的 shortcuts、everything、spotlight、launcher、autostart、pty 和 api.ts 的 revealPath，以及 `src/main/` 的 tray、hotkey，其余保持跨平台写法。
+- **跨平台**：开发平台是 Windows 与 macOS。平台差异集中在 `src/main/server/` 的 shortcuts、everything、spotlight、launcher、autostart、pty、foreground 和 api.ts 的 revealPath，以及 `src/main/` 的 tray、hotkey，其余保持跨平台写法。
 - **清理目录前先看数据在哪**：数据目录以默认根（Windows `%APPDATA%\Knock\`）下的 `data-location.json` 为准，用户可设到任何位置。打包会整个删掉 `release/win-unpacked/` 再重建，数据放在里面会被一起删。Chromium 的缓存、cookie、`localStorage` 与网页登录态在 `<数据目录>/browser-data/`，默认根里只剩指针和几个锁文件，别把指针当垃圾清掉；改数据目录时这个目录（连同 `chrome-profile`）重启后才搬，见 [docs/spec/data.md](docs/spec/data.md)。
 
 ## 文件放哪儿
