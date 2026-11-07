@@ -61,6 +61,10 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
                 if (ev.type !== "keydown" || ev.altKey) return true;
                 const mod = isMac ? ev.metaKey : ev.ctrlKey;
                 if (mod && ev.key.toLowerCase() === "v") {
+                    // return false 只让 xterm 不处理这次按键，拦不住浏览器默认行为：
+                    // 不 preventDefault 的话，随后的原生 paste 事件会被 xterm 内置监听
+                    // 再粘一次（右键走 contextmenu，不触发 paste，所以右键从来正常）
+                    ev.preventDefault();
                     void pasteFromClipboard(term);
                     return false;
                 }
