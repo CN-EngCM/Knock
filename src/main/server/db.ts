@@ -106,7 +106,9 @@ db.exec(`
   );
 
   -- 便签（工具 notes）：每个工作区一份，删工作区时外键级联删行（图片文件由 server/notes.ts 另行清理）。
-  -- 图片文件在数据目录 notes/<图片id>.<format>，与图库完全分开，经 mpimg://note/<图片id> 读取
+  -- 图片文件在数据目录 notes/<图片id>.<format>，与图库完全分开，经 mpimg://note/<图片id> 读取。
+  -- 按 workspace_id 的索引不在这里建：老库的 notes 可能没有这一列，建索引会直接报错、
+  -- 让整个启动中断，改放到下面补列迁移之后
   CREATE TABLE IF NOT EXISTS notes (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -114,7 +116,6 @@ db.exec(`
     created_at   INTEGER NOT NULL,
     updated_at   INTEGER NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS idx_notes_ws ON notes(workspace_id, created_at DESC, id DESC);
 
   CREATE TABLE IF NOT EXISTS note_images (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,  -- 不复用 id：mpimg://note/<id> 不会命中旧图缓存
@@ -203,5 +204,40 @@ if (!itemColsAfterRebuild.some((c) => c.name === "workspace_id")) {
 if (!itemColsAfterRebuild.some((c) => c.name === "auto_close")) {
     db.exec("ALTER TABLE items ADD COLUMN auto_close INTEGER NOT NULL DEFAULT 0");
 }
+
+// 存量库幂等迁移：notes.workspace_id 缺失。成因是库被「没有工作区」的分支打开过——那边的迁移
+// 会把 notes 重建成没有这一列的样子。这里必须重建而不能 ALTER：带外键的新增列只能可空，
+// 而这一列是 NOT NULL。旧便签全部并进「临时工作区」，不丢数据。
+// 重建要先关外键：开着时 DROP notes 会级联清空 note_images（PRAGMA 在事务里无效，所以放事务外）。
+const noteCols = db.prepare("PRAGMA table_info(notes)").all() as { name: string }[];
+if (!noteCols.some((c) => c.name === "workspace_id")) {
+    db.pragma("foreign_keys = OFF");
+    try {
+        db.transaction(() => {
+            // 临时工作区的播种在 server/workspaces.ts，晚于本文件执行，所以这里先补一行好让旧便签有归属；
+            // 那边按 builtin 行存在与否播种，不会重复
+            if (!db.prepare("SELECT 1 FROM workspaces WHERE builtin = 1").get()) {
+                db.exec("INSERT INTO workspaces (name, position, builtin) VALUES ('', 0, 1)");
+            }
+            db.exec(`
+              CREATE TABLE notes_new (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                text         TEXT    NOT NULL DEFAULT '',
+                created_at   INTEGER NOT NULL,
+                updated_at   INTEGER NOT NULL
+              );
+              INSERT INTO notes_new (id, workspace_id, text, created_at, updated_at)
+                SELECT id, (SELECT id FROM workspaces WHERE builtin = 1), text, created_at, updated_at FROM notes;
+              DROP TABLE notes;
+              ALTER TABLE notes_new RENAME TO notes;
+            `);
+        })();
+    } finally {
+        db.pragma("foreign_keys = ON");
+    }
+}
+// 列保证存在之后才建；重建 notes 会连旧索引一起丢掉，这里一并补回
+db.exec("CREATE INDEX IF NOT EXISTS idx_notes_ws ON notes(workspace_id, created_at DESC, id DESC)");
 
 export default db;

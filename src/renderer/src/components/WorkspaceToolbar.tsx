@@ -1,7 +1,7 @@
 import { useMemo, type RefObject } from "react";
 import { FolderTree, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { TitlebarWell } from "@/components/ui/titlebar";
+import { Scopebar } from "@/components/ui/toolbar";
 import {
     ContextMenu,
     ContextMenuContent,
@@ -16,12 +16,9 @@ import type { Item, Workspace } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import { MoveToWorkspaceMenu } from "./MoveToWorkspaceMenu";
 
-// 工具栏条目的行样式
+// 工具栏条目与固定文件夹按钮共用同一套行样式，避免两处慢慢长歪
 const ITEM_CLASS =
     "flex h-6 max-w-[180px] flex-none items-center gap-1.5 rounded-sm px-1.5 text-xs text-foreground select-none hover:bg-(--state-hover)";
-// 「打开当前文件夹」只留图标，与文件树按钮同为 24px 见方；悬停底色沿用条目的，两处保持一致
-const FOLDER_BUTTON_CLASS =
-    "flex size-6 flex-none items-center justify-center rounded-sm select-none hover:bg-(--state-hover)";
 
 type Props = {
     /** 当前工作区的文件夹；空串表示旧库还没补过目录，此时不渲染固定按钮 */
@@ -53,12 +50,10 @@ type Props = {
 };
 
 /**
- * 顶栏里的项目快捷启动工具栏：文件树按钮 + 固定「打开当前文件夹」+ 横向条目 + 右端固定的「＋」，
- * 装在和搜索框同款的凹槽里。宽度按内容算，由 App 把它排在工具集按钮左边，条目多了就往左长；
- * 顶栏空间不够时它被挤窄，条目在槽内横向滚动（不显示滚动条，鼠标滚轮即可滚）。
+ * 工作区顶部的项目快捷启动工具栏：固定「打开当前文件夹」+ 横向条目 + 右端固定的「＋」。
  * 文件夹按钮是工作区自带的动作，写死在这里不进 items 表；其余条目按归属从数据库来。
  * 只有普通工作区才有（临时工作区没有归属条目）；条目顺序复用左栏的 sortItems，
- * 保证两处看到同一套排序规则。文件树按钮和「＋」不参与滚动：条目再多也要能一眼看到入口。
+ * 保证两处看到同一套排序规则。右侧「＋」不参与滚动：条目再多也要能一眼看到添加入口。
  */
 export function WorkspaceToolbar({
     folder,
@@ -81,10 +76,14 @@ export function WorkspaceToolbar({
 }: Props) {
     const { t } = useI18n();
     const sorted = useMemo(() => sortItems(items), [items]);
-    // 用组件库 TitlebarWell 的凹槽材质（自带 gan-no-drag，点击不会变成拖窗口），
-    // 尺寸改成 28px 高的横排，与搜索井同高；条目按钮 24px，上下各留 2px
+    // 用组件库 Scopebar 变体承载内容条的面板材质与边框（它自带 gan-no-drag）；
+    // 只覆盖两处：36px 固定高度、根节点不滚动（条目在内部横滚，「＋」固定右端）
     return (
-        <TitlebarWell role="toolbar" aria-label={t("ws.toolbar.title")} className="h-[28px] flex-row gap-1 px-1 py-0">
+        <Scopebar
+            role="toolbar"
+            aria-label={t("ws.toolbar.title")}
+            className="h-9 flex-none gap-1 overflow-hidden px-2"
+        >
             {/* 文件树入口固定在最左，不随条目滚动；工作区没有文件夹时没东西可看，不显示 */}
             {folder && (
                 <Button
@@ -101,32 +100,18 @@ export function WorkspaceToolbar({
                     <FolderTree className="size-3.5" />
                 </Button>
             )}
-            {/* 凹槽只有 28px，放不下一条 10px 的滚动条，所以隐藏滚动条、改用滚轮。
-                滚轮默认只认纵向，这里把纵向滚动量换成横向。
-                没有 flex-1：宽度跟着内容走，空位留给顶栏的拖窗口区；被挤窄时 min-w-0 让它缩 */}
-            <div
-                className="no-scrollbar flex h-full min-w-0 items-center gap-1 overflow-x-auto overflow-y-hidden"
-                onWheel={(event) => {
-                    event.currentTarget.scrollLeft += event.deltaY;
-                }}
-            >
+            {/* 工具条只有 36px：横向滚动条会占掉 10px，条目按钮取 24px 才不会被挤掉。
+                滑块保持可见，条目多了可以直接拖动滑块滚到末尾 */}
+            <div className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden">
                 {folder && (
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <button
-                                type="button"
-                                className={FOLDER_BUTTON_CLASS}
-                                aria-label={t("ws.toolbar.openFolder")}
-                                onClick={() => onOpenFolder(folder)}
-                            >
+                            <button type="button" className={ITEM_CLASS} onClick={() => onOpenFolder(folder)}>
                                 <FolderIcon path={folder} light={light} />
+                                <span className="min-w-0 truncate">{t("ws.toolbar.openFolder")}</span>
                             </button>
                         </TooltipTrigger>
-                        {/* 按钮没有文字了：提示第一行说它做什么，第二行才是路径 */}
-                        <TooltipContent className="max-w-64 flex-col items-start gap-0.5 text-caption">
-                            <div>{t("ws.toolbar.openFolder")}</div>
-                            <div className="break-all font-mono">{folder}</div>
-                        </TooltipContent>
+                        <TooltipContent className="max-w-64 break-all font-mono text-caption">{folder}</TooltipContent>
                     </Tooltip>
                 )}
                 {sorted.map((item) => (
@@ -157,7 +142,7 @@ export function WorkspaceToolbar({
             >
                 <Plus className="size-3.5" />
             </Button>
-        </TitlebarWell>
+        </Scopebar>
     );
 }
 

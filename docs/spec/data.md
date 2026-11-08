@@ -53,7 +53,7 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、网页面板的 `p
 - `workspaces`：工作区（名字、文件夹、排序、builtin 标记；临时工作区 folder 为空串）。`color` 列（`TEXT`，可空）：用户选的标识色 `#rrggbb`（统一存小写），NULL = 渲染端按 id 从调色板自动取；老库用 `PRAGMA` 探测后 `ALTER` 补列，已有工作区全为 NULL、颜色不变。存色值不存调色板下标，调色板以后增删不影响已选的。主进程只校验格式，不认调色板（调色板只在渲染端 `lib/workspaceColor.ts`）；临时工作区拒改。
 - `items`：`workspace_id` 记条目归属，空 = 左侧快捷启动，数字 = 该工作区的工具栏；删除工作区时外键级联删条目。旧库只加列不回填，已有条目全部留在左侧。`icon` 列存图标包（Material Icon Theme）里的图标名，空 = 自动匹配；旧版在这列存过网站图标的缓存文件名，现已不用，渲染端认不得的值一律当「自动」，所以无需迁移。主进程只校验格式（字母数字和 `_.-`，≤64），不认图标名（图标包只在渲染端）。`auto_close` 列（`INTEGER NOT NULL DEFAULT 0`）：仅终端命令有意义，1 = 命令成功后自动关掉终端面板；老库用 `PRAGMA` 探测后 `ALTER` 补列，已有条目全为 0。对外字段是布尔 `autoClose`，SQLite 读出来是 0/1，主进程统一转成布尔再给渲染端；条目弹窗只在类型为终端命令时给这个开关，其他类型一律存 0。
 - `gallery_groups` / `gallery_images` / `gallery_tags` / `gallery_wall`：图库（工具 gallery）的分组、图片元数据、图片 tag、图片墙。
-- `notes` / `note_images`：便签（工具 notes）。`notes.workspace_id` 外键级联到 `workspaces`，`created_at` / `updated_at` 是毫秒时间戳；`note_images` 存格式（jpg/png/gif/webp/bmp，主进程按文件头判定）与顺序，外键级联到 `notes`。`note_images.id` 用 `AUTOINCREMENT` 不复用，这样 `mpimg://note/<id>` 不会命中旧图缓存，别改掉。文字不 trim 原样存，全是空白时存空串。
+- `notes` / `note_images`：便签（工具 notes）。`notes.workspace_id` 外键级联到 `workspaces`；库被「没有工作区」的分支打开过时这一列会被删掉，本分支启动时探测到缺列就重建 `notes`（关外键重建，避免级联清空 `note_images`），旧便签并进临时工作区，`idx_notes_ws` 索引必须在补列之后才建，放进建表语句会让启动直接报 `no such column`。`created_at` / `updated_at` 是毫秒时间戳；`note_images` 存格式（jpg/png/gif/webp/bmp，主进程按文件头判定）与顺序，外键级联到 `notes`。`note_images.id` 用 `AUTOINCREMENT` 不复用，这样 `mpimg://note/<id>` 不会命中旧图缓存，别改掉。文字不 trim 原样存，全是空白时存空串。
 
 ## 便签文件
 

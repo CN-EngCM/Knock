@@ -162,10 +162,11 @@ export function WorkspaceBar({
 
     return (
         <div ref={rootRef} className="flex-none border-b border-line">
-            {/* 标题行与工作区行同高（h-8 = 32px，含底边线）。图标条里没有地方放字：去掉标题，「＋」居中留着 */}
+            {/* 标题行与右侧工作区工具栏同高（h-9 = 36px，含底边线），两条底边线在一条水平线上。
+                图标条里没有地方放字：去掉标题，「＋」居中留着 */}
             <div
                 className={cn(
-                    "flex h-8 flex-none items-center border-b border-line",
+                    "flex h-9 flex-none items-center border-b border-line",
                     collapsed ? "justify-center" : "justify-between pr-2 pl-4",
                 )}
             >

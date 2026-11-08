@@ -867,78 +867,49 @@ export default function App() {
             <div className="flex h-screen flex-col overflow-hidden font-sans text-foreground">
                 <Toaster position="bottom-center" />
 
-                {/* Titlebar 根节点即 gan-drag 拖拽区；搜索井、工具栏、右侧按钮在 no-drag 里。
-                    品牌、搜索井、空白、工具栏全放进左槽，左槽吃满剩余宽度（flex-1）、拉满行高并改回 drag，
-                    搜索井与工具栏之间的空白就是拖窗口的地方；右槽只放四个固定按钮，工具栏因此紧挨工具集按钮。
-                    中槽不用（hidden），否则它的内边距和间距会白占位置；
+                {/* Titlebar 根节点即 gan-drag 拖拽区；搜索井、右侧按钮在 no-drag 插槽内。
+                    左槽单独改回 drag 并拉满行高，保住原「品牌区可拖窗」的手感；
+                    中槽限宽 + mx-auto：搜索框不必铺满整行，在品牌与右侧按钮之间居中；
                     overflow-visible 让搜索下拉能悬出 40px 顶栏。 */}
                 <Titlebar
                     role="banner"
                     windowControls="none"
                     trafficLights={false}
-                    className="z-20 h-[40px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:hidden"
+                    className="z-20 h-[40px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:flex-none [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:mx-auto [&>[data-slot=titlebar-center]]:max-w-[540px] [&>[data-slot=titlebar-center]]:flex-1"
                     left={
-                        <>
-                            {/* mr-3 在左槽统一的 8px 间距上再加 12px，品牌与搜索井拉开到 20px */}
-                            <span className="gan-drag mr-3 flex h-full flex-none select-none items-center gap-2.5">
-                                <span
-                                    className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
-                                    aria-hidden
-                                >
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
-                                </span>
-                                {/* 中英文品牌都是 Knock，上下叠两行：11px 字、12px 行高，两行合计 24px，放得进 40px 顶栏 */}
-                                <strong className="flex flex-col text-[11px] font-medium leading-3 tracking-wider">
-                                    <span>{t("app.brand")}</span>
-                                    <span>{t("app.brand")}</span>
-                                </strong>
+                        <span className="gan-drag flex h-full flex-none select-none items-center gap-2.5">
+                            <span
+                                className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
+                                aria-hidden
+                            >
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
                             </span>
-                            {/* 28px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px）。
-                            再矮会挤到素材 chip（约 20px，井上下内边距各 4px）。
-                            期望宽 540px、最窄 260px；顶栏不够宽时它先缩（shrink 取很大的值），
-                            缩到 260px 还不够才轮到右边的工具栏被挤窄 */}
-                            <TitlebarWell className="relative h-[28px] w-[540px] min-w-[260px] shrink-[1000] flex-row px-2.5 overflow-visible">
-                                <SearchBox
-                                    items={items}
-                                    workspaces={workspaceTargets}
-                                    dirIds={dirIds}
-                                    light={theme === "light"}
-                                    // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
-                                    toolAliases={toolAliases ?? {}}
-                                    onOpenItem={openItem}
-                                    onOpenTool={openTool}
-                                    onOpenPath={openLocalPath}
-                                />
-                            </TitlebarWell>
-                            {/* 弹性空白：把工具栏推到右边挨着工具集按钮，同时是拖窗口的地方 */}
-                            <div className="gan-drag min-w-0 flex-1 self-stretch" />
-                            {/* 普通工作区的项目快捷启动工具栏：条目归属当前工作区，
-                            临时工作区没有归属条目，不渲染。断线态也不显示，避免点了没反应的按钮 */}
-                            {serverOk !== false && activeWorkspace && !activeWorkspace.builtin && (
-                                <WorkspaceToolbar
-                                    folder={activeWorkspace.folder}
-                                    items={activeWorkspaceItems}
-                                    dirIds={dirIds}
-                                    workspaces={workspaceTargets}
-                                    currentWorkspaceId={activeWorkspace.id}
-                                    light={theme === "light"}
-                                    treeOpen={treeOpen}
-                                    treeButtonRef={treeButtonRef}
-                                    onToggleTree={toggleTree}
-                                    onCreate={() => setDialog({ kind: "item-create", workspaceId: activeWorkspace.id })}
-                                    onOpenFolder={(folder) => void openLocalPath(folder)}
-                                    onOpen={openItem}
-                                    onOpenInTerminal={openInTerminal}
-                                    onOpenExternal={openInSystemBrowser}
-                                    onEditItem={(item) => setDialog({ kind: "item-edit", item })}
-                                    onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
-                                    onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
-                                />
-                            )}
-                        </>
+                            {/* 中英文品牌都是 Knock，上下叠两行：11px 字、12px 行高，两行合计 24px，放得进 40px 顶栏 */}
+                            <strong className="flex flex-col text-[11px] font-medium leading-3 tracking-wider">
+                                <span>{t("app.brand")}</span>
+                                <span>{t("app.brand")}</span>
+                            </strong>
+                        </span>
+                    }
+                    center={
+                        /* 28px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px）。
+                           再矮会挤到素材 chip（约 20px，井上下内边距各 4px） */
+                        <TitlebarWell className="relative h-[28px] flex-row px-2.5 overflow-visible">
+                            <SearchBox
+                                items={items}
+                                workspaces={workspaceTargets}
+                                dirIds={dirIds}
+                                light={theme === "light"}
+                                // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
+                                toolAliases={toolAliases ?? {}}
+                                onOpenItem={openItem}
+                                onOpenTool={openTool}
+                                onOpenPath={openLocalPath}
+                            />
+                        </TitlebarWell>
                     }
                     right={
                         <div className="flex flex-none items-center gap-1">
@@ -1022,11 +993,11 @@ export default function App() {
                             onDelete={(workspace) => setDialog({ kind: "ws-delete", workspace })}
                         />
 
-                        {/* 标题行与工作区行同高（h-8 = 32px，含底边线），侧栏两个标题行保持一致。
+                        {/* 标题行与工作区块的标题行同高（h-9 = 36px，含底边线），也是工作区工具栏的高度。
                             图标条里没有地方放字：去掉标题，「＋」居中留着，新建入口不能丢 */}
                         <div
                             className={cn(
-                                "flex h-8 flex-none items-center border-b border-line",
+                                "flex h-9 flex-none items-center border-b border-line",
                                 sidebarCollapsed ? "justify-center" : "justify-between pr-2 pl-4",
                             )}
                         >
@@ -1091,6 +1062,29 @@ export default function App() {
                             } as CSSProperties
                         }
                     >
+                        {/* 普通工作区顶部一条项目快捷启动工具栏：条目归属当前工作区，
+                            临时工作区没有归属条目，不渲染。断线态也不显示，避免点了没反应的按钮 */}
+                        {serverOk !== false && activeWorkspace && !activeWorkspace.builtin && (
+                            <WorkspaceToolbar
+                                folder={activeWorkspace.folder}
+                                items={activeWorkspaceItems}
+                                dirIds={dirIds}
+                                workspaces={workspaceTargets}
+                                currentWorkspaceId={activeWorkspace.id}
+                                light={theme === "light"}
+                                treeOpen={treeOpen}
+                                treeButtonRef={treeButtonRef}
+                                onToggleTree={toggleTree}
+                                onCreate={() => setDialog({ kind: "item-create", workspaceId: activeWorkspace.id })}
+                                onOpenFolder={(folder) => void openLocalPath(folder)}
+                                onOpen={openItem}
+                                onOpenInTerminal={openInTerminal}
+                                onOpenExternal={openInSystemBrowser}
+                                onEditItem={(item) => setDialog({ kind: "item-edit", item })}
+                                onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
+                                onMoveItem={(item, workspaceId) => void moveItem(item, workspaceId)}
+                            />
+                        )}
                         <div ref={treeAnchorRef} className="flex min-h-0 flex-1 flex-col">
                             {serverOk === false ? (
                                 /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
@@ -1197,14 +1191,14 @@ export default function App() {
                     lang={lang}
                     onChangeLang={setLang}
                     platform={platform}
-                    scratchMinutes={scratchCfg?.minutes ?? null}
-                    onScratchMinutes={patchScratchAutoClose}
                     theme={theme}
                     onTheme={switchTheme}
                     termCfg={termCfg}
                     onTermPatch={patchTerm}
                     fontCfg={fontCfg}
                     onFontPatch={patchFont}
+                    scratchMinutes={scratchCfg?.minutes ?? null}
+                    onScratchMinutes={patchScratchAutoClose}
                     toolAliases={toolAliases}
                     onToolAlias={patchToolAlias}
                 />
