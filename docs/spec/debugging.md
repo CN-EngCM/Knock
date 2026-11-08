@@ -30,7 +30,9 @@ node tests/scripts/test-site.cjs                            # 网址导入的本
 ```
 
 - **结束实例不要按进程名或窗口标题**：隔离实例和正在用的敲敲同名同标题，会误伤。实例经改数据目录重启后进程号会变，按调试端口查到进程号，核对命令行后再结束。
-- 开始自动化前先 `window.knock.setPinned(true)`，否则失焦就隐藏。
+- 开始自动化前先 `window.knock.setPinned(true)`，否则失焦就隐藏。反过来，**钉住时 `window.knock.hideWindow()` 被主进程忽略**，要测「窗口藏起来」先 `setPinned(false)`。
+- **页面里的 `location.reload()` 不会重载**：构建产物下主进程的 `will-navigate` 把它拦了，页面原样不动，容易误以为改的设置已经生效。要重载用调试协议的 `Page.reload`（`scratch-autoclose-check.cjs` 里有写法）。
+- 想测几分钟后才触发的逻辑，不用真等：在页面里包一层 `window.setTimeout`，把长延时按倍数缩短（同一个脚本里有例子）。
 - `launch-isolated` 关掉了 Chromium 的窗口遮挡判断。自己手动启动时要注意：窗口被盖住就不渲染，懒加载的图不触发，缩略图也不生成。
 - 隐藏窗口、未关后台节流时，页面线程里的部分异步操作可能一直不返回，写探测脚本时给每一步加超时。
 - 调用 `galleryChromeSync`、`galleryChromeClear` 会操作 9333 端口上真实的专用 Chrome，自动化里不要随手调。

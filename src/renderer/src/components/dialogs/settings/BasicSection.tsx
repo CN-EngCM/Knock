@@ -53,9 +53,15 @@ type Props = {
     /** 字体设置（界面/等宽）：提交走 onFontPatch（App 落库回填并写 CSS 变量即全局生效） */
     fontCfg: FontConfig | null;
     onFontPatch: (patch: FontPatch) => Promise<boolean>;
+    /** 临时工作区小工具自动关闭时长（分钟，0 = 关，null = 尚未读到）：提交走 onScratchMinutes（App 落库并重新计时） */
+    scratchMinutes: number | null;
+    onScratchMinutes: (minutes: number) => Promise<boolean>;
 };
 
-/** 基础设置分节：语言 / 主题 / 热键 / 剪贴板时限 / 自启 / 字体 / 终端 / 运行环境 */
+// 自动关闭的可选时长（分钟，0 = 关闭）：只给几档，免得为一个不精确的功能让人去填数字
+const SCRATCH_MINUTES_OPTIONS = [0, 5, 10, 30, 60] as const;
+
+/** 基础设置分节：语言 / 主题 / 热键 / 剪贴板时限 / 临时工作区自动关闭 / 自启 / 字体 / 终端 / 运行环境 */
 export function BasicSection({
     lang,
     onChangeLang,
@@ -66,6 +72,8 @@ export function BasicSection({
     onTermPatch,
     fontCfg,
     onFontPatch,
+    scratchMinutes,
+    onScratchMinutes,
 }: Props) {
     const { t } = useI18n();
     // Radix Dialog 关闭即卸载分节内容，挂载时拉一次即可，每次打开都会重新拉取
@@ -350,6 +358,31 @@ export function BasicSection({
             </FormRow>
             <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
                 {t("settings.clipHint")}
+            </FieldDescription>
+
+            <FormRow>
+                <FieldLabel>{t("settings.scratchClose")}</FieldLabel>
+                {scratchMinutes === null ? (
+                    <Spinner decorative className="size-3.5 text-dim-foreground" />
+                ) : (
+                    <Select value={String(scratchMinutes)} onValueChange={(v) => void onScratchMinutes(Number(v))}>
+                        <SelectTrigger className="w-full">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {SCRATCH_MINUTES_OPTIONS.map((m) => (
+                                <SelectItem key={m} value={String(m)}>
+                                    {m === 0
+                                        ? t("settings.scratchClose.off")
+                                        : `${m} ${t("settings.scratchClose.unit")}`}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.scratchCloseHint")}
             </FieldDescription>
 
             <FormRow>

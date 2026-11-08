@@ -34,6 +34,7 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、网页面板的 `p
 | `uiFont` / `monoFont` | 界面字体 / 等宽字体（旧键 `termFont` 由 `fontsMigrated` 标记迁到 `monoFont`） |
 | `toolAlias:<id>` | 工具别名 |
 | `clipPasteWindow` | 剪贴板素材时限，单位秒，0 = 关 |
+| `scratchAutoClose` | 临时工作区小工具自动关闭时长，单位分钟，0 = 关，缺省 10；库里不是 0–1440 的整数时读回默认 |
 | `youdaoAppKey` / `youdaoAppSecret` | 有道密钥 |
 | `aiModels` | AI 模型配置 JSON |
 | `aiExpertsSeeded` | 出厂专家播种标记 |

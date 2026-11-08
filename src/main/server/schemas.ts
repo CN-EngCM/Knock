@@ -89,6 +89,10 @@ export const autostartSchema = z.object({ enabled: z.boolean() });
 // 呼出时剪贴板素材的时限（秒）：0 = 关闭自动粘贴
 export const clipPasteSchema = z.object({ seconds: z.number().int().min(0).max(60) });
 
+// 临时工作区小工具的自动关闭时长（分钟）：0 = 关闭。设置页只给 5/10/30/60 几档，这里放宽到一天，
+// 只为挡住手改库的脏值，不替界面限档
+export const scratchAutoCloseSchema = z.object({ minutes: z.number().int().min(0).max(1440) });
+
 // ── 界面主题（GaN.UI 深浅双主题）：唯一权威来源是 settings 表的 theme 键，
 //    主进程开窗前读它定窗口底色与系统边线，渲染端首帧前读它套 .dark 类 ──
 export const THEME_IDS = ["dark", "light"] as const;

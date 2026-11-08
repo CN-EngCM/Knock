@@ -37,6 +37,11 @@ export const en: Record<MessageKey, string> = {
     "settings.clip": "Auto-paste window",
     "settings.clipHint":
         "On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)",
+    "settings.scratchClose": "Auto-close tools",
+    "settings.scratchClose.off": "Off",
+    "settings.scratchClose.unit": "min",
+    "settings.scratchCloseHint":
+        "Once the window has been hidden, or you've been in another workspace, for this long, the tools open in the scratch workspace are closed (terminals and browsers stay). Unsaved content is lost, and there is no notice when it happens.",
     "settings.info": "Runtime",
     "settings.dataDir": "Data directory",
     "settings.dataDir.change": "Change…",

@@ -34,6 +34,9 @@ type Props = {
     /** 字体设置（界面/等宽）：提交走 onFontPatch（App 负责落库、回填与写 CSS 变量） */
     fontCfg: FontConfig | null;
     onFontPatch: (patch: FontPatch) => Promise<boolean>;
+    /** 临时工作区小工具自动关闭时长（分钟，0 = 关，null = 尚未读到）：提交走 onScratchMinutes（App 负责落库与重新计时） */
+    scratchMinutes: number | null;
+    onScratchMinutes: (minutes: number) => Promise<boolean>;
     /** 工具别名：提交走 onToolAlias（App 负责落库与回填，SearchBox 随之生效） */
     toolAliases: ToolAliases | null;
     onToolAlias: (patch: ToolAliasPatch) => Promise<boolean>;
@@ -65,6 +68,8 @@ export function SettingsDialog({
     onTermPatch,
     fontCfg,
     onFontPatch,
+    scratchMinutes,
+    onScratchMinutes,
     toolAliases,
     onToolAlias,
     initialSection,
@@ -115,6 +120,8 @@ export function SettingsDialog({
                                 onTermPatch={onTermPatch}
                                 fontCfg={fontCfg}
                                 onFontPatch={onFontPatch}
+                                scratchMinutes={scratchMinutes}
+                                onScratchMinutes={onScratchMinutes}
                             />
                         </TabsContent>
                         <TabsContent value="tools" forceMount className="grid content-start gap-3">

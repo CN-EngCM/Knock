@@ -95,6 +95,7 @@ import {
     createExpertSchema,
     createItemSchema,
     createWorkspaceSchema,
+    scratchAutoCloseSchema,
     noteCreateSchema,
     noteIdArgSchema,
     noteUpdateSchema,
@@ -251,6 +252,10 @@ export interface MpApi {
     // ── 剪贴板素材时限（v2.3）：呼出时最近一次复制落在时限内才自动进搜索框 ──
     getClipPaste(): Promise<ApiResult<{ seconds: number }>>;
     setClipPaste(seconds: number): Promise<ApiResult<{ seconds: number }>>;
+    // ── 临时工作区小工具自动关闭：窗口藏起或不在临时工作区满这么多分钟，就关掉其中的小工具（0 = 关）。
+    //    计时与关面板都在渲染端（停靠区实例在那），主进程只管存取 ──
+    getScratchAutoClose(): Promise<ApiResult<{ minutes: number }>>;
+    setScratchAutoClose(minutes: number): Promise<ApiResult<{ minutes: number }>>;
     // ── 界面主题：唯一权威来源是 settings 表 theme 键；主进程开窗前另经
     //    server/util/settings 直读同一键定窗口底色/系统边线，渲染端首帧前套 .dark ──
     getTheme(): Promise<ApiResult<{ theme: ThemeId }>>;
@@ -633,6 +638,19 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         setSetting("clipPasteWindow", String(v.seconds));
         return { ok: true, data: { seconds: v.seconds } };
+    },
+
+    // ── 临时工作区小工具自动关闭：缺省 10 分钟；库里是脏值时回落默认 ──
+    getScratchAutoClose: async () => {
+        const n = Number(getSetting("scratchAutoClose", "10"));
+        const ok = Number.isInteger(n) && n >= 0 && n <= 1440;
+        return { ok: true, data: { minutes: ok ? n : 10 } };
+    },
+    setScratchAutoClose: async (minutes) => {
+        const v = guard(scratchAutoCloseSchema, { minutes });
+        if (!v) return badRequest;
+        setSetting("scratchAutoClose", String(v.minutes));
+        return { ok: true, data: { minutes: v.minutes } };
     },
 
     // ── 界面主题：脏值（手改库）回落深色 ──

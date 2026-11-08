@@ -204,6 +204,10 @@ function createWindow(): BrowserWindow {
     w.on("hide", () => {
         if (!w.webContents.isDestroyed()) w.webContents.send("mp:window-hidden");
     });
+    // 与 hide 配对：临时工作区小工具的自动关闭靠这一对事件判断「窗口当前藏没藏」
+    w.on("show", () => {
+        if (!w.webContents.isDestroyed()) w.webContents.send("mp:window-shown");
+    });
     w.on("closed", () => {
         win = null;
     });

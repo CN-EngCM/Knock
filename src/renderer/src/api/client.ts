@@ -71,6 +71,8 @@ declare global {
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
             /** 窗口被藏起来（失焦自动隐藏、热键或托盘收起）；钉住时被别的窗口盖住不算 */
             onWindowHidden: (cb: () => void) => () => void;
+            /** 窗口被显示出来（与 onWindowHidden 配对，临时工作区小工具的自动关闭计时用） */
+            onWindowShown: (cb: () => void) => () => void;
             /** 网页要新开窗口（target=_blank / window.open）：只会是 http/https 地址 */
             onWebOpen: (cb: (url: string) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;
@@ -125,6 +127,8 @@ export const api: MpApi = {
     setToolAliases: (patch) => invoke("setToolAliases", patch),
     getClipPaste: () => invoke("getClipPaste"),
     setClipPaste: (seconds) => invoke("setClipPaste", seconds),
+    getScratchAutoClose: () => invoke("getScratchAutoClose"),
+    setScratchAutoClose: (minutes) => invoke("setScratchAutoClose", minutes),
     getTheme: () => invoke("getTheme"),
     setTheme: (theme) => invoke("setTheme", theme),
     getPinState: () => invoke("getPinState"),

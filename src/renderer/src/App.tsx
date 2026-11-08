@@ -247,6 +247,8 @@ export default function App() {
     const [termCfg, setTermCfg] = useRpcValue(api.getTermConfig);
     // 字体设置（界面/等宽）：applyFonts 写 CSS 变量全局生效；等宽栈同步喂 termStore
     const [fontCfg, setFontCfg] = useRpcValue(api.getFontConfig);
+    // 临时工作区小工具自动关闭的时长（分钟，0 = 关）：计时在下面的 effect 里，所以放 App，设置页改这里再落库
+    const [scratchCfg, setScratchCfg] = useRpcValue(api.getScratchAutoClose);
 
     // 全量拉取：个人工具规模下最简单的数据同步方式（每次变更后重拉）
     const refresh = useCallback(async () => {
@@ -377,6 +379,11 @@ export default function App() {
     // 设置页提交字体设置：成功回填；applyFonts 随 fontCfg 变化重写 CSS 变量即全局生效
     function patchFont(p: FontPatch): Promise<boolean> {
         return patchSetting(() => api.setFontConfig(p), setFontCfg);
+    }
+
+    // 设置页提交临时工作区自动关闭时长：成功回填，下面的计时 effect 随之按新时长从头数
+    function patchScratchAutoClose(minutes: number): Promise<boolean> {
+        return patchSetting(() => api.setScratchAutoClose(minutes), setScratchCfg);
     }
 
     // 字体设置就绪/变更 → 写 <html> 行内 CSS 变量（fontCfg 为 null 时用空串 = 默认栈）
@@ -721,6 +728,39 @@ export default function App() {
         // 实例表读 ref，无需进依赖
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lang, t]);
+
+    // ── 临时工作区小工具自动关闭：用户看不到临时工作区满设定时长，就把里面的小工具面板全关掉 ──
+    // 「看不到」= 窗口藏起来了，或窗口开着但当前在别的工作区；回到临时工作区即取消，再离开从头数。
+    // 终端（term:）与网页（web:）面板不动，只关 tool: 面板，格子排布也不动。
+    // 窗口开着时只看 hide / show 事件：钉住时被别的窗口盖住不算藏起来（与文件树浮层同口径）。
+    // 计时放渲染端的原因：各工作区的停靠区实例在这里；定时器在窗口藏着时照走（AI 流式那边也是这么用的）
+    const [windowHidden, setWindowHidden] = useState(false);
+    useEffect(() => {
+        const offHidden = window.knock.onWindowHidden(() => setWindowHidden(true));
+        const offShown = window.knock.onWindowShown(() => setWindowHidden(false));
+        return () => {
+            offHidden();
+            offShown();
+        };
+    }, []);
+    const scratchId = wsData?.workspaces.find((w) => w.builtin)?.id ?? null;
+    const scratchAway = windowHidden || activeWorkspaceId !== scratchId;
+    const scratchMinutes = scratchCfg?.minutes ?? 0;
+    useEffect(() => {
+        if (scratchId === null || scratchMinutes <= 0 || !scratchAway) return;
+        const timer = setTimeout(
+            () => {
+                const dock = dockCtl.current.apis.get(scratchId);
+                if (!dock) return;
+                // 复制一份再遍历：关面板会改动 dock.panels
+                for (const panel of [...dock.panels]) {
+                    if (panel.id.startsWith("tool:")) panel.api.close();
+                }
+            },
+            scratchMinutes * 60 * 1000,
+        );
+        return () => clearTimeout(timer);
+    }, [scratchId, scratchMinutes, scratchAway]);
 
     // 终端字体/字号：termStore 直改实例并重排，不经过面板 props
     useEffect(() => {
@@ -1134,6 +1174,8 @@ export default function App() {
                     lang={lang}
                     onChangeLang={setLang}
                     platform={platform}
+                    scratchMinutes={scratchCfg?.minutes ?? null}
+                    onScratchMinutes={patchScratchAutoClose}
                     theme={theme}
                     onTheme={switchTheme}
                     termCfg={termCfg}
