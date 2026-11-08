@@ -502,8 +502,7 @@ export const en: Record<MessageKey, string> = {
     "gallery.url.toast.clearFailed": "Clear failed — close Chrome and retry",
     "gallery.url.toast.cleared": "Login data cleared",
 
-    "app.brand": "KnockKnock",
-    "app.brandSub": "", // 品牌名本身已经是英文，不再配小字
+    "app.brand": "Knock", // 顶栏上下叠两行显示，中英文一样
     "btn.pin": "pin (no auto-hide)",
     "btn.unpin": "unpin",
     "btn.topmost": "always on top",

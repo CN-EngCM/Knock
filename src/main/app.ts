@@ -199,6 +199,11 @@ function createWindow(): BrowserWindow {
             hideMainWindow();
         }, 200);
     });
+    // 通知渲染端窗口藏起来了（文件树浮层据此自动收起）。不能用页面的 visibilitychange 代替：
+    // 钉住时窗口可见但被别的窗口完全盖住，Chromium 也会报 hidden，那不是用户要的收起
+    w.on("hide", () => {
+        if (!w.webContents.isDestroyed()) w.webContents.send("mp:window-hidden");
+    });
     w.on("closed", () => {
         win = null;
     });

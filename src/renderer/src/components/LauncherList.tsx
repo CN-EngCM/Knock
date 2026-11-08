@@ -15,6 +15,8 @@ import { useI18n } from "@/i18n/useI18n";
 import { MoveToWorkspaceMenu } from "./MoveToWorkspaceMenu";
 
 type Props = {
+    /** 侧栏收成了只有图标的窄条：每行只剩居中的图标，标题和目标放进悬停提示 */
+    collapsed: boolean;
     items: Item[];
     /** 目标经运行时确认是本机目录的条目 id：只有这些条目才出现「在此打开终端」一组 */
     dirIds: ReadonlySet<number>;
@@ -45,6 +47,7 @@ function rowId(listId: string, itemId: number): string {
  * 顺序由 sortItems 固定（类型 → 标题）；单击即启动，500ms 同条目防抖在 App 的 openItem 里。
  */
 export function LauncherList({
+    collapsed,
     items,
     dirIds,
     light,
@@ -104,7 +107,8 @@ export function LauncherList({
             aria-label={t("side.title")}
             aria-activedescendant={sorted.length > 0 ? rowId(listId, sorted[boundedIndex].id) : undefined}
             tabIndex={0}
-            className="h-full overflow-y-auto px-2.5 py-3 outline-none"
+            // 图标条只有 52px：隐藏滚动条（10px 会把图标挤偏），滚轮和触摸板照常能滚；左右内边距也收窄
+            className={cn("h-full overflow-y-auto py-3 outline-none", collapsed ? "no-scrollbar px-1.5" : "px-2.5")}
             onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -112,6 +116,7 @@ export function LauncherList({
             {sorted.map((item, index) => (
                 <LauncherRow
                     key={item.id}
+                    collapsed={collapsed}
                     id={rowId(listId, item.id)}
                     item={item}
                     active={index === boundedIndex}
@@ -136,6 +141,7 @@ export function LauncherList({
 }
 
 type RowProps = {
+    collapsed: boolean;
     /** aria-activedescendant 指向的行 id */
     id: string;
     item: Item;
@@ -160,6 +166,7 @@ type RowProps = {
 
 /** 条目行：类型图标 + 标题，整行单击启动、整行右键弹菜单；活动行在列表有焦点时铺选中底色 */
 function LauncherRow({
+    collapsed,
     id,
     item,
     active,
@@ -186,8 +193,11 @@ function LauncherRow({
                     ref={registerRef}
                     role="option"
                     aria-selected={active}
+                    // 图标条里行内没有文字，读屏需要标题当名字
+                    aria-label={collapsed ? item.title : undefined}
                     className={cn(
-                        "flex h-[26px] cursor-default items-center gap-2 rounded-sm ps-1.5 pe-2",
+                        "flex h-[26px] cursor-default items-center rounded-sm",
+                        collapsed ? "justify-center" : "gap-2 ps-1.5 pe-2",
                         "text-xs text-foreground select-none",
                         active && focused
                             ? "bg-(--state-selected) text-(--state-selected-foreground)"
@@ -199,16 +209,34 @@ function LauncherRow({
                     }}
                     onContextMenu={onActivate}
                 >
-                    <KindIcon item={item} isDir={isDir} light={light} />
-                    {/* Tooltip 只包标题文本：与 ContextMenuTrigger 各占一层 asChild，互不抢 props */}
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-64 break-all font-mono text-caption">
-                            {item.target}
-                        </TooltipContent>
-                    </Tooltip>
+                    {collapsed ? (
+                        // 图标条：提示包住整行宽的图标区，悬停行内任何位置都出提示；
+                        // 行里没有标题了，所以提示给「标题 + 目标」两行，且从右侧弹出（左边已是窗口边缘）
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="flex h-full w-full items-center justify-center">
+                                    <KindIcon item={item} isDir={isDir} light={light} />
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-64 flex-col items-start gap-0.5 text-caption">
+                                <div>{item.title}</div>
+                                <div className="break-all font-mono">{item.target}</div>
+                            </TooltipContent>
+                        </Tooltip>
+                    ) : (
+                        <>
+                            <KindIcon item={item} isDir={isDir} light={light} />
+                            {/* Tooltip 只包标题文本：与 ContextMenuTrigger 各占一层 asChild，互不抢 props */}
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-64 break-all font-mono text-caption">
+                                    {item.target}
+                                </TooltipContent>
+                            </Tooltip>
+                        </>
+                    )}
                 </div>
             </ContextMenuTrigger>
             <ContextMenuContent>

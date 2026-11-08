@@ -491,8 +491,7 @@ export const zh = {
     "gallery.url.toast.clearFailed": "清除失败，请先关闭 Chrome 后重试",
     "gallery.url.toast.cleared": "已清除登录数据",
 
-    "app.brand": "敲敲",
-    "app.brandSub": "Knock",
+    "app.brand": "Knock", // 顶栏上下叠两行显示，中英文一样
     "btn.pin": "钉住（不自动隐藏）",
     "btn.unpin": "取消钉住",
     "btn.topmost": "置顶",

@@ -722,6 +722,16 @@
     -webkit-app-region: no-drag;
 }
 
+/* 隐藏滚动条但保留滚动能力。Chromium 121 起元素上有 scrollbar-width 就会让全局 ::-webkit-scrollbar 失效，
+   所以这里两套都写（与下面 xterm 的写法一致），不依赖哪一套生效 */
+@utility no-scrollbar {
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+    }
+}
+
 /* 统一焦点环:键盘导航时可见。放在层外,优先级高于 utilities 层的 outline-none,
    组件无法用 outline-none 意外丢失键盘焦点提示 */
 :where(

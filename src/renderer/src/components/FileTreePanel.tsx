@@ -24,13 +24,11 @@ type Props = {
     onOpenChange: (open: boolean) => void;
     /** 当前工作区；临时工作区或没有文件夹时为 null，此时面板什么都不画 */
     workspace: { id: number; folder: string } | null;
-    /** 工作区标识色描边，与停靠区那圈同色 */
-    stroke: string;
     /** 浅色主题：少数图标有专为浅底画的款式 */
     light: boolean;
-    /** 定位基准：工作区工具栏下方的内容容器，浮层贴它的左缘、与它同高 */
+    /** 定位基准：停靠区所在的内容容器，浮层贴它的左缘、与它同高 */
     anchorRef: RefObject<HTMLElement | null>;
-    /** 工具栏上的入口按钮：「点外面收起」要放过它，否则点它关闭时会先收再开，闪一下 */
+    /** 顶栏工具栏上的入口按钮：「点外面收起」要放过它，否则点它关闭时会先收再开，闪一下 */
     toggleRef: RefObject<HTMLElement | null>;
     onOpenPath: (path: string) => void;
     onOpenFolderInTerminal: (path: string) => void;
@@ -50,7 +48,6 @@ export default function FileTreePanel({
     open,
     onOpenChange,
     workspace,
-    stroke,
     light,
     anchorRef,
     toggleRef,
@@ -84,7 +81,7 @@ export default function FileTreePanel({
     const folder = workspace?.folder ?? "";
     const visible = open && workspace !== null;
 
-    // 贴着工具栏下方那块内容区：位置取自它的实际矩形，不写死侧栏宽度和工具栏高度
+    // 贴着停靠区所在的内容区：位置取自它的实际矩形，不写死侧栏宽度和顶栏高度
     useLayoutEffect(() => {
         const anchor = anchorRef.current;
         if (!visible || !anchor) return;
@@ -178,6 +175,19 @@ export default function FileTreePanel({
         box?.querySelector<HTMLElement>('[role="tree"]')?.focus({ preventScroll: true });
     }, []);
 
+    // 窗口被藏起来时浮层一起收起。否则再次呼出时它还在，随即被呼出时聚焦搜索框的动作顶掉（点到浮层外），
+    // 先露脸再滑走，体感很差。
+    // 不能只把 open 置 false：普通关闭有滑出动画，窗口藏着时动画不走，要拖到下次呼出才补播，还是会闪。
+    // 所以同时换 Sheet 的 key，让旧浮层当场卸载、没有退出动画
+    const [sheetKey, setSheetKey] = useState(0);
+    useEffect(() => {
+        if (!visible) return;
+        return window.knock.onWindowHidden(() => {
+            setSheetKey((k) => k + 1);
+            onOpenChange(false);
+        });
+    }, [visible, onOpenChange]);
+
     if (!workspace) return null;
 
     // 用户新展开的目录：按需读一层。抛出的错误由 Tree 显示成该行的「加载失败 + 重试」
@@ -232,7 +242,7 @@ export default function FileTreePanel({
             .pop() || folder;
 
     return (
-        <Sheet modal={false} open={visible} onOpenChange={onOpenChange}>
+        <Sheet key={sheetKey} modal={false} open={visible} onOpenChange={onOpenChange}>
             {rect && (
                 <SheetContent
                     side="left"
@@ -263,7 +273,6 @@ export default function FileTreePanel({
                         height: rect.height,
                         bottom: "auto",
                         width: PANEL_WIDTH,
-                        borderColor: stroke,
                     }}
                 >
                     <div className="flex h-9 flex-none items-center justify-between border-b border-line pr-1.5 pl-3">

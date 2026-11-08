@@ -69,6 +69,8 @@ declare global {
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
+            /** 窗口被藏起来（失焦自动隐藏、热键或托盘收起）；钉住时被别的窗口盖住不算 */
+            onWindowHidden: (cb: () => void) => () => void;
             /** 网页要新开窗口（target=_blank / window.open）：只会是 http/https 地址 */
             onWebOpen: (cb: (url: string) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;

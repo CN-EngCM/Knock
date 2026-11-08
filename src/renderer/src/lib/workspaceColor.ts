@@ -30,7 +30,7 @@ export function workspaceColor(workspace: ColorSource): string {
 
 // 描边用同色半透明：实色 1px 在高饱和色下会显得生硬，半透明叠在底色上更接近「染了一层光」。
 // 强度交给 CSS 令牌按主题给值（浅色背景要更实一点才看得清）。
-// 标签内描边与停靠区外描边共用同一个强度：两处同色，切换工作区时整块区域一眼呼应
+// 侧栏当前行的内描边与停靠区标签标识线共用同一个强度：同色，切换工作区时一眼呼应
 export function workspaceStroke(workspace: ColorSource): string {
     return `color-mix(in srgb, ${workspaceColor(workspace)} var(--ws-stroke), transparent)`;
 }

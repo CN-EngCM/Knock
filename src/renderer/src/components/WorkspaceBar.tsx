@@ -14,6 +14,7 @@ import {
 import type { Workspace } from "@/api/client";
 import { WORKSPACE_PALETTE, workspaceColor, workspaceStroke } from "@/lib/workspaceColor";
 import { useI18n } from "@/i18n/useI18n";
+import { cn } from "@/lib/utils";
 
 // 列表高度（不含标题行）：最小一行，默认六行；上限按侧栏的实时高度算。
 const LIST_HEIGHT_KEY = "mypage-workspace-height";
@@ -38,7 +39,7 @@ function loadListHeight(): number {
 
 function saveListHeight(height: number): void {
     try {
-        // 只存数字，且只存列表的可视高度，不含上方 43px 标题行
+        // 只存数字，且只存列表的可视高度，不含上方的标题行
         localStorage.setItem(LIST_HEIGHT_KEY, String(Math.round(height)));
     } catch {
         // 隐私模式等场景写不进去就只在本次会话生效，不打断拖拽
@@ -46,6 +47,8 @@ function saveListHeight(height: number): void {
 }
 
 type Props = {
+    /** 侧栏收成了只有图标的窄条：标题文字去掉，每行只剩色块加首字 */
+    collapsed: boolean;
     workspaces: Workspace[];
     /** 当前生效的工作区；数据还没到时为 null */
     activeId: number | null;
@@ -66,6 +69,7 @@ type Props = {
  * 侧栏隐藏时整块跟着 aside 一起消失，不另做入口。
  */
 export function WorkspaceBar({
+    collapsed,
     workspaces,
     activeId,
     panelCounts,
@@ -158,8 +162,14 @@ export function WorkspaceBar({
 
     return (
         <div ref={rootRef} className="flex-none border-b border-line">
-            <div className="flex h-[43px] flex-none items-center justify-between border-b border-line pr-2 pl-4">
-                <span className="text-xs font-medium">{t("ws.title")}</span>
+            {/* 标题行与工作区行同高（h-8 = 32px，含底边线）。图标条里没有地方放字：去掉标题，「＋」居中留着 */}
+            <div
+                className={cn(
+                    "flex h-8 flex-none items-center border-b border-line",
+                    collapsed ? "justify-center" : "justify-between pr-2 pl-4",
+                )}
+            >
+                {!collapsed && <span className="text-xs font-medium">{t("ws.title")}</span>}
                 <Button
                     type="button"
                     variant="ghost"
@@ -172,11 +182,13 @@ export function WorkspaceBar({
                     <Plus className="size-3.5" />
                 </Button>
             </div>
-            {/* 高度可拖拽并记住，默认 192px（六行）；超出这份高度就在区块内部滚动 */}
-            <div className="overflow-y-auto" style={{ height: visibleHeight }}>
+            {/* 高度可拖拽并记住，默认 192px（六行）；超出这份高度就在区块内部滚动。
+                图标条只有 52px，10px 的滚动条会把色块挤偏，所以隐藏滚动条，滚轮和触摸板照常能滚 */}
+            <div className={cn("overflow-y-auto", collapsed && "no-scrollbar")} style={{ height: visibleHeight }}>
                 {workspaces.map((workspace) => (
                     <WorkspaceRow
                         key={workspace.id}
+                        collapsed={collapsed}
                         workspace={workspace}
                         active={workspace.id === activeId}
                         count={panelCounts[workspace.id] ?? 0}
@@ -203,6 +215,7 @@ export function WorkspaceBar({
 }
 
 type RowProps = {
+    collapsed: boolean;
     workspace: Workspace;
     active: boolean;
     count: number;
@@ -214,6 +227,7 @@ type RowProps = {
 };
 
 function WorkspaceRow({
+    collapsed,
     workspace,
     active,
     count,
@@ -229,27 +243,35 @@ function WorkspaceRow({
     const name = workspace.builtin ? t("ws.scratch") : workspace.name;
     // 文件夹是工作区的项目目录：悬停时连窗口数一起给全，方便确认这一行指向哪个目录。
     // 旧库里没补过文件夹的工作区保留空串，此时只显示窗口数
-    const title = workspace.folder
+    const detail = workspace.folder
         ? `${count} ${t("ws.windowUnit")} · ${workspace.folder}`
         : `${count} ${t("ws.windowUnit")}`;
+    // 图标条里只有首字，名字和窗口数都放进悬停提示
+    const title = collapsed ? `${name} · ${detail}` : detail;
+    const initial = Array.from(name)[0]?.toUpperCase() ?? "";
     const row = (
         <button
             type="button"
             onClick={() => onSwitch(workspace.id)}
             // 计数只留一个数字，鼠标停在哪一行都能从 title 读到完整说法
             title={title}
-            // 当前行：同色低透明度底色 + 上/左/下三边内描边（1px 不占布局，行高仍是 32px）。
+            // 图标条里按钮的可见内容只有一个字，读屏需要完整的名字
+            aria-label={collapsed ? name : undefined}
+            // 当前行：同色低透明度底色 + 上/右/下/左四边内描边（1px 不占布局，行高仍是 32px）。
             // 用内阴影而不是 border：通栏行的 border 会把内容挤动 1px，滚起来会抖。
-            // 右边不画——那一侧紧挨停靠区的左描边，画了会变成两条并排的线
-            className="relative flex h-8 w-full select-none items-center pr-2 pl-4 text-left hover:bg-(--state-hover)"
+            className={cn(
+                "relative flex h-8 w-full select-none items-center text-left hover:bg-(--state-hover)",
+                collapsed ? "justify-center" : "pr-2 pl-4",
+            )}
             style={
                 active
                     ? {
                           backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
                           boxShadow: [
                               `inset 0 1px 0 ${workspaceStroke(workspace)}`,
-                              `inset 1px 0 0 ${workspaceStroke(workspace)}`,
+                              `inset -1px 0 0 ${workspaceStroke(workspace)}`,
                               `inset 0 -1px 0 ${workspaceStroke(workspace)}`,
+                              `inset 1px 0 0 ${workspaceStroke(workspace)}`,
                           ].join(", "),
                       }
                     : undefined
@@ -257,10 +279,28 @@ function WorkspaceRow({
         >
             {/* 贴左边缘、整行高的竖色条 */}
             <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: color }} />
-            <span className={`min-w-0 flex-1 truncate text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}>
-                {name}
-            </span>
-            <span className="flex-none pl-2 font-mono text-[11px] text-dim-foreground">{count}</span>
+            {collapsed ? (
+                // 工作区没有图标，用「同色低透明度底的圆角方块 + 名字首字」代替；底色与当前行的同一档
+                <span
+                    aria-hidden
+                    className={cn(
+                        "grid size-7 place-items-center rounded-md text-xs font-medium",
+                        active ? "text-foreground" : "text-muted-foreground",
+                    )}
+                    style={{ backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)` }}
+                >
+                    {initial}
+                </span>
+            ) : (
+                <>
+                    <span
+                        className={`min-w-0 flex-1 truncate text-xs ${active ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                        {name}
+                    </span>
+                    <span className="flex-none pl-2 font-mono text-[11px] text-dim-foreground">{count}</span>
+                </>
+            )}
         </button>
     );
     // 临时工作区不可改名、不可删除，右键菜单也不给
