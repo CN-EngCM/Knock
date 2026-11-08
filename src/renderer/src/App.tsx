@@ -49,6 +49,7 @@ import { WorkspaceDialog } from "./components/dialogs/WorkspaceDialog";
 import { ConfirmDialog } from "./components/dialogs/ConfirmDialog";
 import { SettingsDialog, type SectionId } from "./components/dialogs/SettingsDialog";
 import { applyFonts } from "./lib/fonts";
+import { itemIconName } from "./lib/kindIcon";
 import { cleanTermTitle } from "./lib/termTitle";
 import { applyTheme, currentTheme } from "./lib/theme";
 import {
@@ -446,7 +447,7 @@ export default function App() {
         if (blocked) return;
         // 工作区条目一律开在它所属的工作区里（并切过去）；左栏的全局条目没有归属，开在当前工作区
         if (item.kind === "bookmark") {
-            void openWeb(item.target, item.workspaceId ?? undefined);
+            void openWeb(item.target, item.workspaceId ?? undefined, itemIconName(item) ?? undefined);
             return;
         }
         if (item.kind === "command") {
@@ -472,6 +473,7 @@ export default function App() {
             command: item.target,
             autoClose: item.autoClose,
             workspaceId: item.workspaceId ?? undefined,
+            icon: itemIconName(item) ?? undefined,
         });
     }
 
@@ -574,9 +576,10 @@ export default function App() {
     // ── 网页面板：每次都新开一块（web:<号>），默认开在当前激活工作区的停靠区，不去找已开的 ──
     // 已开的那块可能早就跳去别的页了，找它反而容易错。不带 url 是「浏览器」工具的空白页。
     // workspaceId 只有搜索框选中别的工作区的网页收藏时才会不是当前工作区：开在它那里并切过去。
+    // icon 是快捷启动条目的图标名，标签上用它；没有（浏览器工具、网页里开的新窗口）就用默认的地球。
     // renderer: "always" 让内容画在 dockview 的覆盖层上，拖拽分屏时不被搬动，网页不会重载
     const nextWebId = useRef(1);
-    async function openWeb(url?: string, workspaceId?: number) {
+    async function openWeb(url?: string, workspaceId?: number, icon?: string) {
         const ws = workspaceId ?? activeWorkspaceId;
         if (ws === null) return;
         setDockWanted(true);
@@ -589,7 +592,7 @@ export default function App() {
                 id: `web:${id}`,
                 component: "web",
                 title: url ? hostOf(url) : t("tool.browser.name"),
-                params: { url },
+                params: { url, icon },
                 renderer: "always",
             });
         });
@@ -618,6 +621,8 @@ export default function App() {
         command?: string;
         autoClose?: boolean;
         workspaceId?: number;
+        /** 快捷启动条目的图标名，标签上用它；没有就用终端默认图标 */
+        icon?: string;
     }) {
         // 没有当前工作区就不起会话：pty 起来了却没有面板接，等于留一个看不见的 shell
         const ws = req?.workspaceId ?? activeWorkspaceId;
@@ -639,7 +644,7 @@ export default function App() {
                 id: `term:${r.data.id}`,
                 component: "term",
                 title: r.data.label,
-                params: { sessionId: r.data.id },
+                params: { sessionId: r.data.id, icon: req?.icon },
             });
         });
         // 自动关闭：命令后面追加「成功才退出 shell」，shell 一退出，下面的 exit 事件处理就会关掉面板；
@@ -1111,6 +1116,7 @@ export default function App() {
                                     <DockZone
                                         workspaces={workspaceIds}
                                         activeId={wsData.activeId}
+                                        light={theme === "light"}
                                         onReady={handleDockReady}
                                         onOpenTool={dockOpenTool}
                                         onOpenSettings={dockOpenSettings}

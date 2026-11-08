@@ -1,4 +1,14 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type FunctionComponent } from "react";
+import {
+    Suspense,
+    createContext,
+    lazy,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+    type FunctionComponent,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FieldLabel } from "@/components/ui/field";
@@ -15,6 +25,7 @@ import type {
 } from "@/components/ui/dock-layout";
 import { toolMeta, type ToolId } from "@/tools/registry";
 import { Spinner } from "@/components/ui/spinner";
+import { itemIconUrl, useIconSets } from "@/lib/iconSets";
 import { cleanTermTitle, TERM_TITLE_MAX } from "@/lib/termTitle";
 import { useI18n } from "@/i18n/useI18n";
 import { ConfirmDialog } from "./dialogs/ConfirmDialog";
@@ -29,6 +40,8 @@ type Props = {
     /** 当前存在的工作区 id：已删除的工作区要从实例列表里剪掉 */
     workspaces: number[];
     activeId: number;
+    /** 浅色主题：快捷启动条目的图标有专为浅底画的款式，标签要跟着换 */
+    light: boolean;
     onReady: (workspaceId: number, api: DockviewApi) => void;
     onOpenTool: (id: ToolId) => void;
     onOpenSettings: () => void;
@@ -39,13 +52,47 @@ type Props = {
 // 校验，不同工作区出现同 id 不冲突。激活权威是 dockview，App 只经 api 开/关/激活。
 // 空态水印 = 工具首页。组头不挂任何动作：开工具走顶栏「工具集」，关面板走标签上的 × 或右键菜单。
 
-// 标签：终端面板点 × 或中键关闭前先确认——面板一关就结束 shell 会话，正在跑的程序
+// 标签图标：从快捷启动条目打开的网页、终端命令，用条目自己的图标（图标名在开面板时放进 params.icon，
+// 与左栏、工具栏同一个图标包，浅色主题自动换浅底款）；其余按面板 id 前缀取，与工具集菜单是同一套
+// （终端、浏览器在注册表里也有），网页面板用地球图标，不取站点图标。
+// 主题由 DockZone 经 context 传下来：标签组件要保持引用稳定，拿不到 DockZone 的 props
+const DockLightContext = createContext(false);
+
+// 焦点标签 = 当前组里的当前标签。浅色主题里它是深色底（见 index.css 的 --dock-focus-*），
+// 浅底款图标（vercel、next 这类深色字形）放上去看不清，所以焦点标签要换回深底款
+function useIsFocusTab(api: IDockviewPanelHeaderProps["api"]): boolean {
+    const [focus, setFocus] = useState(() => api.isActive && api.isGroupActive);
+    useEffect(() => {
+        const sync = () => setFocus(api.isActive && api.isGroupActive);
+        sync();
+        const subs = [api.onDidActiveChange(sync), api.onDidActiveGroupChange(sync)];
+        return () => subs.forEach((s) => s.dispose());
+    }, [api]);
+    return focus;
+}
+
+function panelIcon(panelId: string, iconName: string | undefined, light: boolean): string {
+    if (iconName) return itemIconUrl(iconName, light);
+    if (panelId.startsWith("term:")) return toolMeta("terminal").icon;
+    if (panelId.startsWith("web:")) return toolMeta("browser").icon;
+    return toolMeta(panelId.slice("tool:".length) as ToolId).icon;
+}
+
+// 标签：图标 + 默认标签。默认标签（GanDockviewTab）是 GaN.UI 上游原样文件、没有图标位，
+// 所以在它外面套一层横排（.gan-tab-row，样式在 index.css），图标放在它左边。
+// 终端面板点 × 或中键关闭前先确认——面板一关就结束 shell 会话，正在跑的程序
 // 会跟着没。右键菜单的关闭走 dock 自己的 api，不经过这里，因此不确认（与批量关闭一致）。
-// 包装层只为在捕获阶段抢在默认标签的关闭手势之前，display:contents 让它不参与标签布局。
+// 确认用的包装层只为在捕获阶段抢在默认标签的关闭手势之前，display:contents 让它不参与标签布局。
 function DockTab(props: IDockviewPanelHeaderProps) {
     const { t } = useI18n();
     const [confirming, setConfirming] = useState(false);
-    if (!props.api.id.startsWith("term:")) return <GanDockviewTab {...props} />;
+    const lightTheme = useContext(DockLightContext);
+    const onFocusTab = useIsFocusTab(props.api);
+    // 条目用了新图标库里的图标时，库载入完要重画标签
+    useIconSets();
+    const light = lightTheme && !onFocusTab;
+    const isTerm = props.api.id.startsWith("term:");
+    const iconName = (props.params as { icon?: string } | undefined)?.icon;
 
     const ask = (event: { preventDefault(): void; stopPropagation(): void }) => {
         event.preventDefault();
@@ -54,31 +101,41 @@ function DockTab(props: IDockviewPanelHeaderProps) {
     };
     return (
         <>
-            <div
-                className="contents"
-                onClickCapture={(event) => {
-                    if (event.target instanceof Element && event.target.closest(".gan-tab-close")) ask(event);
-                }}
-                onPointerUpCapture={(event) => {
-                    // 中键关闭由默认标签在 pointerup 里处理，也在这里拦下
-                    if (event.button === 1) ask(event);
-                }}
-            >
-                <GanDockviewTab {...props} />
+            <div className="gan-tab-row">
+                {/* draggable=false：标签本身可拖，图片自带的拖拽会抢手势 */}
+                <img src={panelIcon(props.api.id, iconName, light)} alt="" draggable={false} className="gan-tab-icon" />
+                {isTerm ? (
+                    <div
+                        className="contents"
+                        onClickCapture={(event) => {
+                            if (event.target instanceof Element && event.target.closest(".gan-tab-close")) ask(event);
+                        }}
+                        onPointerUpCapture={(event) => {
+                            // 中键关闭由默认标签在 pointerup 里处理，也在这里拦下
+                            if (event.button === 1) ask(event);
+                        }}
+                    >
+                        <GanDockviewTab {...props} />
+                    </div>
+                ) : (
+                    <GanDockviewTab {...props} />
+                )}
             </div>
-            <ConfirmDialog
-                open={confirming}
-                title={t("term.closeConfirm")}
-                description={t("term.closeConfirmHint")}
-                confirmLabel={t("common.close")}
-                onClose={() => setConfirming(false)}
-                onConfirm={async () => props.api.close()}
-            />
+            {isTerm && (
+                <ConfirmDialog
+                    open={confirming}
+                    title={t("term.closeConfirm")}
+                    description={t("term.closeConfirmHint")}
+                    confirmLabel={t("common.close")}
+                    onClose={() => setConfirming(false)}
+                    onConfirm={async () => props.api.close()}
+                />
+            )}
         </>
     );
 }
 
-export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSettings }: Props) {
+export function DockZone({ workspaces, activeId, light, onReady, onOpenTool, onOpenSettings }: Props) {
     const { t } = useI18n();
     // 已挂载实例的工作区：访问过的都留着，切回去时面板、终端与回滚缓冲原样还在
     const [mounted, setMounted] = useState<number[]>(() => [activeId]);
@@ -175,7 +232,7 @@ export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSett
     }
 
     return (
-        <>
+        <DockLightContext.Provider value={light}>
             {/* 停靠区直接铺满工作区：形状与层次由 dock 皮肤自己给（组间距、组描边、标签栏），
                 不再外套留白与细边框卡片，否则等于在皮肤外再画一层框 */}
             <div className="app-no-drag h-full min-h-0">
@@ -231,6 +288,6 @@ export function DockZone({ workspaces, activeId, onReady, onOpenTool, onOpenSett
                     </form>
                 </DialogContent>
             </Dialog>
-        </>
+        </DockLightContext.Provider>
     );
 }

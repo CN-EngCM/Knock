@@ -1023,6 +1023,33 @@
     }
 }
 
+/* ── 停靠区标签图标 ──
+   默认标签是上游原样文件，没有图标位，DockZone 的 DockTab 在它外面套一层 .gan-tab-row 横排。
+   左边距由横排给（与默认标签原有的左内边距同值），默认标签自己的左内边距收窄成图标与标题的间距。 */
+.gan-dockview .gan-tab-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding-inline-start: var(--space-xl);
+}
+.gan-dockview .gan-tab-icon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+}
+.gan-dockview .dv-tab .gan-tab-row .dv-default-tab {
+    padding-inline-start: var(--space-sm);
+}
+/* 溢出下拉里的行，上游把左内边距定为 --space-lg，权重与上一条持平，这里单写一条压过 */
+.gan-dockview .dv-tabs-overflow-container .gan-tab-row {
+    padding-inline-start: var(--space-lg);
+}
+.gan-dockview .dv-tabs-overflow-container .dv-tab .gan-tab-row .dv-default-tab {
+    padding-inline-start: var(--space-sm);
+}
+
 /* ── 减弱动态:去过渡与动画,保留颜色变化 ── */
 @media (prefers-reduced-motion: reduce) {
     .ghost-btn,

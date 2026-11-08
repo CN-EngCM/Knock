@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { IconPickerDialog } from "./IconPickerDialog";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
 import { api, type Item, type Kind } from "@/api/client";
-import { hasIcon, namedIconUrl } from "@/lib/fileIcon";
+import { isKnownIcon, itemIconUrl, useIconSets } from "@/lib/iconSets";
 import { useI18n } from "@/i18n/useI18n";
 import { FormRow } from "./settings/shared";
 
@@ -57,6 +57,8 @@ export function ItemDialog({
     onSubmit,
 }: Props) {
     const { t } = useI18n();
+    // 选的是新图标库里的图标时，库载入完要重画下面那个小预览
+    useIconSets();
     const [kind, setKind] = useState<Kind>("bookmark");
     const [title, setTitle] = useState("");
     const [target, setTarget] = useState("");
@@ -77,7 +79,7 @@ export function ItemDialog({
         setArgs(item?.args ?? "");
         // 库里认不得的图标名（旧版遗留、包升级删了）按「自动」回填：既与列表里的显示一致，
         // 也不会把可能不合格式的旧值原样提交回去，保存一次顺便清掉
-        setIcon(item?.icon && hasIcon(item.icon) ? item.icon : null);
+        setIcon(item?.icon && isKnownIcon(item.icon) ? item.icon : null);
         setAutoClose(item?.autoClose ?? false);
     }, [open, item, inWorkspace]);
 
@@ -308,7 +310,7 @@ export function ItemDialog({
                         >
                             {icon ? (
                                 <>
-                                    <img src={namedIconUrl(icon, light)} alt="" className="size-[18px] flex-none" />
+                                    <img src={itemIconUrl(icon, light)} alt="" className="size-[18px] flex-none" />
                                     <span className="min-w-0 truncate">{icon}</span>
                                 </>
                             ) : (

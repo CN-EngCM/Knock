@@ -40,11 +40,12 @@ const itemFieldsSchema = z.object({
     target: z.string().trim().min(1).max(1000),
     // app: 启动参数；command: 工作目录（可空，空 = 用户主目录）；其余类型为 null
     args: z.string().trim().max(1000).nullish(),
-    // 图标包里的图标名；null = 自动匹配。图标包只在渲染端，这里只查格式，认不认得由渲染端回退处理
+    // 图标名；null = 自动匹配。不带前缀的是文件类图标包（Material Icon Theme）里的名字，
+    // 带「库名:」前缀的是其他图标库（如 mdi:home）。图标库只在渲染端，这里只查格式，认不认得由渲染端回退处理
     icon: z
         .string()
         .trim()
-        .regex(/^[\w.-]{1,64}$/)
+        .regex(/^(?:[\w-]{1,20}:)?[\w.-]{1,64}$/)
         .nullish(),
     // 仅 command 有意义：命令成功后自动关掉终端面板；缺省 = 不关
     autoClose: z.boolean().optional(),

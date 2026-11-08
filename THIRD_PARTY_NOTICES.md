@@ -55,3 +55,45 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## 图标库
+
+条目图标选择器里的图标，图标数据随安装包分发（构建时打进产物，按需懒加载）。除文件类的 Material Icon Theme（npm `material-icon-theme`）外，其余四个以 npm 包 `@iconify-json/<库>` 引入，均在 `devDependencies`。
+
+| 库 | 作者 | 授权 | 来源 |
+| --- | --- | --- | --- |
+| Material Icon Theme | Material Extensions | MIT | https://github.com/material-extensions/vscode-material-icon-theme |
+| SVG Logos | Gil Barbara | CC0 1.0 | https://github.com/gilbarbara/logos |
+| Fluent UI System Color Icons | Microsoft Corporation | MIT | https://github.com/microsoft/fluentui-system-icons |
+| Material Design Icons | Pictogrammers | Apache License 2.0 | https://github.com/Templarian/MaterialDesign |
+| Siemens Industrial Experience Icons | Siemens AG | MIT | https://github.com/siemens/ix-icons |
+
+SVG Logos 里的品牌 logo，商标归各自的所有者；本应用只在启动器里用它标识对应的网站和软件。CC0 授权不要求署名，此处列出仅为说明来源。
+
+Material Design Icons 的图标按 Apache License 2.0 分发（上游 Pictogrammers Free License 的说明），许可证全文见 https://www.apache.org/licenses/LICENSE-2.0 。
+
+以下三个 MIT 授权的库共用同一份许可文本，版权行分别为：
+
+- Copyright (c) 2025 Material Extensions（Material Icon Theme）
+- Copyright (c) 2020 Microsoft Corporation（Fluent UI System Color Icons）
+- Copyright (c) 2022 Siemens AG（Siemens Industrial Experience Icons）
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
