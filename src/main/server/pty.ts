@@ -144,7 +144,7 @@ function exitOnSuccess(label: string): string {
 }
 
 /** 新建会话；返回 id、会话标签（渲染端做 tab 名）和 exitSuffix（见 exitOnSuccess）。
- *  opts 带 cwd（工作目录：工作区文件夹或命令条目显式填的目录，缺省主目录）与 label（会话标签）；
+ *  opts 带 cwd（工作目录：命令条目显式填的目录或文件夹条目本身，缺省主目录）与 label（会话标签）；
  *  不传时 label 用 shell 标签 */
 export function spawnSession(opts?: { cwd?: string; label?: string }): {
     id: number;

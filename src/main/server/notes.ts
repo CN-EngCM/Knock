@@ -13,7 +13,7 @@ import type { ApiResult } from "./api";
 // ── 便签（工具 notes 的后端）──
 // 一条便签 = 一段文字 + 多张图片。图片字节原样写进数据目录 notes/<图片id>.<format>，
 // 行里只存格式与顺序；经 mpimg://note/<图片id> 读取，不走 IPC 传字节。
-// 主进程不解码：格式靠文件头判定。每个工作区一份，按 workspace_id 隔离。
+// 主进程不解码：格式靠文件头判定。全局一份。
 
 const MIME: Record<string, string> = {
     jpg: "image/jpeg",
@@ -56,18 +56,13 @@ function formatOf(bytes: Uint8Array): string | null {
 type NoteRow = { id: number; text: string; createdAt: number };
 type ImageRow = { id: number; noteId: number; format: string };
 
-export function listNotes(workspaceId: number): ApiResult<Note[]> {
+export function listNotes(): ApiResult<Note[]> {
     const rows = db
-        .prepare(
-            "SELECT id, text, created_at AS createdAt FROM notes WHERE workspace_id = ? ORDER BY created_at DESC, id DESC",
-        )
-        .all(workspaceId) as NoteRow[];
+        .prepare("SELECT id, text, created_at AS createdAt FROM notes ORDER BY created_at DESC, id DESC")
+        .all() as NoteRow[];
     const images = db
-        .prepare(
-            "SELECT i.id, i.note_id AS noteId, i.format FROM note_images i JOIN notes n ON n.id = i.note_id " +
-                "WHERE n.workspace_id = ? ORDER BY i.note_id, i.position",
-        )
-        .all(workspaceId) as ImageRow[];
+        .prepare("SELECT id, note_id AS noteId, format FROM note_images ORDER BY note_id, position")
+        .all() as ImageRow[];
     const byNote = new Map<number, NoteImage[]>();
     for (const img of images) {
         const list = byNote.get(img.noteId) ?? [];
@@ -77,17 +72,12 @@ export function listNotes(workspaceId: number): ApiResult<Note[]> {
     return { ok: true, data: rows.map((r) => ({ ...r, images: byNote.get(r.id) ?? [] })) };
 }
 
-export function countNotes(workspaceId: number): ApiResult<number> {
-    const row = db.prepare("SELECT COUNT(*) AS n FROM notes WHERE workspace_id = ?").get(workspaceId) as { n: number };
-    return { ok: true, data: row.n };
-}
-
 /** 文字全是空白时存空串；其余原样存（不 trim） */
 function normalizeText(text: string): string {
     return text.trim() === "" ? "" : text;
 }
 
-export async function createNote(workspaceId: number, text: string, images: Uint8Array[]): Promise<ApiResult<Note>> {
+export async function createNote(text: string, images: Uint8Array[]): Promise<ApiResult<Note>> {
     const body = normalizeText(text);
     if (body === "" && images.length === 0) return badRequest;
     const formats: string[] = [];
@@ -96,15 +86,13 @@ export async function createNote(workspaceId: number, text: string, images: Uint
         if (!f) return badRequest;
         formats.push(f);
     }
-    if (!db.prepare("SELECT 1 FROM workspaces WHERE id = ?").get(workspaceId)) return notFound;
 
     // 先写行（拿到图片 id 才有文件名），再写文件，文件失败就撤销本次的行
     const now = Date.now();
     const created = db.transaction(() => {
         const noteId = Number(
-            db
-                .prepare("INSERT INTO notes (workspace_id, text, created_at, updated_at) VALUES (?, ?, ?, ?)")
-                .run(workspaceId, body, now, now).lastInsertRowid,
+            db.prepare("INSERT INTO notes (text, created_at, updated_at) VALUES (?, ?, ?)").run(body, now, now)
+                .lastInsertRowid,
         );
         const insert = db.prepare("INSERT INTO note_images (note_id, format, position) VALUES (?, ?, ?)");
         const list: NoteImage[] = formats.map((format, position) => ({
@@ -182,13 +170,6 @@ export async function deleteNote(id: number): Promise<ApiResult<null>> {
     if (info.changes === 0) return notFound;
     await removeNoteFiles(images);
     return { ok: true, data: null };
-}
-
-/** 删工作区前取出它名下所有图片：外键级联只删行，文件要自己清（先取、删行后再调 removeNoteFiles） */
-export function imagesOfWorkspace(workspaceId: number): NoteImage[] {
-    return db
-        .prepare("SELECT i.id, i.format FROM note_images i JOIN notes n ON n.id = i.note_id WHERE n.workspace_id = ?")
-        .all(workspaceId) as NoteImage[];
 }
 
 /** 用系统默认程序打开；openPath 返回空串即成功 */

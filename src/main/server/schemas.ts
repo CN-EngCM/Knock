@@ -8,31 +8,6 @@ import { z } from "zod";
 // 条目类型：网页收藏 / 本机应用 / 本机文件或文件夹 / 终端命令
 export const kindSchema = z.enum(["bookmark", "app", "file", "command"]);
 
-// ── 工作区：每个工作区一套独立的停靠区 ──
-// 名字规则同分组（trim 后非空），上限按工作区取 40；创建与改名共用一份
-const workspaceNameSchema = z.string().trim().min(1).max(40);
-// 文件夹是绝对路径：只校验非空与长度，路径是否真实存在由 server/workspaces.ts 查磁盘
-const workspaceFolderSchema = z.string().trim().min(1).max(1000);
-
-export const createWorkspaceSchema = z.object({ name: workspaceNameSchema, folder: workspaceFolderSchema });
-// 改名把 id 与名字一起校验，处理器入口一次过
-export const renameWorkspaceSchema = z.object({ id: z.number().int().positive(), name: workspaceNameSchema });
-// 修改文件夹：id + 新路径，路径存在性同样留给 server 层
-export const updateWorkspaceFolderSchema = z.object({
-    id: z.number().int().positive(),
-    folder: workspaceFolderSchema,
-});
-// 改颜色：null = 恢复自动取色。只查 #rrggbb 格式；调色板只在渲染端，这里不认具体是哪一格
-export const setWorkspaceColorSchema = z.object({
-    id: z.number().int().positive(),
-    color: z
-        .string()
-        .regex(/^#[0-9a-fA-F]{6}$/)
-        .nullable(),
-});
-// 删除、设为当前只认 id
-export const workspaceIdSchema = z.object({ id: z.number().int().positive() });
-
 // 条目自身的字段：新建与编辑共用一份（编辑用 partial，字段规则不会漂）
 const itemFieldsSchema = z.object({
     kind: kindSchema,
@@ -50,19 +25,9 @@ const itemFieldsSchema = z.object({
     autoClose: z.boolean().optional(),
 });
 
-// 新建时可选归属：空 = 左侧快捷启动，数字 = 该工作区的快捷启动工具栏
-export const createItemSchema = itemFieldsSchema.extend({
-    workspaceId: z.number().int().positive().nullish(),
-});
+export const createItemSchema = itemFieldsSchema;
 
-// PATCH 不允许改归属：移动走 moveItem，避免两个入口都能写 workspace_id
 export const updateItemSchema = itemFieldsSchema.partial();
-
-// 移动条目：workspaceId 为 null 表示移回左侧快捷启动，数字表示工作区工具栏
-export const moveItemSchema = z.object({
-    id: z.number().int().positive(),
-    workspaceId: z.number().int().positive().nullable(),
-});
 
 // 启动条目：只传 id，目标路径等以数据库为准
 export const launchSchema = z.object({ id: z.number().int().positive() });
@@ -70,7 +35,7 @@ export const launchSchema = z.object({ id: z.number().int().positive() });
 // ── 终端会话（v2.2）──
 // 输入分片走 IPC，单次上限 8KB（整屏粘贴也远小于此，防误传大负载）
 export const ptyWriteSchema = z.object({ id: z.number().int().positive(), data: z.string().max(8192) });
-// spawn 可选载荷：cwd 是工作目录（工作区里开终端传工作区文件夹；命令条目有显式工作目录时传它，
+// spawn 可选载荷：cwd 是工作目录（命令条目有显式工作目录、文件夹条目「在此打开终端」时传它，
 // 留空则不带）；不传时缺省主目录；label 是会话标签（命令条目传标题，否则用 shell 标签）。
 export const ptySpawnSchema = z.object({
     cwd: z.string().trim().max(1000).optional(),
@@ -129,18 +94,7 @@ export type FontConfig = { uiFont: string; monoFont: string };
 // ── 内置工具别名（v2.3）──
 // id 集合是前后端共享词汇（同 HOTKEY_IDS/SHELL_IDS 的「唯一事实来源」模式）：
 // 渲染端工具注册表（src/renderer/src/tools/registry.ts）的 ToolId 以此为约束。
-export const TOOL_IDS = [
-    "json",
-    "qr",
-    "scan",
-    "files",
-    "translate",
-    "ai",
-    "gallery",
-    "terminal",
-    "notes",
-    "browser",
-] as const;
+export const TOOL_IDS = ["json", "qr", "scan", "files", "translate", "ai", "gallery", "terminal", "notes"] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
 // 别名是「空格/逗号分隔的多值字符串」，渲染端自行拆分参与搜索匹配
@@ -170,12 +124,6 @@ export type FileSearchInput = z.infer<typeof fileSearchSchema>;
 
 // 打开/定位动作的目标路径（文件搜索结果的行级动作，不走 DB 条目）
 export const pathArgSchema = z.object({ path: z.string().trim().min(1).max(1000) });
-
-// 文件树读目录：根目录不由渲染端传，主进程按 workspaceId 自己查工作区文件夹，再校验 dir 在其内
-export const listDirSchema = z.object({
-    workspaceId: z.number().int().positive(),
-    dir: z.string().trim().min(1).max(1000),
-});
 
 // 原生文件选择框的目的（条目编辑「浏览…」）：app = 过滤可执行文件；path = 文件/文件夹皆可选；
 // script = 只放行 .ps1（终端命令条目的「选择脚本…」）。defaultPath 是对话框起始目录，不传 = 系统默认位置
@@ -433,20 +381,6 @@ export type Item = {
     icon: string | null;
     /** 仅 command：命令成功后自动关掉终端面板。SQL 列名 auto_close（0/1），下发前转成布尔 */
     autoClose: boolean;
-    /** 空 = 左侧快捷启动；数字 = 工作区工具栏。SQL 列名 workspace_id，下发前别名成这个字段 */
-    workspaceId: number | null;
-};
-
-export type Workspace = {
-    id: number;
-    name: string;
-    /** 工作区文件夹（绝对路径）；临时工作区为空串 */
-    folder: string;
-    /** 自带的「临时工作区」：显示名走渲染端 i18n（库里存空串），不可删除/改名，恒排第一 */
-    builtin: boolean;
-    position: number;
-    /** 用户选的标识色（#rrggbb）；null = 渲染端按 id 自动取色 */
-    color: string | null;
 };
 
 export type Expert = {
@@ -473,9 +407,7 @@ const noteTextSchema = z.string().max(NOTE_TEXT_MAX_CHARS);
 const noteImageBytesSchema = z.instanceof(Uint8Array).refine((b) => b.length > 0 && b.length <= NOTE_IMAGE_MAX_BYTES);
 const noteIdSchema = z.number().int().positive();
 
-export const noteWorkspaceSchema = z.object({ workspaceId: noteIdSchema });
 export const noteCreateSchema = z.object({
-    workspaceId: noteIdSchema,
     text: noteTextSchema,
     images: z.array(noteImageBytesSchema).max(NOTE_MAX_IMAGES),
 });

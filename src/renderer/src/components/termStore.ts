@@ -4,10 +4,10 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { ITheme } from "@xterm/xterm";
 import { DEFAULT_MONO_STACK, withFallback } from "@/lib/fonts";
 
-// 终端会话的 xterm 实例表：实例生命周期与 dock 面板解耦——面板被拖动重组只是
+// 终端会话的 xterm 实例表：实例生命周期与标签页组件解耦——组件重挂只是
 // DOM 重挂（term.open 到新容器，回滚缓冲在实例上不丢），会话结束才 dispose。
 // 本模块刻意不 import xterm 运行时（只有 type import）：它随 App 主包加载，
-// xterm 本体留在 DockTerm 面板的懒加载块里。
+// xterm 本体留在 TermPanel 的懒加载块里。
 
 export interface TermHandle {
     term: Terminal;
@@ -15,8 +15,8 @@ export interface TermHandle {
 }
 
 const terms = new Map<number, TermHandle>();
-// 面板挂载（xterm 就绪）前到达的 pty 输出先攒着，register 时回放；
-// 首个终端面板要等懒加载块，这个缓冲比旧架构更有必要
+// 终端标签挂载（xterm 就绪）前到达的 pty 输出先攒着，register 时回放；
+// 首个终端标签要等懒加载块，这个缓冲比旧架构更有必要
 const pending = new Map<number, string[]>();
 
 let fontCfg = { monoFont: "", fontSize: 13 };
@@ -59,7 +59,7 @@ export function disposeTerm(id: number) {
     pending.delete(id);
 }
 
-/** 全量 fit（字体变更后重排用）；不可见面板（隐藏组）跳过，恢复可见时面板自行 fit */
+/** 全量 fit（字体变更后重排用）；不可见的标签跳过，恢复可见时 TermPanel 自行 fit */
 export function fitAll() {
     for (const [id, { term, fit }] of terms.entries()) {
         try {

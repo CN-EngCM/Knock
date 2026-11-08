@@ -10,7 +10,7 @@
 
 | 要做的事 | 先读 |
 | --- | --- |
-| 改界面、交互、工作区、停靠区、终端面板，或动 GaN.UI 组件 | [docs/spec/ui.md](docs/spec/ui.md) |
+| 改界面、交互、右侧标签区、终端标签，或动 GaN.UI 组件 | [docs/spec/ui.md](docs/spec/ui.md) |
 | 改表结构、settings 键、数据目录、图库存储 | [docs/spec/data.md](docs/spec/data.md) |
 | 新增或修改内置工具 | [TOOL_SPEC.md](src/renderer/src/tools/TOOL_SPEC.md) |
 | 启动真实窗口调试、写界面自动化脚本 | [docs/spec/debugging.md](docs/spec/debugging.md) |
@@ -28,7 +28,8 @@
 
 不要改回去的决策：
 
-- 工具面板和终端会话每次启动从空开始，不做还原。停靠布局只还原「格子怎么排」（还原出来是一排空格子），不还原里面的面板。
+- 工具标签和终端会话每次启动从空开始，不做还原。
+- 不做工作区、停靠区（dockview）、文件树、应用内浏览器：那是「工作台」方向，已整个砍掉（2026-11），代码留在 `工作台方向_dev` 分支。网页收藏一律交给系统浏览器。
 - 窗口边缘圆角与描边全归 OS，不自画。
 - 字体只用 Outfit + IBM Plex Mono，不引入 MiSans、Geist。
 
@@ -52,7 +53,7 @@ pnpm dist:win   # 打包目录版到 release/win-unpacked/（dist:mac 到 releas
 src/main/index.ts                主进程入口：单实例锁 + scheme 注册 + 启动失败提示
 src/main/dataBoot.ts             开库前确定数据目录，所以 app.ts 在它之后才动态加载
 src/main/app.ts                  应用主体：窗口/托盘/热键 + IPC 注册 + mpimg:// 协议
-src/main/webView.ts              应用内网页（<webview>）的会话与安全：分区、权限、UA、新窗口转发
+src/main/browserData.ts          改数据目录前把 Chromium 会话数据刷盘
 src/main/server/api.ts           ★ MpApi 接口 = 前后端唯一契约；apiHandlers 逐方法实现
 src/main/server/schemas.ts       zod schema 与前后端共享的 id 词汇（HOTKEY_IDS / TOOL_IDS）
 src/main/server/*.ts             业务模块，纯函数风格
@@ -67,7 +68,7 @@ scripts/                         构建、打包和资源生成脚本（测试�
 - **错误约定**：可预期错误返回 `ApiResult<T>` 判别联合（`{ok:false, error:{kind:...}}`），不靠抛异常。入参在处理器入口做 zod 校验。
 - **GaN.UI**：`components/ui/` 与上游支撑模块（清单见 `.prettierignore`）保持上游原样，改了就没法整文件比对下次同步。
 - **跨平台**：开发平台是 Windows 与 macOS。平台差异集中在 `src/main/server/` 的 shortcuts、everything、spotlight、launcher、autostart、pty、foreground 和 api.ts 的 revealPath，以及 `src/main/` 的 tray、hotkey，其余保持跨平台写法。
-- **清理目录前先看数据在哪**：数据目录以默认根（Windows `%APPDATA%\Knock\`）下的 `data-location.json` 为准，用户可设到任何位置。打包会整个删掉 `release/win-unpacked/` 再重建，数据放在里面会被一起删。Chromium 的缓存、cookie、`localStorage` 与网页登录态在 `<数据目录>/browser-data/`，默认根里只剩指针和几个锁文件，别把指针当垃圾清掉；改数据目录时这个目录（连同 `chrome-profile`）重启后才搬，见 [docs/spec/data.md](docs/spec/data.md)。
+- **清理目录前先看数据在哪**：数据目录以默认根（Windows `%APPDATA%\Knock\`）下的 `data-location.json` 为准，用户可设到任何位置。打包会整个删掉 `release/win-unpacked/` 再重建，数据放在里面会被一起删。Chromium 的缓存、cookie、`localStorage` 与图库抓取的登录态在 `<数据目录>/browser-data/`，默认根里只剩指针和几个锁文件，别把指针当垃圾清掉；改数据目录时这个目录（连同 `chrome-profile`）重启后才搬，见 [docs/spec/data.md](docs/spec/data.md)。
 
 ## 文件放哪儿
 

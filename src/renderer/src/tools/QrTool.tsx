@@ -10,7 +10,7 @@ import { useI18n } from "@/i18n/useI18n";
 import { useToolInput } from "./toolInput";
 
 // 二维码生成：qrcode 库（纯 JS）在本 chunk 内静态引入——chunk 本身
-// 就是被 dock 面板懒加载的，关闭面板即整体卸载。
+// 就是被标签懒加载的，关闭标签即整体卸载。
 // 模块颜色固定黑白：扫码器对深底浅码的识别远差于白底黑码，不随主题翻转。
 // initialInput = 搜索框素材注入（如呼出时限内复制的 URL）。
 export default function QrTool({ initialInput }: { initialInput?: string | null }) {

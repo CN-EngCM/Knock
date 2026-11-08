@@ -6,7 +6,6 @@ import type { ThemeId } from "../../../main/server/schemas";
 // 类型再导出：前端组件从这里拿行类型，避免组件重复引用主进程模块的深路径
 export type {
     Item,
-    Workspace,
     Note,
     NoteImage,
     Kind,
@@ -49,7 +48,6 @@ export type {
 export type { ApiResult, ApiError } from "../../../main/server/api";
 export type { Shortcut } from "../../../main/server/shortcuts";
 export type { FileHit } from "../../../main/server/everything";
-export type { DirEntry } from "../../../main/server/fileTree";
 export type { TranslateResult } from "../../../main/server/youdao";
 export type { PtyEvent } from "../../../main/server/pty";
 export type { AiEvent } from "../../../main/server/ai";
@@ -69,10 +67,6 @@ declare global {
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
-            /** 窗口被藏起来（失焦自动隐藏、热键或托盘收起）；钉住时被别的窗口盖住不算 */
-            onWindowHidden: (cb: () => void) => () => void;
-            /** 网页要新开窗口（target=_blank / window.open）：只会是 http/https 地址 */
-            onWebOpen: (cb: (url: string) => void) => () => void;
             onPtyEvent: (cb: (e: PtyEvent) => void) => () => void;
             onAiEvent: (cb: (e: AiEvent) => void) => () => void;
         };
@@ -92,16 +86,8 @@ const invoke = window.knock.invoke as <K extends keyof MpApi>(
 export const api: MpApi = {
     session: () => invoke("session"),
     getData: () => invoke("getData"),
-    getWorkspaces: () => invoke("getWorkspaces"),
-    createWorkspace: (name, folder) => invoke("createWorkspace", name, folder),
-    renameWorkspace: (id, name) => invoke("renameWorkspace", id, name),
-    setWorkspaceColor: (id, color) => invoke("setWorkspaceColor", id, color),
-    updateWorkspaceFolder: (id, folder) => invoke("updateWorkspaceFolder", id, folder),
-    deleteWorkspace: (id) => invoke("deleteWorkspace", id),
-    setActiveWorkspace: (id) => invoke("setActiveWorkspace", id),
     createItem: (input) => invoke("createItem", input),
     updateItem: (id, patch) => invoke("updateItem", id, patch),
-    moveItem: (id, workspaceId) => invoke("moveItem", id, workspaceId),
     deleteItem: (id) => invoke("deleteItem", id),
     launch: (id) => invoke("launch", id),
     getAutostart: () => invoke("getAutostart"),
@@ -132,7 +118,6 @@ export const api: MpApi = {
     openPath: (path) => invoke("openPath", path),
     revealPath: (path) => invoke("revealPath", path),
     statPath: (path) => invoke("statPath", path),
-    listDir: (workspaceId, dir) => invoke("listDir", workspaceId, dir),
     pickDirectory: (defaultPath) => invoke("pickDirectory", defaultPath),
     pickFile: (purpose, defaultPath) => invoke("pickFile", purpose, defaultPath),
     getDataDir: () => invoke("getDataDir"),
@@ -182,8 +167,7 @@ export const api: MpApi = {
     galleryChromeLogin: (url) => invoke("galleryChromeLogin", url),
     galleryChromeSync: (url) => invoke("galleryChromeSync", url),
     galleryChromeClear: () => invoke("galleryChromeClear"),
-    notesList: (workspaceId) => invoke("notesList", workspaceId),
-    notesCount: (workspaceId) => invoke("notesCount", workspaceId),
+    notesList: () => invoke("notesList"),
     noteCreate: (input) => invoke("noteCreate", input),
     noteUpdate: (input) => invoke("noteUpdate", input),
     noteDelete: (id) => invoke("noteDelete", id),

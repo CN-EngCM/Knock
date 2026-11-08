@@ -30,10 +30,6 @@ type Props = {
     item: Item | null;
     /** 服务端平台（win32 才显示快捷方式选择器与「选择脚本…」） */
     platform: string;
-    /** 归属普通工作区：新建时默认给终端命令（项目工具栏里命令最常见） */
-    inWorkspace?: boolean;
-    /** 工作区文件夹；空串表示这个工作区没有目录，不能提示「空 = 工作区文件夹」 */
-    workspaceFolder?: string;
     /** 浅色主题：图标行与选择器里的图标按主题换款 */
     light: boolean;
     onClose: () => void;
@@ -46,16 +42,7 @@ function dirOf(path: string): string {
     return /^[A-Za-z]:$/.test(dir) ? `${dir}\\` : dir;
 }
 
-export function ItemDialog({
-    open,
-    item,
-    platform,
-    inWorkspace = false,
-    workspaceFolder,
-    light,
-    onClose,
-    onSubmit,
-}: Props) {
+export function ItemDialog({ open, item, platform, light, onClose, onSubmit }: Props) {
     const { t } = useI18n();
     const [kind, setKind] = useState<Kind>("bookmark");
     const [title, setTitle] = useState("");
@@ -67,11 +54,10 @@ export function ItemDialog({
     const [pickerOpen, setPickerOpen] = useState(false);
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
-    // 每次打开时用 item / 默认值重置表单（编辑回填）。
-    // 工作区里新建默认终端命令：项目启动项绝大多数是命令，省掉每次改下拉
+    // 每次打开时用 item / 默认值重置表单（编辑回填）
     useEffect(() => {
         if (!open) return;
-        setKind(item?.kind ?? (inWorkspace ? "command" : "bookmark"));
+        setKind(item?.kind ?? "bookmark");
         setTitle(item?.title ?? "");
         setTarget(item?.target ?? "");
         setArgs(item?.args ?? "");
@@ -79,7 +65,7 @@ export function ItemDialog({
         // 也不会把可能不合格式的旧值原样提交回去，保存一次顺便清掉
         setIcon(item?.icon && hasIcon(item.icon) ? item.icon : null);
         setAutoClose(item?.autoClose ?? false);
-    }, [open, item, inWorkspace]);
+    }, [open, item]);
 
     const targetLabel =
         kind === "bookmark"
@@ -115,9 +101,8 @@ export function ItemDialog({
     // 为什么用 -File 子进程而不是直接 & 脚本：不管设置里终端程序选的是 cmd 还是 PowerShell 都能跑，
     // 执行策略只对这一次放行；-NoProfile 让每次运行结果一致。
     // 工作目录每次都覆盖：换了脚本还留着旧目录，脚本会在错的目录里悄悄跑；填完用户仍可手改。
-    // 对话框从工作区文件夹起步：项目脚本多半就在里面，省得每次从头翻目录；没有文件夹时用系统默认位置。
     async function browseScript() {
-        const r = await api.pickFile("script", workspaceFolder || undefined);
+        const r = await api.pickFile("script");
         if (!r.ok || r.data === null) return;
         // 优先 pwsh（读无 BOM 的 UTF-8 脚本中文不乱码）；没装才退回 Windows 自带的 powershell
         const cfg = await api.getTermConfig();
@@ -249,11 +234,7 @@ export function ItemDialog({
                     {(kind === "app" || kind === "command") && (
                         <FormRow>
                             <FieldLabel htmlFor="item-args">
-                                {kind === "app"
-                                    ? t("item.args")
-                                    : workspaceFolder
-                                      ? t("item.cwdInWorkspace")
-                                      : t("item.cwd")}
+                                {kind === "app" ? t("item.args") : t("item.cwd")}
                             </FieldLabel>
                             <div className="flex gap-2">
                                 <Input

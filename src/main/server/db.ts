@@ -21,9 +21,6 @@ db.exec(`
     -- 图标包（Material Icon Theme）里的图标名，空 = 自动匹配。旧版这里存过网站图标的缓存文件名，
     -- 现已不用；渲染端认不得的值一律当「自动」，所以老库不用迁移
     icon   TEXT,
-    -- 空 = 左侧快捷启动；非空 = 该工作区的快捷启动工具栏。workspaces 表在后面才建，
-    -- SQLite 允许外键前向引用，只要插数据时父表已存在
-    workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE,
     -- 仅 command：1 = 命令成功后自动关掉终端面板（失败时保留，方便看报错）
     auto_close INTEGER NOT NULL DEFAULT 0
   );
@@ -47,20 +44,6 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_experts_pos ON experts(position);
-
-  -- 工作区：每个工作区一套独立的停靠区。builtin = 1 是自带的「临时工作区」：
-  -- 显示名走渲染端 i18n，库里 name 存空串；不可删除/改名，排序恒在第一。
-  -- 播种按 builtin 行存在与否幂等（见 server/workspaces.ts）
-  CREATE TABLE IF NOT EXISTS workspaces (
-    id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    name     TEXT    NOT NULL,
-    folder   TEXT    NOT NULL DEFAULT '',  -- 工作区文件夹；临时工作区为空串
-    position INTEGER NOT NULL DEFAULT 0,
-    builtin  INTEGER NOT NULL DEFAULT 0,
-    color    TEXT                          -- 用户选的标识色 #rrggbb；NULL = 按 id 自动取色
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_workspaces_pos ON workspaces(position);
 
   -- 图库（工具 gallery）：gallery_ 前缀避开启动器既有的 items 表。
   -- 图片字节级复制进数据目录 gallery/<组文件夹>/（server/gallery.ts），行里只存元数据；
@@ -105,16 +88,14 @@ db.exec(`
     added_at INTEGER NOT NULL
   );
 
-  -- 便签（工具 notes）：每个工作区一份，删工作区时外键级联删行（图片文件由 server/notes.ts 另行清理）。
+  -- 便签（工具 notes）：全局一份，外键级联只删行，图片文件由 server/notes.ts 另行清理。
   -- 图片文件在数据目录 notes/<图片id>.<format>，与图库完全分开，经 mpimg://note/<图片id> 读取
   CREATE TABLE IF NOT EXISTS notes (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    text         TEXT    NOT NULL DEFAULT '',
-    created_at   INTEGER NOT NULL,
-    updated_at   INTEGER NOT NULL
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    text       TEXT    NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS idx_notes_ws ON notes(workspace_id, created_at DESC, id DESC);
 
   CREATE TABLE IF NOT EXISTS note_images (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,  -- 不复用 id：mpimg://note/<id> 不会命中旧图缓存
@@ -127,18 +108,6 @@ db.exec(`
   -- 分组级 tag 已随功能移除：旧库顺手清表（幂等），新库不再创建
   DROP TABLE IF EXISTS gallery_group_tags;
 `);
-
-// 存量库幂等迁移：folder 列是后加的，CREATE IF NOT EXISTS 对已存在的表不补列，
-// 老库必须用 ALTER 补上。PRAGMA 探测列存在性后再动（列已在则跳过，重启可重入）。
-// 只补列不回填：没有文件夹的旧工作区保留空串，等用户第一次修改时再选目录。
-const workspaceCols = db.prepare("PRAGMA table_info(workspaces)").all() as { name: string }[];
-if (!workspaceCols.some((c) => c.name === "folder")) {
-    db.exec("ALTER TABLE workspaces ADD COLUMN folder TEXT NOT NULL DEFAULT ''");
-}
-// color 列同理后加：旧工作区保持 NULL，颜色仍按 id 自动取，升级后一个都不变
-if (!workspaceCols.some((c) => c.name === "color")) {
-    db.exec("ALTER TABLE workspaces ADD COLUMN color TEXT");
-}
 
 // 存量库幂等迁移：effort 列是后加的，CREATE IF NOT EXISTS 对已存在的表不补列，
 // 老库必须用 ALTER 补上。PRAGMA 探测列存在性后再动（列已在则跳过，重启可重入）。
@@ -190,18 +159,68 @@ db.transaction(() => {
     db.exec("DROP TABLE IF EXISTS groups");
 })();
 
-// 存量库幂等迁移：workspace_id 是后加的（条目归属工作区），建表语句对已存在的 items
-// 不补列。必须放在上面的 items 重建之后：老库重建出来的 items_new 没有这一列，
-// 重建后再探测才能把列补到新表上。只加列不回填，现有条目全部留在左侧快捷启动（NULL）。
-const itemColsAfterRebuild = db.prepare("PRAGMA table_info(items)").all() as { name: string }[];
-if (!itemColsAfterRebuild.some((c) => c.name === "workspace_id")) {
-    db.exec("ALTER TABLE items ADD COLUMN workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE");
-}
-
-// 存量库幂等迁移：auto_close 是后加的（命令跑完自动关终端），同样要在 items 重建之后补；
+// 存量库幂等迁移：auto_close 是后加的（命令跑完自动关终端），要在上面的 items 重建之后补；
 // 已有条目一律 0，行为不变。
+const itemColsAfterRebuild = db.prepare("PRAGMA table_info(items)").all() as { name: string }[];
 if (!itemColsAfterRebuild.some((c) => c.name === "auto_close")) {
     db.exec("ALTER TABLE items ADD COLUMN auto_close INTEGER NOT NULL DEFAULT 0");
 }
+
+// 存量库一次性迁移：工作区功能已整个砍掉，旧库里的 workspaces 表、items/notes 的 workspace_id 列都要清掉。
+// 专属条目与各工作区的便签全部留下，等于并进全局，不丢数据。
+// SQLite 删带外键的列只能重建表；重建要先关外键：开着时 DROP 父表会触发级联删除，
+// 删 notes 会连带清空 note_images，删 workspaces 会连带清空 items 和 notes。
+// 按「探到旧结构才动手」判断，新库和已迁完的库命中跳过分支，重启可重入。
+const hasColumn = (table: string, column: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+const hasWorkspaceLeftovers =
+    hasColumn("items", "workspace_id") ||
+    hasColumn("notes", "workspace_id") ||
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'workspaces'").get() !== undefined;
+if (hasWorkspaceLeftovers) {
+    db.pragma("foreign_keys = OFF");
+    try {
+        db.transaction(() => {
+            if (hasColumn("items", "workspace_id")) {
+                db.exec(`
+                  CREATE TABLE items_new (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind       TEXT    NOT NULL CHECK (kind IN ('bookmark', 'app', 'file', 'command')),
+                    title      TEXT    NOT NULL,
+                    target     TEXT    NOT NULL,
+                    args       TEXT,
+                    icon       TEXT,
+                    auto_close INTEGER NOT NULL DEFAULT 0
+                  );
+                  INSERT INTO items_new (id, kind, title, target, args, icon, auto_close)
+                    SELECT id, kind, title, target, args, icon, auto_close FROM items;
+                  DROP TABLE items;
+                  ALTER TABLE items_new RENAME TO items;
+                `);
+            }
+            if (hasColumn("notes", "workspace_id")) {
+                db.exec(`
+                  CREATE TABLE notes_new (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    text       TEXT    NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                  );
+                  INSERT INTO notes_new (id, text, created_at, updated_at)
+                    SELECT id, text, created_at, updated_at FROM notes;
+                  DROP TABLE notes;
+                  ALTER TABLE notes_new RENAME TO notes;
+                `);
+            }
+            db.exec("DROP TABLE IF EXISTS workspaces");
+            db.prepare("DELETE FROM settings WHERE key = 'activeWorkspace'").run();
+        })();
+    } finally {
+        db.pragma("foreign_keys = ON");
+    }
+}
+
+// 便签列表按创建时间倒序读；放在迁移之后建：重建 notes 会连旧索引一起丢掉
+db.exec("CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC, id DESC)");
 
 export default db;

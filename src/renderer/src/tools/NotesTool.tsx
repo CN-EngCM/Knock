@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, type Note } from "@/api/client";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -7,12 +7,12 @@ import { NoteInput } from "./notes/NoteInput";
 import { NoteItem } from "./notes/NoteItem";
 import { NOTE_TEXT_MAX_CHARS } from "./notes/limits";
 import { readImages, useNoteDraft } from "./notes/useNoteDraft";
-import { ToolWorkspaceContext, useToolFocus, useToolInput } from "./toolInput";
+import { useToolFocus, useToolInput } from "./toolInput";
 
-// 便签：记下项目里一闪而过的想法和临时数据，每个工作区一份，互相看不到。
+// 便签：记下一闪而过的想法和临时数据，全局一份。
 // 一条 = 一段文字 + 多张图片，文字原样显示（不渲染 Markdown），图片排在文字下面。
-// 草稿（含图片）只活在组件里：切工作区还在，关面板就丢，符合「工具每次从空开始」的约定。
-// （不接 initialInput：DockZone 不会传它，搜索框的内容走 useToolInput 的注入通道。）
+// 草稿（含图片）只活在组件里：切标签还在，关标签就丢，符合「工具每次从空开始」的约定。
+// （不接 initialInput：标签页不会传它，搜索框的内容走 useToolInput 的注入通道。）
 
 const UNDO_MS = 5000;
 
@@ -20,7 +20,6 @@ type PendingDelete = { timer: ReturnType<typeof setTimeout>; toastId: string | n
 
 export default function NotesTool() {
     const { t } = useI18n();
-    const workspaceId = useContext(ToolWorkspaceContext);
     const draft = useNoteDraft();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const [notes, setNotes] = useState<Note[] | null>(null);
@@ -31,7 +30,7 @@ export default function NotesTool() {
     const pendingDeletes = useRef(new Map<number, PendingDelete>());
 
     const focusInput = useCallback((toEnd = false) => {
-        // 等一帧：面板刚被激活时 display 还没切回来，focus 会落空
+        // 等一帧：标签刚被激活时 display 还没切回来，focus 会落空
         requestAnimationFrame(() => {
             const el = textareaRef.current;
             if (!el) return;
@@ -41,18 +40,17 @@ export default function NotesTool() {
     }, []);
 
     const reload = useCallback(async () => {
-        if (workspaceId === null) return;
-        const r = await api.notesList(workspaceId);
+        const r = await api.notesList();
         if (r.ok) setNotes(r.data);
         else toast.error(t("toast.error"));
-    }, [workspaceId, t]);
+    }, [t]);
     useEffect(() => {
         void reload();
-        // 只在工作区变化时重拉；t 变化（切语言）不需要
+        // 只在挂载时读一次；t 变化（切语言）不需要重拉
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [workspaceId]);
+    }, []);
 
-    // 从任何入口打开面板都把焦点放进输入框：首次挂载一次，已开着的面板再被打开时由聚焦事件触发
+    // 从任何入口打开标签都把焦点放进输入框：首次挂载一次，已开着的标签再被打开时由聚焦事件触发
     useEffect(() => focusInput(), [focusInput]);
     useToolFocus("notes", focusInput);
 
@@ -69,7 +67,7 @@ export default function NotesTool() {
     }, [seq]);
 
     async function saveNew() {
-        if (saving || draft.isEmpty || workspaceId === null) return;
+        if (saving || draft.isEmpty) return;
         if (draft.text.length > NOTE_TEXT_MAX_CHARS) {
             toast.error(t("notes.err.text"));
             return;
@@ -77,7 +75,6 @@ export default function NotesTool() {
         setSaving(true);
         try {
             const r = await api.noteCreate({
-                workspaceId,
                 text: draft.text,
                 images: await readImages(draft.added),
             });
@@ -135,7 +132,7 @@ export default function NotesTool() {
         pendingDeletes.current.set(note.id, { timer, toastId });
     }
 
-    // 关面板（组件卸载）时还没到时间的删除立刻执行，不然撤销入口没了便签却还在
+    // 关标签（组件卸载）时还没到时间的删除立刻执行，不然撤销入口没了便签却还在
     useEffect(() => {
         const pendings = pendingDeletes.current;
         return () => {
@@ -153,7 +150,7 @@ export default function NotesTool() {
     return (
         <div
             className="relative flex h-full flex-col"
-            // 文件拖到面板任意位置都加到顶部输入区；落在编辑中条目的输入区上时由它自己接走（见 NoteInput）。
+            // 文件拖到标签页任意位置都加到顶部输入区；落在编辑中条目的输入区上时由它自己接走（见 NoteInput）。
             // 必须接住 dragover/drop，否则 Electron 会把文件当链接直接导航过去
             onDragOver={(e) => {
                 if (!Array.from(e.dataTransfer.types).includes("Files")) return;

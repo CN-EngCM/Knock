@@ -2,7 +2,7 @@ import rawManifest from "material-icon-theme/dist/material-icons.json";
 
 // Material Icon Theme（VS Code 里装机量最大的图标主题）自带一份「文件名 / 扩展名 / 文件夹名 → 图标」
 // 的映射表和全套 svg。这里直接读它的映射表，不手写规则：映射与图标出自同一个包，不会对不上。
-// 本文件体积较大（映射表约 450KB）。文件树面板和快捷启动条目（lib/kindIcon.tsx）共用它，
+// 本文件体积较大（映射表约 450KB）。快捷启动条目（lib/kindIcon.tsx）和搜索候选用它，
 // 后者在首屏就要画图标，所以它进主包，不能再靠面板懒加载来省。
 
 type NameMap = Record<string, string>;

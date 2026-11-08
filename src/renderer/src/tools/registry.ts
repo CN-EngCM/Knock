@@ -1,12 +1,11 @@
 // ── 内置工具注册表（v2.2）──
-// 单个标签的工具组件使用 React.lazy，终端宿主由 App 懒加载；
-// 面板关闭即卸载组件（dock 不再渲染它），重库随引用释放——
+// 单个标签的工具组件使用 React.lazy，终端宿主由标签排懒加载；
+// 标签关闭即卸载组件（标签排不再渲染它），重库随引用释放——
 // 这是「工具多了也不卡」的两个前提：懒加载 + 关闭即卸载。
 // 新增工具 = 这里加一行 + i18n 补 nameKey/descKey + tools/ 下实现组件。
 import { lazy, type ComponentType, type LazyExoticComponent } from "react";
 import bracesIcon from "@/assets/icons/braces.svg";
 import fileSearchIcon from "@/assets/icons/file-search.svg";
-import globeIcon from "@/assets/icons/globe.svg";
 import imagesIcon from "@/assets/icons/images.svg";
 import languageIcon from "@/assets/icons/language.svg";
 import notesIcon from "@/assets/icons/notes.svg";
@@ -29,7 +28,7 @@ export type ToolMeta = {
     icon: string;
     /** 能吃文本素材的工具：搜索框推荐区展示，选中时把素材注入其输入框 */
     acceptsText?: boolean;
-    /** 终端与浏览器可多开，由 App 每次新建独立面板；其余工具按标签挂载组件 */
+    /** 终端可多开，由 App 每次新建独立会话标签；其余工具按标签挂载组件 */
     Component: LazyExoticComponent<ComponentType<{ initialInput?: string | null; openSettings?: () => void }>> | null;
 };
 
@@ -105,14 +104,6 @@ export const TOOLS: readonly ToolMeta[] = [
         // 排在数组末尾是为了不改工具首页与工具集菜单的顺序；搜索框推荐区把它排第一是 SearchBox 的事
         acceptsText: true,
         Component: lazy(() => import("./NotesTool")),
-    },
-    {
-        id: "browser",
-        nameKey: "tool.browser.name",
-        descKey: "tool.browser.desc",
-        icon: globeIcon,
-        // 和终端一样没有 Component：可多开，由 App 每次新开一块空白网页面板（见 components/WebPanel.tsx）
-        Component: null,
     },
 ];
 

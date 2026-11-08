@@ -10,9 +10,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { KindIcon } from "@/lib/kindIcon";
 import { sortItems } from "@/lib/itemOrder";
 import { cn } from "@/lib/utils";
-import type { Item, Workspace } from "@/api/client";
+import type { Item } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
-import { MoveToWorkspaceMenu } from "./MoveToWorkspaceMenu";
 
 type Props = {
     /** 侧栏收成了只有图标的窄条：每行只剩居中的图标，标题和目标放进悬停提示 */
@@ -22,15 +21,10 @@ type Props = {
     dirIds: ReadonlySet<number>;
     /** 浅色主题：图标包里少数图标有专为浅底画的款式 */
     light: boolean;
-    /** 可移动到的普通工作区（不含临时工作区） */
-    workspaces: Workspace[];
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
-    /** 网页收藏改用系统浏览器打开（应用内打不开的站用得上） */
-    onOpenExternal: (item: Item) => void;
     onOpen: (item: Item) => void;
     onEditItem: (item: Item) => void;
     onDeleteItem: (item: Item) => void;
-    onMoveItem: (item: Item, workspaceId: number | null) => void;
 };
 
 /** 行的 DOM id：只给 aria-activedescendant 引用，不拿它做选择器，所以冒号之类字符不用转义 */
@@ -51,13 +45,10 @@ export function LauncherList({
     items,
     dirIds,
     light,
-    workspaces,
     onOpenInTerminal,
-    onOpenExternal,
     onOpen,
     onEditItem,
     onDeleteItem,
-    onMoveItem,
 }: Props) {
     const { t } = useI18n();
     const listId = useId();
@@ -123,14 +114,11 @@ export function LauncherList({
                     focused={focused}
                     isDir={dirIds.has(item.id)}
                     light={light}
-                    workspaces={workspaces}
                     onActivate={() => setActiveIndex(index)}
                     onOpen={onOpen}
                     onOpenInTerminal={onOpenInTerminal}
-                    onOpenExternal={onOpenExternal}
                     onEdit={onEditItem}
                     onDelete={onDeleteItem}
-                    onMove={onMoveItem}
                     registerRef={(node) => {
                         rowRefs.current[index] = node;
                     }}
@@ -152,15 +140,11 @@ type RowProps = {
     /** 目标是本机目录：菜单多出「在此打开终端」一组 */
     isDir: boolean;
     light: boolean;
-    /** 可移动到的普通工作区（不含临时工作区） */
-    workspaces: Workspace[];
     onActivate: () => void;
     onOpen: (item: Item) => void;
     onOpenInTerminal: (item: Item, command?: "opencode" | "claude") => void;
-    onOpenExternal: (item: Item) => void;
     onEdit: (item: Item) => void;
     onDelete: (item: Item) => void;
-    onMove: (item: Item, workspaceId: number | null) => void;
     registerRef: (node: HTMLDivElement | null) => void;
 };
 
@@ -173,14 +157,11 @@ function LauncherRow({
     focused,
     isDir,
     light,
-    workspaces,
     onActivate,
     onOpen,
     onOpenInTerminal,
-    onOpenExternal,
     onEdit,
     onDelete,
-    onMove,
     registerRef,
 }: RowProps) {
     const { t } = useI18n();
@@ -241,9 +222,6 @@ function LauncherRow({
             </ContextMenuTrigger>
             <ContextMenuContent>
                 <ContextMenuItem onClick={() => onOpen(item)}>{t("menu.open")}</ContextMenuItem>
-                {item.kind === "bookmark" && (
-                    <ContextMenuItem onClick={() => onOpenExternal(item)}>{t("menu.openExternal")}</ContextMenuItem>
-                )}
                 {isDir && (
                     <>
                         <ContextMenuSeparator />
@@ -260,12 +238,6 @@ function LauncherRow({
                     </>
                 )}
                 <ContextMenuItem onClick={() => onEdit(item)}>{t("menu.edit")}</ContextMenuItem>
-                {/* 左侧条目本来就在左侧，移动目标只列工作区；没有工作区时整项不渲染 */}
-                <MoveToWorkspaceMenu
-                    currentWorkspaceId={null}
-                    workspaces={workspaces}
-                    onMove={(workspaceId) => onMove(item, workspaceId)}
-                />
                 <ContextMenuItem variant="destructive" onClick={() => onDelete(item)}>
                     {t("menu.delete")}
                 </ContextMenuItem>

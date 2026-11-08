@@ -1,11 +1,11 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 
-// 侧栏的布局偏好存 localStorage，不进 SQLite：只对本机这块窗口有意义，跟工作区列表高度同一套做法。
+// 侧栏的布局偏好存 localStorage，不进 SQLite：只对本机这块窗口有意义。
 const WIDTH_KEY = "mypage-sidebar-width";
 const COLLAPSED_KEY = "mypage-sidebar-collapsed";
 export const DEFAULT_SIDEBAR_WIDTH = 246;
 const MIN_SIDEBAR_WIDTH = 200;
-// 上限取窗口宽度的 40%，免得把停靠区挤没。App 里 aside 的 max-w-[40%] 与这里是同一个数，改要一起改
+// 上限取窗口宽度的 40%，免得把右侧标签区挤没。App 里 aside 的 max-w-[40%] 与这里是同一个数，改要一起改
 const MAX_SIDEBAR_RATIO = 0.4;
 /** 图标条的固定宽度：只放得下居中的图标，不能单独拖宽 */
 export const RAIL_WIDTH = 52;
@@ -69,12 +69,10 @@ type Props = {
  */
 export function SidebarResizer({ state, onChange }: Props) {
     const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-    // 拖拽期间才有的整窗透明遮罩，见 return 处的说明
-    const [dragging, setDragging] = useState(false);
 
     function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
         if (event.button !== 0) return;
-        // 阻止文本选中：否则拖过侧栏和停靠区会留下选区
+        // 阻止文本选中：否则拖过侧栏和右侧标签区会留下选区
         event.preventDefault();
         // 捕获指针后，拖出窗口仍能收到 pointermove 与 pointerup
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -83,7 +81,6 @@ export function SidebarResizer({ state, onChange }: Props) {
             startX: event.clientX,
             startWidth: state.collapsed ? RAIL_WIDTH : clampWidth(state.width),
         };
-        setDragging(true);
     }
 
     function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
@@ -96,7 +93,6 @@ export function SidebarResizer({ state, onChange }: Props) {
         const drag = dragRef.current;
         if (!drag) return;
         dragRef.current = null;
-        setDragging(false);
         // 落点与最后一次 pointermove 可能差一两个像素，以松手位置再算一次
         const next = resolve(drag.startWidth + event.clientX - drag.startX, state.width);
         onChange(next);
@@ -106,7 +102,6 @@ export function SidebarResizer({ state, onChange }: Props) {
     function handlePointerCancel() {
         if (!dragRef.current) return;
         dragRef.current = null;
-        setDragging(false);
         // 取消（比如系统手势）拿不到可靠落点，按当前已生效的状态落盘
         saveSidebar(state);
     }
@@ -121,20 +116,14 @@ export function SidebarResizer({ state, onChange }: Props) {
     }
 
     return (
-        <>
-            <div
-                aria-hidden
-                className="absolute inset-y-0 -right-0.5 z-10 w-1 cursor-col-resize touch-none"
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerCancel}
-                onDoubleClick={handleDoubleClick}
-            />
-            {/* 停靠区里的网页面板（<webview>）是独立的页面进程，指针一拖进去，事件就被网页接走，
-                指针捕获也拦不住，拖拽会卡在半路。拖拽期间盖一层全透明的整窗遮罩把事件留在本页，
-                松手即撤；它看不见，光标沿用左右箭头 */}
-            {dragging && <div aria-hidden className="fixed inset-0 z-50 cursor-col-resize" />}
-        </>
+        <div
+            aria-hidden
+            className="absolute inset-y-0 -right-0.5 z-10 w-1 cursor-col-resize touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onDoubleClick={handleDoubleClick}
+        />
     );
 }

@@ -247,8 +247,7 @@ export default function AiTool({
     openSettings?: () => void;
 }) {
     const { t } = useI18n();
-    // 同一个工具可能同时挂在多个工作区的停靠实例里，写死 id 会在文档里重复；
-    // 弹层内两个 Select 的 label 靠 htmlFor 关联，必须每个实例各自唯一。
+    // 弹层内两个 Select 的 label 靠 htmlFor 关联，id 用 useId 生成，不写死。
     const uid = useId();
     const modelSelectId = `${uid}-model`;
     const effortSelectId = `${uid}-effort`;

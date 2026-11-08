@@ -15,7 +15,6 @@ import { initHotkey, isBlockedByForeground, shutdownHotkey, unlockForeground } f
 import { loadWindowState, trackWindowState } from "./windowState";
 import { initPin, isPinned, isTopmost, setPinned, setTopmost } from "./server/pin";
 import { createTray } from "./tray";
-import { guardWebviews, initWebView } from "./webView";
 
 // ── 应用主体：窗口 / 托盘 / 热键 / IPC 注册 / mpimg:// 协议 ──
 // 单实例托盘常驻应用：业务逻辑（server/api.ts 处理器表 + SQLite）跑在本进程内，
@@ -127,8 +126,6 @@ export function startApp(): void {
         callback(allowed(permission));
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed(permission));
-    // 应用内网页：网页要新开窗口时通知渲染端在当前工作区开新面板（会话与安全设置见 webView.ts）
-    initWebView((url) => win?.webContents.send("mp:web-open", url));
     createWindow();
     // 剪贴板打点：呼出时据此判断最近一次复制是否落在时限内（见 clipWatch.ts）
     startClipWatch();
@@ -173,10 +170,8 @@ function createWindow(): BrowserWindow {
             contextIsolation: true, // 隔离：页面拿不到 require/ipcRenderer
             nodeIntegration: false,
             sandbox: true,
-            webviewTag: true, // 网页面板用 <webview>；每个 webview 创建前由 guardWebviews 钉死配置
         },
     });
-    guardWebviews(w.webContents);
     if (st.maximized) w.maximize();
     trackWindowState(w);
 
@@ -198,11 +193,6 @@ function createWindow(): BrowserWindow {
             if (isPinned() || nativeDialogOpen()) return;
             hideMainWindow();
         }, 200);
-    });
-    // 通知渲染端窗口藏起来了（文件树浮层据此自动收起）。不能用页面的 visibilitychange 代替：
-    // 钉住时窗口可见但被别的窗口完全盖住，Chromium 也会报 hidden，那不是用户要的收起
-    w.on("hide", () => {
-        if (!w.webContents.isDestroyed()) w.webContents.send("mp:window-hidden");
     });
     w.on("closed", () => {
         win = null;

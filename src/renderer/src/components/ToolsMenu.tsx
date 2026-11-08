@@ -6,16 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n/useI18n";
 
-// 顶栏「工具集」：工具入口的唯一起点，停靠组头不再挂 + 号。终端每次选择都新建会话；
-// 已打开状态在菜单展开时现取，避免把 dock 面板列表提升成全局状态。
+// 顶栏「工具集」：工具入口的唯一起点。终端每次选择都新建会话；
+// openTools 是当前已开着标签的工具，菜单里打「已打开」。
 type Props = {
-    getOpenTools: () => ToolId[];
+    openTools: ToolId[];
     onOpen: (id: ToolId) => void;
 };
 
-export function ToolsMenu({ getOpenTools, onOpen }: Props) {
+export function ToolsMenu({ openTools, onOpen }: Props) {
     const { t } = useI18n();
-    const open = getOpenTools();
     return (
         <Tooltip>
             <TooltipTrigger asChild>
@@ -28,7 +27,7 @@ export function ToolsMenu({ getOpenTools, onOpen }: Props) {
                         </Button>
                         <MenuContent className="w-[248px]">
                             {TOOLS.map((tool) => {
-                                const opened = open.includes(tool.id);
+                                const opened = openTools.includes(tool.id);
                                 return (
                                     <MenuItem
                                         key={tool.id}
@@ -36,7 +35,7 @@ export function ToolsMenu({ getOpenTools, onOpen }: Props) {
                                         className={opened ? "text-foreground" : undefined}
                                     >
                                         <img src={tool.icon} alt="" className="size-4 flex-none" />
-                                        {/* 名字不许缩、描述才缩：Badge 默认 shrink-0 且不换行，描述一长（浏览器那条）
+                                        {/* 名字不许缩、描述才缩：Badge 默认 shrink-0 且不换行，描述一长
                                             就会把名字挤成 0 宽。所以名字 flex-none，Badge 改成可收缩，文字在里面截断 */}
                                         <span className="flex-none">{t(tool.nameKey)}</span>
                                         <Badge

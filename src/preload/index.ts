@@ -12,8 +12,6 @@ import type { AiEvent } from "../main/server/ai";
 //   setTopmost     —— 钉住下的置顶开关（mp:set-topmost，同上）；仅内存，重启复位
 //   onOpenSettings —— 订阅托盘菜单「设置」事件
 //   onFocusSearch  —— 订阅窗口呼出事件（双击 Ctrl 等，渲染端聚焦搜索框）
-//   onWindowHidden —— 订阅窗口被藏起来的事件（失焦自动隐藏、热键/托盘收起），返回退订函数
-//   onWebOpen      —— 订阅「网页要新开窗口」事件（target=_blank / window.open），渲染端在当前工作区开新网页面板
 //   onPtyEvent     —— 订阅终端输出流（v2.2：pty data/exit 下行事件），返回退订函数：
 //                     React 开发态 StrictMode 会把 effect 跑两遍，没有退订就会
 //                     挂两个监听器，每份数据写两遍 xterm（表现为终端整屏双行）。
@@ -47,16 +45,6 @@ contextBridge.exposeInMainWorld("knock", {
         const handler = (_e: unknown, clip: string | null) => cb(clip);
         ipcRenderer.on("mp:focus-search", handler);
         return () => ipcRenderer.removeListener("mp:focus-search", handler);
-    },
-    onWindowHidden: (cb: () => void): (() => void) => {
-        const handler = () => cb();
-        ipcRenderer.on("mp:window-hidden", handler);
-        return () => ipcRenderer.removeListener("mp:window-hidden", handler);
-    },
-    onWebOpen: (cb: (url: string) => void): (() => void) => {
-        const handler = (_e: unknown, url: string) => cb(url);
-        ipcRenderer.on("mp:web-open", handler);
-        return () => ipcRenderer.removeListener("mp:web-open", handler);
     },
     onPtyEvent: (cb: (e: PtyEvent) => void): (() => void) => {
         const handler = (_e: unknown, ev: PtyEvent) => cb(ev);

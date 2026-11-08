@@ -17,7 +17,7 @@ import { youdaoErrKey } from "./youdaoErr";
 // 有道翻译：请求经主进程（渲染进程直连被 CORS 拦，密钥也不进渲染包）。
 // 输入防抖自动翻译，序号丢弃晚归结果（与 files 工具同款竞态约定）；
 // 语言方向是个人偏好，存 localStorage（不属「运行时状态勿还原」范围）。
-// 密钥未配置时行内引导直达设置页（openSettings 由 App 经 DockZone 传入）。
+// 密钥未配置时行内引导直达设置页（openSettings 由 App 经 ToolTabs 传入）。
 
 const DEBOUNCE_MS = 600;
 const LS_FROM = "mypage-translate-from";

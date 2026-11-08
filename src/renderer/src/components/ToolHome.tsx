@@ -14,7 +14,7 @@ export function ToolHome({ onOpen }: Props) {
     const { t } = useI18n();
     return (
         // h-full 把高度锚到定位父容器（flex-1 已给出确定高度）：
-        // 没有 h-full 时根节点按内容展开、溢出工作区且无法滚动
+        // 没有 h-full 时根节点按内容展开、溢出标签区且无法滚动
         <section className="flex h-full justify-center overflow-y-auto" aria-label={t("tools.home")}>
             <div className="w-full max-w-[760px] px-8 pb-6 pt-9">
                 <div className="mb-1.5 flex items-baseline justify-between gap-4">

@@ -1,8 +1,7 @@
 import type { Item } from "@/api/client";
 import { fileIconUrl, folderIconUrl, hasIcon, namedIconUrl } from "@/lib/fileIcon";
 
-// 快捷启动条目的图标取自文件树同一个图标包（Material Icon Theme），列表、工具栏、搜索候选
-// 与文件树里的同一个文件长得一样。用户手选了图标（item.icon）就用手选的；没选（自动）时，
+// 快捷启动条目的图标取自 Material Icon Theme 图标包，列表和搜索候选长得一样。用户手选了图标（item.icon）就用手选的；没选（自动）时，
 // 网页、应用、终端命令没有文件名可匹配，各用包里固定的一张，文件类条目按目标的文件名 / 文件夹名匹配。
 const FIXED_ICON = { bookmark: "http", app: "exe", command: "console" } as const;
 
@@ -27,7 +26,7 @@ export function KindIcon({ item, isDir, light }: { item: Item; isDir: boolean; l
     return <img src={iconUrl(item, isDir, light)} alt="" className="size-[18px] flex-none" />;
 }
 
-/** 本机文件夹的图标，按文件夹名匹配，与文件树里同一个文件夹一致 */
+/** 本机文件夹的图标，按文件夹名匹配 */
 export function FolderIcon({ path, light }: { path: string; light: boolean }) {
     return <img src={folderIconUrl(baseName(path), false, light)} alt="" className="size-[18px] flex-none" />;
 }

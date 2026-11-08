@@ -1,12 +1,10 @@
 import db from "./db";
 import Database from "better-sqlite3";
-// 出厂数据播种（专家、临时工作区）：模块加载时各执行一次（幂等），比放 db.ts 干净——db.ts 调 util/settings 会循环依赖
+// 出厂数据播种（专家）：模块加载时执行一次（幂等），比放 db.ts 干净——db.ts 调 util/settings 会循环依赖
 import { ensureSeeded } from "./experts";
-import { ensureSeeded as ensureWorkspacesSeeded } from "./workspaces";
 import { autostartStatus, disableAutostart, enableAutostart } from "./autostart";
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { searchSpotlight } from "./spotlight";
-import { listDir, type DirEntry } from "./fileTree";
 import { applyHotkey, currentHotkey, readBlockApps, writeBlockApps } from "../hotkey";
 import { launchItem } from "./launcher";
 import { getPinState as readPinState } from "./pin";
@@ -28,20 +26,10 @@ import {
     writePointer,
 } from "./util/dataLocation";
 import { currentWindowState } from "../windowState";
-import { flushBrowserData } from "../webView";
+import { flushBrowserData } from "../browserData";
 import { testModel as aiTestModel, startChat, stopChat } from "./ai";
 import { createExpert, deleteExpert, listExperts, updateExpert } from "./experts";
-import {
-    createWorkspace,
-    deleteWorkspace,
-    listWorkspaces,
-    renameWorkspace,
-    setActiveWorkspace,
-    setWorkspaceColor,
-    updateWorkspaceFolder,
-    workspaceFolder,
-} from "./workspaces";
-import { countNotes, createNote, deleteNote, listNotes, openImage as noteOpenImage, updateNote } from "./notes";
+import { createNote, deleteNote, listNotes, openImage as noteOpenImage, updateNote } from "./notes";
 import {
     addTagsToImages as galleryAddTagsToImages,
     allTags as galleryAllTags,
@@ -94,11 +82,9 @@ import {
     clipPasteSchema,
     createExpertSchema,
     createItemSchema,
-    createWorkspaceSchema,
     noteCreateSchema,
     noteIdArgSchema,
     noteUpdateSchema,
-    noteWorkspaceSchema,
     galleryGroupSchema,
     galleryIdsSchema,
     galleryImportSchema,
@@ -113,8 +99,6 @@ import {
     galleryTagsSchema,
     fileSearchSchema,
     fontPatchSchema,
-    moveItemSchema,
-    listDirSchema,
     pathArgSchema,
     pickFileSchema,
     translateConfigPatchSchema,
@@ -124,15 +108,11 @@ import {
     ptyResizeSchema,
     ptySpawnSchema,
     ptyWriteSchema,
-    renameWorkspaceSchema,
-    setWorkspaceColorSchema,
     termPatchSchema,
     themeSchema,
     toolAliasPatchSchema,
     updateExpertSchema,
     updateItemSchema,
-    updateWorkspaceFolderSchema,
-    workspaceIdSchema,
     TOOL_IDS,
     type AiModelConfig,
     type AiChatInput,
@@ -165,7 +145,6 @@ import {
     type TranslateInput,
     type UpdateItemInput,
     type Note,
-    type Workspace,
 } from "./schemas";
 
 // ── 渲染进程 API 契约（v2.1：标准 Electron IPC，替代 v2.0 的 Hono 假 HTTP）──
@@ -192,28 +171,15 @@ export type ApiError =
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
-// 出厂数据播种（专家、临时工作区，均幂等）：主进程业务装载的必经之路就是本模块，
+// 出厂数据播种（专家，幂等）：主进程业务装载的必经之路就是本模块，
 // 在此显式调一次，避免依赖各 entry 的 import 次序
 ensureSeeded();
-ensureWorkspacesSeeded();
 
 export interface MpApi {
     session(): Promise<ApiResult<{ platform: NodeJS.Platform }>>;
     getData(): Promise<ApiResult<{ items: Item[] }>>;
-    // ── 工作区：每个工作区一套独立的停靠区；builtin 行是自带的「临时工作区」，不可删/改名 ──
-    /** 全量工作区（临时的恒在首位）+ 生效 id；activeWorkspace 失效时只读回落到临时的 */
-    getWorkspaces(): Promise<ApiResult<{ workspaces: Workspace[]; activeId: number }>>;
-    createWorkspace(name: string, folder: string): Promise<ApiResult<{ id: number }>>;
-    renameWorkspace(id: number, name: string): Promise<ApiResult<null>>;
-    /** 改工作区标识色（#rrggbb）；null = 恢复按 id 自动取色。临时工作区不可改 */
-    setWorkspaceColor(id: number, color: string | null): Promise<ApiResult<null>>;
-    updateWorkspaceFolder(id: number, folder: string): Promise<ApiResult<null>>;
-    deleteWorkspace(id: number): Promise<ApiResult<null>>;
-    setActiveWorkspace(id: number): Promise<ApiResult<null>>;
     createItem(input: CreateItemInput): Promise<ApiResult<{ id: number }>>;
     updateItem(id: number, patch: UpdateItemInput): Promise<ApiResult<null>>;
-    /** 移动条目归属：null = 左侧快捷启动，数字 = 指定工作区的工具栏（临时工作区不可作为目标） */
-    moveItem(id: number, workspaceId: number | null): Promise<ApiResult<null>>;
     deleteItem(id: number): Promise<ApiResult<null>>;
     launch(id: number): Promise<ApiResult<null>>;
     getAutostart(): Promise<ApiResult<{ supported: boolean; enabled: boolean }>>;
@@ -225,7 +191,7 @@ export interface MpApi {
     setHotkeyBlock(apps: string[]): Promise<ApiResult<{ apps: string[] }>>;
     listShortcuts(refresh: boolean): Promise<ApiResult<{ shortcuts: Shortcut[] }>>;
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
-    // opts 带 cwd 与 label：工作区里开终端时 cwd 取工作区文件夹；命令条目有显式工作目录时传它，
+    // opts 带 cwd 与 label：命令条目有显式工作目录、文件夹条目「在此打开终端」时传它，
     // 留空则不传。不传时 cwd 缺省主目录、label 用 shell 标签。
     // cwd 指定了但目录不存在 → missing（带路径，前端 toast），不建会话
     // exitSuffix：拼在命令后面、让 shell 在命令成功后自己退出的那段文字（各 shell 写法不同，
@@ -264,9 +230,7 @@ export interface MpApi {
     revealPath(path: string): Promise<ApiResult<null>>;
     /** 路径探测（搜索框直达动作）：只回答「存在与否 + 是否目录」；不存在走 not-found */
     statPath(path: string): Promise<ApiResult<{ isDir: boolean }>>;
-    /** 原生目录选择框（条目编辑与工作区文件夹用）：取消返回 null */
-    /** 文件树读一层目录：根目录由主进程按工作区 id 查，dir 必须在其内（越界 bad-request，目录没了 missing） */
-    listDir(workspaceId: number, dir: string): Promise<ApiResult<{ entries: DirEntry[] }>>;
+    /** 原生目录选择框（条目编辑用）：取消返回 null */
     pickDirectory(defaultPath?: string): Promise<ApiResult<string | null>>;
     /** 原生文件选择框（条目编辑目标「浏览…」用）：app = 过滤可执行文件，path = 文件/文件夹皆可选，
      *  script = 只放行 .ps1；defaultPath 是起始目录；取消返回 null */
@@ -356,12 +320,10 @@ export interface MpApi {
     /** 清除登录态：关专用 Chrome、删其 profile、清抓取分区 cookie */
     galleryChromeClear(): Promise<ApiResult<null>>;
 
-    // ── 便签（工具 notes）：按工作区隔离；图片字节落数据目录 notes/，经 mpimg://note/<图片id> 读取 ──
-    /** 该工作区全部便签（创建时间倒序，含图片列表，不分页） */
-    notesList(workspaceId: number): Promise<ApiResult<Note[]>>;
-    /** 删除工作区确认框用 */
-    notesCount(workspaceId: number): Promise<ApiResult<number>>;
-    noteCreate(input: { workspaceId: number; text: string; images: Uint8Array[] }): Promise<ApiResult<Note>>;
+    // ── 便签（工具 notes）：全局一份；图片字节落数据目录 notes/，经 mpimg://note/<图片id> 读取 ──
+    /** 全部便签（创建时间倒序，含图片列表，不分页） */
+    notesList(): Promise<ApiResult<Note[]>>;
+    noteCreate(input: { text: string; images: Uint8Array[] }): Promise<ApiResult<Note>>;
     /** 保留的图片按 keepImageIds 顺序在前，新图追加在后 */
     noteUpdate(input: {
         id: number;
@@ -381,9 +343,9 @@ type ApiHandlers = {
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界统一断言成行类型。
 // （字段由 schema 与 SQL 共同保证，是全项目唯一允许 as 的地方）
-// 列名 workspace_id 与前端字段 workspaceId 不一致，显式列出并别名，避免 SELECT * 把 snake_case
+// 列名 auto_close 与前端字段 autoClose 不一致，显式列出并别名，避免 SELECT * 把 snake_case
 // 原样返回后靠断言骗过类型系统。
-const ITEM_COLUMNS = "id, kind, title, target, args, icon, auto_close AS autoClose, workspace_id AS workspaceId";
+const ITEM_COLUMNS = "id, kind, title, target, args, icon, auto_close AS autoClose";
 // SQLite 没有布尔：auto_close 读出来是 0/1，统一在这里转成 Item 声明的 boolean 再往外给，
 // 别让数字顶着布尔的类型流到渲染端
 type ItemRow = Omit<Item, "autoClose"> & { autoClose: number };
@@ -414,59 +376,16 @@ export const apiHandlers: ApiHandlers = {
         },
     }),
 
-    // ── 工作区：入口只做 zod 校验与转发，行不存在 / builtin 拒删改的判定在 server/workspaces.ts ──
-    getWorkspaces: async () => listWorkspaces(),
-    createWorkspace: async (name, folder) => {
-        const v = guard(createWorkspaceSchema, { name, folder });
-        if (!v) return badRequest;
-        return createWorkspace(v.name, v.folder);
-    },
-    renameWorkspace: async (id, name) => {
-        const v = guard(renameWorkspaceSchema, { id, name });
-        if (!v) return badRequest;
-        return renameWorkspace(v.id, v.name);
-    },
-    setWorkspaceColor: async (id, color) => {
-        const v = guard(setWorkspaceColorSchema, { id, color });
-        if (!v) return badRequest;
-        return setWorkspaceColor(v.id, v.color);
-    },
-    updateWorkspaceFolder: async (id, folder) => {
-        const v = guard(updateWorkspaceFolderSchema, { id, folder });
-        if (!v) return badRequest;
-        return updateWorkspaceFolder(v.id, v.folder);
-    },
-    deleteWorkspace: async (id) => {
-        const v = guard(workspaceIdSchema, { id });
-        if (!v) return badRequest;
-        return deleteWorkspace(v.id);
-    },
-    setActiveWorkspace: async (id) => {
-        const v = guard(workspaceIdSchema, { id });
-        if (!v) return badRequest;
-        return setActiveWorkspace(v.id);
-    },
-
     createItem: async (input) => {
         const v = guard(createItemSchema, input);
         if (!v) return badRequest;
-        const workspaceId = v.workspaceId ?? null;
-        // 归属只在非空时查一次：临时工作区没有工具栏，不能作为条目归属
-        if (workspaceId !== null) {
-            const ws = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(workspaceId) as
-                { builtin: number } | undefined;
-            if (!ws || ws.builtin !== 0) return badRequest;
-        }
         const info = db
-            .prepare(
-                "INSERT INTO items (kind, title, target, args, icon, auto_close, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            )
-            .run(v.kind, v.title, v.target, v.args ?? null, v.icon ?? null, v.autoClose ? 1 : 0, workspaceId);
+            .prepare("INSERT INTO items (kind, title, target, args, icon, auto_close) VALUES (?, ?, ?, ?, ?, ?)")
+            .run(v.kind, v.title, v.target, v.args ?? null, v.icon ?? null, v.autoClose ? 1 : 0);
         return { ok: true, data: { id: Number(info.lastInsertRowid) } };
     },
 
-    // PATCH 用「读旧值 → 合并 → 整行写回」：逻辑直白，个人工具无并发顾虑。
-    // 归属不在 patch 里，移动条目走 moveItem
+    // PATCH 用「读旧值 → 合并 → 整行写回」：逻辑直白，个人工具无并发顾虑
     updateItem: async (id, patch) => {
         const v = guard(updateItemSchema, patch);
         if (!v) return badRequest;
@@ -485,20 +404,6 @@ export const apiHandlers: ApiHandlers = {
             "UPDATE items SET kind = ?, title = ?, target = ?, args = ?, icon = ?, auto_close = ? WHERE id = ?",
         ).run(next.kind, next.title, next.target, next.args, next.icon, next.autoClose ? 1 : 0, id);
         return { ok: true, data: null };
-    },
-
-    // 移动归属：null = 回左侧快捷启动；数字 = 目标工作区。目标必须是存在的非临时工作区，
-    // 临时工作区没有工具栏，移过去等于把条目藏起来
-    moveItem: async (id, workspaceId) => {
-        const v = guard(moveItemSchema, { id, workspaceId });
-        if (!v) return badRequest;
-        if (v.workspaceId !== null) {
-            const ws = db.prepare("SELECT builtin FROM workspaces WHERE id = ?").get(v.workspaceId) as
-                { builtin: number } | undefined;
-            if (!ws || ws.builtin !== 0) return badRequest;
-        }
-        const info = db.prepare("UPDATE items SET workspace_id = ? WHERE id = ?").run(v.workspaceId, v.id);
-        return info.changes === 0 ? notFound : { ok: true, data: null };
     },
 
     deleteItem: async (id) => {
@@ -710,17 +615,8 @@ export const apiHandlers: ApiHandlers = {
         }
     },
 
-    // 文件树：工作区不存在或没有文件夹按 not-found；范围校验与读取失败的分类见 fileTree.ts
-    listDir: async (workspaceId, dir) => {
-        const v = guard(listDirSchema, { workspaceId, dir });
-        if (!v) return badRequest;
-        const folder = workspaceFolder(v.workspaceId);
-        if (!folder) return notFound;
-        return listDir(folder, v.dir);
-    },
-
-    // 原生目录选择框（条目编辑与工作区文件夹）：取消 = data null，前端保持原值不动。
-    // defaultPath 让修改工作区文件夹时从当前目录起步；不传时保持系统默认位置。
+    // 原生目录选择框（条目编辑）：取消 = data null，前端保持原值不动。
+    // defaultPath 让对话框从指定目录起步；不传时保持系统默认位置。
     // withNativeDialog 抑制主窗口失焦自动隐藏（见 util/nativeDialog.ts）
     pickDirectory: async (defaultPath) => {
         const r = await withNativeDialog(() =>
@@ -1074,20 +970,11 @@ export const apiHandlers: ApiHandlers = {
     galleryChromeClear: async () => galleryChromeClear(),
 
     // ── 便签：入口只做 zod 校验与转发，业务在 server/notes.ts ──
-    notesList: async (workspaceId) => {
-        const v = guard(noteWorkspaceSchema, { workspaceId });
-        if (!v) return badRequest;
-        return listNotes(v.workspaceId);
-    },
-    notesCount: async (workspaceId) => {
-        const v = guard(noteWorkspaceSchema, { workspaceId });
-        if (!v) return badRequest;
-        return countNotes(v.workspaceId);
-    },
+    notesList: async () => listNotes(),
     noteCreate: async (input) => {
         const v = guard(noteCreateSchema, input);
         if (!v) return badRequest;
-        return createNote(v.workspaceId, v.text, v.images);
+        return createNote(v.text, v.images);
     },
     noteUpdate: async (input) => {
         const v = guard(noteUpdateSchema, input);

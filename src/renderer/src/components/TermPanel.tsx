@@ -3,15 +3,14 @@ import { Terminal as XTerm, type Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { toast } from "sonner";
-import type { IDockviewPanelProps } from "@/components/ui/dock-layout";
 import { api } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import { cleanTermTitle } from "@/lib/termTitle";
 import { getTerm, registerTerm, termFont, themeFromVars } from "./termStore";
 
-// 终端面板：每个会话一块 dock 面板。xterm 实例归 termStore 持有（与面板生命周期
-// 解耦）——面板被拖动重组时本组件卸载重挂，已存在的实例只做 term.open(新容器)，
-// 回滚缓冲不丢；会话结束由 App 关面板并 dispose 实例。
+// 终端标签页：每个会话一个标签。xterm 实例归 termStore 持有（与组件生命周期解耦）：
+// 组件重挂时（开发态 StrictMode 会把 effect 跑两遍）已存在的实例只做 term.open(新容器)，
+// 回滚缓冲不丢；会话结束由 App 关标签并 dispose 实例。
 
 // 复制粘贴：xterm 不碰剪贴板（Ctrl+C/V 默认作为 SIGINT/0x16 直发 shell）。
 // 复制统一走右键——Windows 终端惯例：有选区复制、无选区粘贴；Ctrl+C 永远
@@ -20,10 +19,22 @@ import { getTerm, registerTerm, termFont, themeFromVars } from "./termStore";
 // 读剪贴板必须经主进程。
 const isMac = navigator.userAgent.includes("Mac");
 
-export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
+type Props = {
+    sessionId: number;
+    /** 是否是当前标签：切回来时要重新 fit 并聚焦（隐藏时容器是 0 尺寸，fit 无意义） */
+    active: boolean;
+    /** 终端程序用 OSC 0/2 改标题时通知标签排换名字 */
+    onTitle: (title: string) => void;
+};
+
+export function TermPanel({ sessionId, active, onTitle }: Props) {
     const { t } = useI18n();
-    const sessionId = (params as { sessionId: number }).sessionId;
     const hostRef = useRef<HTMLDivElement>(null);
+    // 回调走 ref：父级每次渲染都是新函数，不能让它触发整个 xterm 挂载 effect 重跑
+    const onTitleRef = useRef(onTitle);
+    onTitleRef.current = onTitle;
+    // 挂载 effect 里造好「重排并聚焦」的动作放这里，active 变化的 effect 来调
+    const refocus = useRef<() => void>(() => {});
 
     useEffect(() => {
         const el = hostRef.current;
@@ -72,11 +83,10 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             });
             handle = { term, fit };
         }
-        // 终端程序可用 OSC 0/2 改窗口标题：跟随到面板标签上，手动改过的名字同样会被
-        // 后续标题覆盖（用户决策）。订阅随本次挂载，面板重挂时换新的 panelApi
+        // 终端程序可用 OSC 0/2 改窗口标题：跟随到标签上。订阅随本次挂载
         const titleSub = term.onTitleChange((title) => {
             const next = cleanTermTitle(title);
-            if (next) panelApi.setTitle(next);
+            if (next) onTitleRef.current(next);
         });
         // 右键挂当前容器元素（随元素生死，重挂到新容器不会重复）
         const onContextMenu = (ev: MouseEvent) => {
@@ -92,8 +102,8 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
         term.open(el);
         registerTerm(sessionId, handle);
 
-        // fit 后把新尺寸同步给 pty；隐藏组里的面板跳过（0 尺寸 fit 无意义）。
-        // 拖动分栏时容器尺寸每帧都在变，TUI 程序会跟着反复重排；画面仍立即 fit，
+        // fit 后把新尺寸同步给 pty；隐藏的标签跳过（0 尺寸 fit 无意义）。
+        // 拖宽侧栏或缩放窗口时容器尺寸每帧都在变，TUI 程序会跟着反复重排；画面仍立即 fit，
         // pty 尺寸改成停手后再发（120ms 尾随），别让 vim/fzf 这类程序被高频重排拖慢。
         let sizeTimer: number | undefined;
         let sentCols = 0;
@@ -123,24 +133,17 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             }
             scheduleSize();
         };
-        requestAnimationFrame(() => {
-            fitAndSync();
-            term.focus();
-        });
+        requestAnimationFrame(fitAndSync);
         const ro = new ResizeObserver(fitAndSync);
         ro.observe(el);
-        // 面板从隐藏组切回可见（激活/拖回）：重新 fit 并聚焦。回调收到的是
-        // { isVisible } 对象，必须读字段——直接判断对象真假恒为真，隐藏时也会白跑一次 fit
-        const visibility = panelApi.onDidVisibilityChange((event) => {
-            if (!event.isVisible) return;
+        // 等一帧再 fit：标签刚被切回来时 display 还没生效
+        refocus.current = () =>
             requestAnimationFrame(() => {
                 fitAndSync();
                 term.focus();
             });
-        });
         return () => {
             ro.disconnect();
-            visibility.dispose();
             titleSub.dispose();
             el.removeEventListener("contextmenu", onContextMenu);
             // 卸载时还有没发出的尺寸就补一刀，避免 pty 停在拖动中途的大小
@@ -150,7 +153,12 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             }
             // 实例保留在 termStore——会话结束才 dispose
         };
-    }, [sessionId, panelApi, t]);
+    }, [sessionId, t]);
+
+    // 成为当前标签（含新开的终端）：重新 fit 并聚焦
+    useEffect(() => {
+        if (active) refocus.current();
+    }, [active]);
 
     return <div ref={hostRef} className="relative h-full min-h-0 p-1" />;
 }

@@ -208,8 +208,6 @@
     --canvas: #f1f5f8;
     --bar: #e1e7ee;
     --line: rgb(22 23 24 / 8%);
-    /* 当前工作区描边的混合强度：标签与停靠区共用；浅色底要更实才看得清 */
-    --ws-stroke: 60%;
     --dim-foreground: rgb(0 0 0 / 40%);
     --text-selection: color-mix(in srgb, var(--primary) 20%, transparent);
     /* 桌面控件材质；浅色沿用本库结构，颜色取 Darwin 浅色基线。 */
@@ -335,8 +333,6 @@
     --canvas: #1d1e21;
     --bar: #36373c;
     --line: #33343a;
-    /* 当前工作区描边的混合强度：标签与停靠区共用；深色底用略低的强度 */
-    --ws-stroke: 55%;
     --dim-foreground: #6f717a;
     --text-selection: color-mix(in srgb, var(--primary) 35%, transparent);
     --panel: #2b2c31;
