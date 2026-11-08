@@ -129,8 +129,8 @@ export default function App() {
     // 当前工作区决定停靠区活动标签的标识线：数据还没到时退回中性线，避免首帧闪一个不属于任何工作区的颜色
     const activeWorkspace = wsData?.workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
     const dockStroke = activeWorkspace ? workspaceStroke(activeWorkspace) : "var(--line)";
-    // 条目按归属分成两处：左侧列表与顶栏搜索只认空值，工作区工具栏只认当前工作区 id。
-    // 工作区条目在主窗口里只有工具栏一个入口（移动菜单负责换归属）
+    // 条目按归属分开用：左侧列表只认空值，工作区工具栏只认当前工作区 id，
+    // 顶栏搜索收全部（工作区条目也能按标题搜到，由 SearchBox 自己区分归属）。移动菜单负责换归属
     const globalItems = useMemo(() => items.filter((item) => item.workspaceId === null), [items]);
     const activeWorkspaceItems = useMemo(
         () => (activeWorkspaceId === null ? [] : items.filter((item) => item.workspaceId === activeWorkspaceId)),
@@ -444,8 +444,9 @@ export default function App() {
         const blocked = lastOpenRef.current?.id === item.id && now - lastOpenRef.current.at < 500;
         lastOpenRef.current = { id: item.id, at: now };
         if (blocked) return;
+        // 工作区条目一律开在它所属的工作区里（并切过去）；左栏的全局条目没有归属，开在当前工作区
         if (item.kind === "bookmark") {
-            openWeb(item.target);
+            void openWeb(item.target, item.workspaceId ?? undefined);
             return;
         }
         if (item.kind === "command") {
@@ -465,7 +466,13 @@ export default function App() {
     //    左侧条目（无归属）留空仍回主目录。cwd 不存在由服务端按 missing 拒绝 ──
     function runCommand(item: Item) {
         const cwd = item.args || workspaceFolderOf(item.workspaceId);
-        void spawnSession({ cwd, label: item.title, command: item.target, autoClose: item.autoClose });
+        void spawnSession({
+            cwd,
+            label: item.title,
+            command: item.target,
+            autoClose: item.autoClose,
+            workspaceId: item.workspaceId ?? undefined,
+        });
     }
 
     // ── 文件夹条目：在应用内终端打开该目录（标签名取文件夹名），opencode / claude
@@ -539,7 +546,7 @@ export default function App() {
         }
         // 浏览器可多开：每次新开一块空白网页面板
         if (id === "browser") {
-            openWeb();
+            void openWeb();
             return;
         }
         // 工作区数据还没到时不知道该往哪开：直接忽略这次点击（此时 dock 也还没挂出来）
@@ -564,15 +571,19 @@ export default function App() {
         dispatchToolFocus(id, ws);
     }
 
-    // ── 网页面板：每次都新开一块（web:<号>），开在当前激活工作区的停靠区，不去找已开的 ──
+    // ── 网页面板：每次都新开一块（web:<号>），默认开在当前激活工作区的停靠区，不去找已开的 ──
     // 已开的那块可能早就跳去别的页了，找它反而容易错。不带 url 是「浏览器」工具的空白页。
+    // workspaceId 只有搜索框选中别的工作区的网页收藏时才会不是当前工作区：开在它那里并切过去。
     // renderer: "always" 让内容画在 dockview 的覆盖层上，拖拽分屏时不被搬动，网页不会重载
     const nextWebId = useRef(1);
-    function openWeb(url?: string) {
-        const ws = activeWorkspaceId;
+    async function openWeb(url?: string, workspaceId?: number) {
+        const ws = workspaceId ?? activeWorkspaceId;
         if (ws === null) return;
         setDockWanted(true);
         const id = nextWebId.current++;
+        // 先切再加面板：面板在可见的停靠区里挂载，网页才按正确的尺寸创建。
+        // 切换失败只提示，面板仍加到目标工作区，用户点一下列表就能过去
+        if (ws !== activeWorkspaceId) await switchWorkspace(ws);
         whenDockApi(ws, (dock) => {
             addPanelPreferEmptyGroup(dock, {
                 id: `web:${id}`,
@@ -600,9 +611,16 @@ export default function App() {
     // 开新会话（工具菜单 / 终端命令条目共用）：cwd 由调用方决定（工作区文件夹或条目自带的
     // 工作目录），缺省主目录；命令条目的整行命令在建好后写入执行——首屏输出由 termStore
     // 的缓冲兜住，面板挂载后回放
-    async function spawnSession(req?: { cwd?: string; label?: string; command?: string; autoClose?: boolean }) {
+    // workspaceId 只有搜索框选中别的工作区的终端命令条目时才会不是当前工作区：开在它那里并切过去
+    async function spawnSession(req?: {
+        cwd?: string;
+        label?: string;
+        command?: string;
+        autoClose?: boolean;
+        workspaceId?: number;
+    }) {
         // 没有当前工作区就不起会话：pty 起来了却没有面板接，等于留一个看不见的 shell
-        const ws = activeWorkspaceId;
+        const ws = req?.workspaceId ?? activeWorkspaceId;
         if (ws === null) return;
         const r = await api.ptySpawn(req ? { cwd: req.cwd, label: req.label } : undefined);
         if (!r.ok) {
@@ -612,6 +630,10 @@ export default function App() {
             return;
         }
         setDockWanted(true);
+        // 会话起成功才切（目录不存在等失败留在原工作区，只弹报错）；先切再加面板，
+        // 终端在可见的停靠区里挂载才按正确的尺寸排版。切换失败只提示，面板仍加到目标工作区，
+        // 否则 pty 起来了却没有面板接
+        if (ws !== activeWorkspaceId) await switchWorkspace(ws);
         whenDockApi(ws, (dock) => {
             addPanelPreferEmptyGroup(dock, {
                 id: `term:${r.data.id}`,
@@ -880,7 +902,8 @@ export default function App() {
                             缩到 260px 还不够才轮到右边的工具栏被挤窄 */}
                             <TitlebarWell className="relative h-[28px] w-[540px] min-w-[260px] shrink-[1000] flex-row px-2.5 overflow-visible">
                                 <SearchBox
-                                    items={globalItems}
+                                    items={items}
+                                    workspaces={workspaceTargets}
                                     dirIds={dirIds}
                                     light={theme === "light"}
                                     // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪

@@ -4,7 +4,7 @@ import botIcon from "@/assets/icons/bot.svg";
 import fileIcon from "@/assets/icons/file.svg";
 import folderOpenIcon from "@/assets/icons/folder-open.svg";
 import { TOOLS, type ToolId } from "@/tools/registry";
-import { api, type Expert, type Item, type ToolAliases } from "@/api/client";
+import { api, type Expert, type Item, type ToolAliases, type Workspace } from "@/api/client";
 import { KindIcon } from "@/lib/kindIcon";
 import { sortItems } from "@/lib/itemOrder";
 import { useExperts } from "@/lib/experts";
@@ -17,8 +17,9 @@ import { useI18n } from "@/i18n/useI18n";
 
 // ── 顶栏搜索框（v2.3）：输入即出下拉候选 + 剪贴板素材流 ──
 // 下拉分三块，各答一件事：
-//   命中区（我想找什么）= 匹配的条目（标题；文件夹条目的目标路径也算）+ 匹配的全部内置工具（名称/描述/id/别名）。
-//     选中只打开、不带入文字，不管工具吃不吃文本。
+//   命中区（我想找什么）= 匹配的条目（全局与工作区条目都按标题；文件夹条目的目标路径也算）
+//     + 匹配的全部内置工具（名称/id/别名，描述不参与）。选中只打开、不带入文字，不管工具吃不吃文本。
+//     工作区条目的行尾带所属工作区名；选中后在它所属的工作区里打开并切过去（见 App.openItem）。
 //   推荐区（这段字交给谁）= 能吃文本的工具 + 勾了推荐的 AI 专家，恒在。
 //     选中一律注入「chip ?? 手打 query」。同一个工具可能在两块各出现一次，意思不同。
 //   路径区：输入像绝对路径且真实存在时的动作行（文件 = 打开文件 + 前往所在目录；文件夹 = 前往）。
@@ -56,7 +57,10 @@ function candidateIcon(c: Candidate, dirIds: ReadonlySet<number>, light: boolean
 }
 
 type Props = {
+    /** 全部条目（含工作区里的）：归属的区分在组件内做，排序与匹配规则不同 */
     items: Item[];
+    /** 普通工作区：工作区条目的候选行尾要写所属工作区名（选中会切过去，得让人看得出去哪） */
+    workspaces: Workspace[];
     /** 目标经运行时确认是本机目录的条目 id：这些条目的候选行显示文件夹图标 */
     dirIds: ReadonlySet<number>;
     /** 浅色主题：图标包里少数图标有专为浅底画的款式 */
@@ -93,6 +97,11 @@ function parentDir(p: string): string {
     return p.match(/^.*[\\/]/)?.[0] ?? p;
 }
 
+/** 条目所属工作区的名字；全局条目（或工作区已不在列表里）返回 undefined */
+function workspaceNameOf(item: Item, workspaces: Workspace[]): string | undefined {
+    return item.workspaceId === null ? undefined : workspaces.find((w) => w.id === item.workspaceId)?.name;
+}
+
 /** 工具的别名列表（设置页存成空格/逗号分隔的串） */
 function aliasesOf(aliases: ToolAliases, id: ToolId): string[] {
     return (aliases[id] ?? "").split(/[\s,，]+/).filter(Boolean);
@@ -105,7 +114,16 @@ function chipLabel(text: string): string {
     return chars.length > CHIP_MAX_CHARS ? chars.slice(0, CHIP_MAX_CHARS).join("") + "…" : flat;
 }
 
-export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpenTool, onOpenPath }: Props) {
+export function SearchBox({
+    items,
+    workspaces,
+    dirIds,
+    light,
+    toolAliases,
+    onOpenItem,
+    onOpenTool,
+    onOpenPath,
+}: Props) {
     const { t } = useI18n();
     const [query, setQuery] = useState("");
     const [clip, setClip] = useState<string | null>(null);
@@ -132,9 +150,13 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
         const out: Candidate[] = [];
         if (q) {
             // 先按侧栏同一套规则排序再匹配：候选顺序与列表顺序一致，不会随数据落库次序跳动。
-            // 目标只对文件夹条目参与匹配（用路径找文件夹）；网址、应用、命令、文件的目标一律不匹配，
-            // 否则打 "com"、"exe" 之类会命中一大片。目录判定是异步的，回来之前文件夹条目只按标题命中
-            for (const item of sortItems(items)) {
+            // 全局条目排前、工作区条目排后（各自内部再排序），全局的候选次序不受工作区条目影响。
+            // 目标只对文件夹条目参与匹配（用路径找文件夹，全局与工作区的一视同仁）；
+            // 网址、应用、命令、文件的目标一律不匹配，否则打 "com"、"exe" 之类会命中一大片。
+            // 目录判定是异步的，回来之前文件夹条目只按标题命中
+            const global = items.filter((item) => item.workspaceId === null);
+            const inWorkspace = items.filter((item) => item.workspaceId !== null);
+            for (const item of [...sortItems(global), ...sortItems(inWorkspace)]) {
                 const targetHit = dirIds.has(item.id) && item.target.toLowerCase().includes(q);
                 if (item.title.toLowerCase().includes(q) || targetHit) {
                     out.push({ kind: "item", item });
@@ -144,14 +166,13 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
             for (const tool of TOOLS) {
                 if (out.length >= MAX_CANDIDATES) break;
                 const name = t(tool.nameKey);
-                const desc = tool.descKey;
                 const aliases = aliasesOf(toolAliases, tool.id);
+                // 描述只在候选行尾显示，不参与匹配：描述句子里的字太杂，打一两个字就会命中一片
                 const hit =
                     name.toLowerCase().includes(q) ||
                     tool.id.includes(q) ||
-                    t(desc).toLowerCase().includes(q) ||
                     aliases.some((a) => a.toLowerCase().includes(q));
-                if (hit) out.push({ kind: "tool", id: tool.id, name, desc });
+                if (hit) out.push({ kind: "tool", id: tool.id, name, desc: tool.descKey });
             }
         }
         return out;
@@ -332,7 +353,9 @@ export function SearchBox({ items, dirIds, light, toolAliases, onOpenItem, onOpe
                                     : t(c.label === "open" ? "search.openFile" : "search.gotoFolder");
                         const tail =
                             c.kind === "item"
-                                ? t(`item.kind.${c.item.kind}`)
+                                ? [workspaceNameOf(c.item, workspaces), t(`item.kind.${c.item.kind}`)]
+                                      .filter(Boolean)
+                                      .join(" · ")
                                 : c.kind === "tool"
                                   ? t(c.desc)
                                   : c.kind === "expert"
