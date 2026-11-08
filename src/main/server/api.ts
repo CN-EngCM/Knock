@@ -6,6 +6,7 @@ import { autostartStatus, disableAutostart, enableAutostart } from "./autostart"
 import { searchEverything, type FileHit, type FileSearchOptions } from "./everything";
 import { searchSpotlight } from "./spotlight";
 import { applyHotkey, currentHotkey, readBlockApps, writeBlockApps } from "../hotkey";
+import { readFolderActions, writeFolderActions } from "./folderActions";
 import { launchItem } from "./launcher";
 import { getPinState as readPinState } from "./pin";
 import { killSession, readTermConfig, resizeSession, spawnSession, writeSession } from "./pty";
@@ -80,6 +81,8 @@ import {
     aiModelsSchema,
     changeDataDirSchema,
     clipPasteSchema,
+    TOOL_IDLE_CHOICES,
+    toolIdleSchema,
     createExpertSchema,
     createItemSchema,
     noteCreateSchema,
@@ -105,6 +108,7 @@ import {
     translateSchema,
     HOTKEY_IDS,
     hotkeyBlockSchema,
+    folderActionsSchema,
     ptyResizeSchema,
     ptySpawnSchema,
     ptyWriteSchema,
@@ -134,6 +138,7 @@ import {
     type Item,
     type CreateItemInput,
     type FileSearchInput,
+    type FolderAction,
     type PtySpawnInput,
     type TermConfig,
     type TermPatch,
@@ -189,6 +194,9 @@ export interface MpApi {
     // 屏蔽名单：这些程序（文件名，如 game.exe）在前台时呼出热键不响应；set 返回整理后的名单
     getHotkeyBlock(): Promise<ApiResult<{ apps: string[] }>>;
     setHotkeyBlock(apps: string[]): Promise<ApiResult<{ apps: string[] }>>;
+    // 文件夹动作：文件夹条目 → 子菜单里「在此打开终端」之后的那几项；set 是整份替换
+    getFolderActions(): Promise<ApiResult<{ actions: FolderAction[] }>>;
+    setFolderActions(actions: FolderAction[]): Promise<ApiResult<{ actions: FolderAction[] }>>;
     listShortcuts(refresh: boolean): Promise<ApiResult<{ shortcuts: Shortcut[] }>>;
     // ── 终端会话（v2.2）：数据流不在此契约里，经 preload 的 onPtyEvent 事件通道下行 ──
     // opts 带 cwd 与 label：命令条目有显式工作目录、文件夹条目「在此打开终端」时传它，
@@ -217,6 +225,9 @@ export interface MpApi {
     // ── 剪贴板素材时限（v2.3）：呼出时最近一次复制落在时限内才自动进搜索框 ──
     getClipPaste(): Promise<ApiResult<{ seconds: number }>>;
     setClipPaste(seconds: number): Promise<ApiResult<{ seconds: number }>>;
+    // ── 工具后台存活时间（分钟，0 = 不自动关闭）：窗口隐藏后渲染端每次隐藏时现读，改了从下一次隐藏起生效 ──
+    getToolIdle(): Promise<ApiResult<{ minutes: number }>>;
+    setToolIdle(minutes: number): Promise<ApiResult<{ minutes: number }>>;
     // ── 界面主题：唯一权威来源是 settings 表 theme 键；主进程开窗前另经
     //    server/util/settings 直读同一键定窗口底色/系统边线，渲染端首帧前套 .dark ──
     getTheme(): Promise<ApiResult<{ theme: ThemeId }>>;
@@ -454,6 +465,15 @@ export const apiHandlers: ApiHandlers = {
         return { ok: true, data: { apps: writeBlockApps(v) } };
     },
 
+    // ── 文件夹动作：渲染端每次打开设置 / 刷新时现读，不缓存 ──
+    getFolderActions: async () => ({ ok: true, data: { actions: readFolderActions() } }),
+    setFolderActions: async (actions) => {
+        const v = guard(folderActionsSchema, actions);
+        if (!v) return badRequest;
+        writeFolderActions(v);
+        return { ok: true, data: { actions: v } };
+    },
+
     // Windows 快捷方式列表（添加应用时的辅助选择器；其余平台返回空数组）
     listShortcuts: async (refresh) => {
         const shortcuts: Shortcut[] = await scanShortcuts(refresh === true);
@@ -538,6 +558,18 @@ export const apiHandlers: ApiHandlers = {
         if (!v) return badRequest;
         setSetting("clipPasteWindow", String(v.seconds));
         return { ok: true, data: { seconds: v.seconds } };
+    },
+
+    // ── 工具后台存活时间：库里的脏值（手改）回落默认 10 分钟 ──
+    getToolIdle: async () => {
+        const n = Number(getSetting("toolIdleMinutes", "10"));
+        return { ok: true, data: { minutes: (TOOL_IDLE_CHOICES as readonly number[]).includes(n) ? n : 10 } };
+    },
+    setToolIdle: async (minutes) => {
+        const v = guard(toolIdleSchema, { minutes });
+        if (!v) return badRequest;
+        setSetting("toolIdleMinutes", String(v.minutes));
+        return { ok: true, data: { minutes: v.minutes } };
     },
 
     // ── 界面主题：脏值（手改库）回落深色 ──

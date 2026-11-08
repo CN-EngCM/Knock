@@ -8,9 +8,9 @@ import { useI18n } from "@/i18n/useI18n";
 import { cleanTermTitle } from "@/lib/termTitle";
 import { getTerm, registerTerm, termFont, themeFromVars } from "./termStore";
 
-// 终端标签页：每个会话一个标签。xterm 实例归 termStore 持有（与组件生命周期解耦）：
+// 终端页：每个会话一个。xterm 实例归 termStore 持有（与组件生命周期解耦）：
 // 组件重挂时（开发态 StrictMode 会把 effect 跑两遍）已存在的实例只做 term.open(新容器)，
-// 回滚缓冲不丢；会话结束由 App 关标签并 dispose 实例。
+// 回滚缓冲不丢；会话结束由 App 关掉并 dispose 实例。
 
 // 复制粘贴：xterm 不碰剪贴板（Ctrl+C/V 默认作为 SIGINT/0x16 直发 shell）。
 // 复制统一走右键——Windows 终端惯例：有选区复制、无选区粘贴；Ctrl+C 永远
@@ -21,9 +21,9 @@ const isMac = navigator.userAgent.includes("Mac");
 
 type Props = {
     sessionId: number;
-    /** 是否是当前标签：切回来时要重新 fit 并聚焦（隐藏时容器是 0 尺寸，fit 无意义） */
+    /** 是否是当前显示的终端：切回来时要重新 fit 并聚焦（隐藏时容器是 0 尺寸，fit 无意义） */
     active: boolean;
-    /** 终端程序用 OSC 0/2 改标题时通知标签排换名字 */
+    /** 终端程序用 OSC 0/2 改标题时通知菜单换名字 */
     onTitle: (title: string) => void;
 };
 
@@ -83,7 +83,7 @@ export function TermPanel({ sessionId, active, onTitle }: Props) {
             });
             handle = { term, fit };
         }
-        // 终端程序可用 OSC 0/2 改窗口标题：跟随到标签上。订阅随本次挂载
+        // 终端程序可用 OSC 0/2 改窗口标题：跟随到菜单里的名字上。订阅随本次挂载
         const titleSub = term.onTitleChange((title) => {
             const next = cleanTermTitle(title);
             if (next) onTitleRef.current(next);
@@ -102,8 +102,8 @@ export function TermPanel({ sessionId, active, onTitle }: Props) {
         term.open(el);
         registerTerm(sessionId, handle);
 
-        // fit 后把新尺寸同步给 pty；隐藏的标签跳过（0 尺寸 fit 无意义）。
-        // 拖宽侧栏或缩放窗口时容器尺寸每帧都在变，TUI 程序会跟着反复重排；画面仍立即 fit，
+        // fit 后把新尺寸同步给 pty；没显示的终端跳过（0 尺寸 fit 无意义）。
+        // 缩放窗口时容器尺寸每帧都在变，TUI 程序会跟着反复重排；画面仍立即 fit，
         // pty 尺寸改成停手后再发（120ms 尾随），别让 vim/fzf 这类程序被高频重排拖慢。
         let sizeTimer: number | undefined;
         let sentCols = 0;
@@ -136,7 +136,7 @@ export function TermPanel({ sessionId, active, onTitle }: Props) {
         requestAnimationFrame(fitAndSync);
         const ro = new ResizeObserver(fitAndSync);
         ro.observe(el);
-        // 等一帧再 fit：标签刚被切回来时 display 还没生效
+        // 等一帧再 fit：终端刚被切回来时 display 还没生效
         refocus.current = () =>
             requestAnimationFrame(() => {
                 fitAndSync();
@@ -155,7 +155,7 @@ export function TermPanel({ sessionId, active, onTitle }: Props) {
         };
     }, [sessionId, t]);
 
-    // 成为当前标签（含新开的终端）：重新 fit 并聚焦
+    // 成为当前显示的终端（含新开的）：重新 fit 并聚焦
     useEffect(() => {
         if (active) refocus.current();
     }, [active]);

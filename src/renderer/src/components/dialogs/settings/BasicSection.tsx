@@ -25,6 +25,15 @@ import { FontPicker } from "./FontPicker";
 
 type AutostartStatus = { supported: boolean; enabled: boolean };
 
+// 工具后台存活时间的几档（分钟，0 = 不自动关闭）。主进程 schemas.TOOL_IDLE_CHOICES 是同一份，渲染进程不能 import 它的值，手工保持一致
+const TOOL_IDLE_OPTIONS: ReadonlyArray<{ minutes: number; labelKey: MessageKey }> = [
+    { minutes: 5, labelKey: "settings.toolIdle.m5" },
+    { minutes: 10, labelKey: "settings.toolIdle.m10" },
+    { minutes: 30, labelKey: "settings.toolIdle.m30" },
+    { minutes: 60, labelKey: "settings.toolIdle.m60" },
+    { minutes: 0, labelKey: "settings.toolIdle.never" },
+];
+
 // 热键预设 id → i18n key 的映射（id 集合来自后端 schemas.HOTKEY_IDS）
 const HOTKEY_LABEL: Record<HotkeyId, MessageKey> = {
     "double-ctrl": "settings.hotkey.double-ctrl",
@@ -83,6 +92,8 @@ export function BasicSection({
     // clipSec 是已落库的值（null = 尚未读到），clipSecEdit 是输入框编辑态
     const [clipSec, setClipSec] = useState<number | null>(null);
     const [clipSecEdit, setClipSecEdit] = useState("5");
+    // 工具后台存活时间（分钟，null = 尚未读到）：App 每次窗口隐藏时现读，这里只管读写
+    const [toolIdle, setToolIdle] = useState<number | null>(null);
     // 数据目录（null = 尚未拉取）；迁移是「搬库 → 重启」的长流程，pending 防重复触发
     const [dataDirInfo, setDataDirInfo] = useState<{ dir: string; isDefault: boolean } | null>(null);
     const [migrating, setMigrating] = useState(false);
@@ -102,6 +113,9 @@ export function BasicSection({
         });
         api.getClipPaste().then((r) => {
             if (r.ok) setClipSec(r.data.seconds);
+        });
+        api.getToolIdle().then((r) => {
+            if (r.ok) setToolIdle(r.data.minutes);
         });
     }, []);
 
@@ -212,6 +226,20 @@ export function BasicSection({
         } catch {
             toast.error(t("toast.error"));
             setClipSecEdit(String(clipSec));
+        }
+    }
+
+    /** 换工具后台存活时间：即选即存，失败回滚 */
+    async function changeToolIdle(next: number) {
+        const prev = toolIdle;
+        setToolIdle(next);
+        try {
+            const r = await api.setToolIdle(next);
+            if (!r.ok) throw new Error(r.error.kind);
+            setToolIdle(r.data.minutes);
+        } catch {
+            setToolIdle(prev);
+            toast.error(t("toast.error"));
         }
     }
 
@@ -350,6 +378,29 @@ export function BasicSection({
             </FormRow>
             <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
                 {t("settings.clipHint")}
+            </FieldDescription>
+
+            <FormRow>
+                <FieldLabel>{t("settings.toolIdle")}</FieldLabel>
+                {toolIdle === null ? (
+                    <Spinner decorative className="size-3.5 text-dim-foreground" />
+                ) : (
+                    <Select value={String(toolIdle)} onValueChange={(v) => void changeToolIdle(Number(v))}>
+                        <SelectTrigger className="w-full">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {TOOL_IDLE_OPTIONS.map((o) => (
+                                <SelectItem key={o.minutes} value={String(o.minutes)}>
+                                    {t(o.labelKey)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                )}
+            </FormRow>
+            <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
+                {t("settings.toolIdleHint")}
             </FieldDescription>
 
             <FormRow>

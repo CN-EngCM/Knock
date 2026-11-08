@@ -3,7 +3,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+    type FolderAction,
     type FontConfig,
+    type Item,
     type FontPatch,
     type TermConfig,
     type TermPatch,
@@ -11,9 +13,11 @@ import {
     type ToolAliasPatch,
     type ToolAliases,
 } from "@/api/client";
+import { useWindowRoom } from "@/lib/windowRoom";
 import { useI18n } from "@/i18n/useI18n";
 import type { Lang } from "@/i18n";
 import { BasicSection } from "./settings/BasicSection";
+import { LauncherSection } from "./settings/LauncherSection";
 import { ToolsSection } from "./settings/ToolsSection";
 import { TranslateSection } from "./settings/TranslateSection";
 import { AiSection } from "./settings/AiSection";
@@ -37,6 +41,15 @@ type Props = {
     /** 工具别名：提交走 onToolAlias（App 负责落库与回填，SearchBox 随之生效） */
     toolAliases: ToolAliases | null;
     onToolAlias: (patch: ToolAliasPatch) => Promise<boolean>;
+    /** 快捷启动条目与目录判定：「快速启动」分节列出它们；新增、编辑、删除都交给 App（条目弹窗叠在设置页上面） */
+    items: Item[];
+    dirIds: ReadonlySet<number>;
+    onAddItem: () => void;
+    onEditItem: (item: Item) => void;
+    onDeleteItem: (item: Item) => void;
+    /** 文件夹动作（文件夹条目 → 子菜单项）：整份保存交给 App，SearchBox 随之生效 */
+    folderActions: FolderAction[] | null;
+    onSaveFolderActions: (actions: FolderAction[]) => Promise<boolean>;
     /** 打开时直接定位的分节（工具内「打开设置」引导；缺省回基础设置） */
     initialSection?: SectionId;
 };
@@ -44,6 +57,7 @@ type Props = {
 // 分节导航定义：新增设置分节 = 这里加一项 + dialogs/settings/ 下加分节组件 + 下方渲染分支补一段
 const SECTION_DEFS = [
     { id: "basic", labelKey: "settings.basic" },
+    { id: "launcher", labelKey: "settings.launcher" },
     { id: "tools", labelKey: "settings.tools" },
     { id: "translate", labelKey: "settings.translate" },
     { id: "ai", labelKey: "settings.ai" },
@@ -67,9 +81,18 @@ export function SettingsDialog({
     onFontPatch,
     toolAliases,
     onToolAlias,
+    items,
+    dirIds,
+    onAddItem,
+    onEditItem,
+    onDeleteItem,
+    folderActions,
+    onSaveFolderActions,
     initialSection,
 }: Props) {
     const { t } = useI18n();
+    // 窗口收成一条时，设置页（560px 高、最多占窗口 85%）放不下：打开期间撑开窗口，关了缩回去
+    useWindowRoom(open ? 680 : 0);
     const [sec, setSec] = useState<SectionId>("basic");
 
     // 打开时回到定位分节（或第一个分节）
@@ -87,7 +110,7 @@ export function SettingsDialog({
                 </DialogHeader>
 
                 {/* 两栏：左=分节导航（SECTION_DEFS 驱动），右=当前分节内容。
-                    forceMount 让五个分节常驻，切走再切回不丢未提交的表单草稿；
+                    forceMount 让各分节常驻，切走再切回不丢未提交的表单草稿；
                     非激活面板由库的 data-[state=inactive]:hidden 隐藏。 */}
                 <Tabs
                     orientation="vertical"
@@ -115,6 +138,18 @@ export function SettingsDialog({
                                 onTermPatch={onTermPatch}
                                 fontCfg={fontCfg}
                                 onFontPatch={onFontPatch}
+                            />
+                        </TabsContent>
+                        <TabsContent value="launcher" forceMount className="grid content-start gap-3">
+                            <LauncherSection
+                                items={items}
+                                dirIds={dirIds}
+                                light={theme === "light"}
+                                onAdd={onAddItem}
+                                onEdit={onEditItem}
+                                onDelete={onDeleteItem}
+                                folderActions={folderActions}
+                                onSaveFolderActions={onSaveFolderActions}
                             />
                         </TabsContent>
                         <TabsContent value="tools" forceMount className="grid content-start gap-3">

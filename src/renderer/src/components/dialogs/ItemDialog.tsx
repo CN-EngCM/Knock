@@ -10,6 +10,7 @@ import { IconPickerDialog } from "./IconPickerDialog";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
 import { api, type Item, type Kind } from "@/api/client";
 import { hasIcon, namedIconUrl } from "@/lib/fileIcon";
+import { useWindowRoom } from "@/lib/windowRoom";
 import { useI18n } from "@/i18n/useI18n";
 import { FormRow } from "./settings/shared";
 
@@ -53,6 +54,8 @@ export function ItemDialog({ open, item, platform, light, onClose, onSubmit }: P
     const [saving, setSaving] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
+    // 窗口收成一条时，条目弹窗放不下：打开期间撑开窗口（从设置页进来时设置页已经撑开了，取较大值）
+    useWindowRoom(open ? 680 : 0);
 
     // 每次打开时用 item / 默认值重置表单（编辑回填）
     useEffect(() => {

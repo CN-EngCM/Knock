@@ -9,6 +9,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useWindowRoom } from "@/lib/windowRoom";
 import { useI18n } from "@/i18n/useI18n";
 
 type Props = {
@@ -27,6 +28,8 @@ type Props = {
 export function ConfirmDialog({ open, title, description, confirmLabel, onClose, onConfirm }: Props) {
     const { t } = useI18n();
     const [busy, setBusy] = useState(false);
+    // 窗口收成一条时，确认框放不下：打开期间撑开窗口
+    useWindowRoom(open ? 280 : 0);
 
     async function handleConfirm() {
         setBusy(true);

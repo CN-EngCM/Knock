@@ -54,6 +54,13 @@ export const autostartSchema = z.object({ enabled: z.boolean() });
 // 呼出时剪贴板素材的时限（秒）：0 = 关闭自动粘贴
 export const clipPasteSchema = z.object({ seconds: z.number().int().min(0).max(60) });
 
+// 工具后台存活时间（分钟）：窗口藏起来满这么久，打开着的工具（终端除外）自动关闭，0 = 不自动关闭。
+// 只放行设置页下拉里的几档；渲染进程不能 import 这里的值，设置页手工复制了同一份
+export const TOOL_IDLE_CHOICES = [5, 10, 30, 60, 0] as const;
+export const toolIdleSchema = z.object({
+    minutes: z.number().refine((n) => (TOOL_IDLE_CHOICES as readonly number[]).includes(n)),
+});
+
 // ── 界面主题（GaN.UI 深浅双主题）：唯一权威来源是 settings 表的 theme 键，
 //    主进程开窗前读它定窗口底色与系统边线，渲染端首帧前读它套 .dark 类 ──
 export const THEME_IDS = ["dark", "light"] as const;
@@ -363,6 +370,21 @@ export const hotkeySchema = z.object({ hotkey: z.enum(HOTKEY_IDS) });
 // 前台程序屏蔽名单：这些程序在最前面时呼出热键不响应。条目是程序文件名，
 // 具体整理规则（小写、补 .exe、去重）在 hotkey.ts 的 normalizeBlockApps，这里只限长防乱写
 export const hotkeyBlockSchema = z.array(z.string().max(260)).max(200);
+
+// 文件夹动作：文件夹条目按 → 展开的子菜单项。命令必须单行，免得一次误敲进一整段脚本；
+// 上限数字设置页的弹窗里手工复制了一份（渲染进程不能 import 这里的值）
+export const folderActionSchema = z.object({
+    name: z.string().trim().min(1).max(30),
+    command: z
+        .string()
+        .trim()
+        .min(1)
+        .max(500)
+        .refine((s) => !/[\r\n]/.test(s)),
+    autoClose: z.boolean(),
+});
+export const folderActionsSchema = z.array(folderActionSchema).max(10);
+export type FolderAction = z.infer<typeof folderActionSchema>;
 
 // ── RPC 输入类型（由 zod schema 推导，主进程处理器与渲染进程共用）──
 export type CreateItemInput = z.infer<typeof createItemSchema>;

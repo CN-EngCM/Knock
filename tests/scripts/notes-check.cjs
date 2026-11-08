@@ -70,7 +70,7 @@ function check(name, ok, detail = "") {
         `[...document.querySelectorAll(${JSON.stringify(sel)})].filter(e => e.offsetParent !== null)`;
     const rows = () =>
         c.eval(
-            `[...document.querySelectorAll('.drop-anim button')].map(b => b.innerText.split(String.fromCharCode(10))[0])`,
+            `[...document.querySelectorAll('#search-panel button')].map(b => b.innerText.split(String.fromCharCode(10))[0])`,
         );
     const search = async (text) => {
         await c.eval(`(() => { const s = document.getElementById("search"); s.focus(); s.select(); })()`);
@@ -83,11 +83,9 @@ function check(name, ok, detail = "") {
 
     await c.eval(`window.knock.setPinned(true)`);
     // 先确保便签面板开着且草稿是空的（上一次跑剩下的草稿会干扰判断）
-    await c.eval(`document.querySelector('[aria-label="工具集"]').click()`);
-    await c.sleep(300);
-    await c.eval(
-        `[...document.querySelectorAll('[role=menuitem]')].find(e => e.innerText.startsWith('便签'))?.click()`,
-    );
+    // 顶栏没有工具菜单了：打字搜「便签」，命中区第一行 Enter 只打开、不带字
+    await search("便签");
+    await c.key("Enter");
     await c.sleep(1000);
     await c.eval(`${visible("textarea")}[0].select()`);
     await c.key("Backspace");
@@ -129,13 +127,16 @@ function check(name, ok, detail = "") {
     );
     check(
         "打 trans：不再显示「无匹配」",
-        await c.eval(`!document.querySelector('.drop-anim').innerText.includes('无匹配')`),
+        await c.eval(`!document.querySelector('#search-panel').innerText.includes('无匹配')`),
     );
     await c.key("Escape");
 
     // 没有任何命中：显示「无匹配」、不预选行，Enter 不做事，手打的字不会进便签
     await search("zzqq无命中");
-    check("无命中：显示「无匹配」", await c.eval(`document.querySelector('.drop-anim').innerText.includes('无匹配')`));
+    check(
+        "无命中：显示「无匹配」",
+        await c.eval(`document.querySelector('#search-panel').innerText.includes('无匹配')`),
+    );
     await c.key("Enter");
     await c.sleep(500);
     check("无命中：Enter 不带入便签", (await draft()) === "", JSON.stringify(await draft()));

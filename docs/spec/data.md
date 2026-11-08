@@ -32,10 +32,12 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、图库抓取的 `p
 | --- | --- |
 | `hotkey` | 呼出热键预设 |
 | `hotkeyBlockApps` | 呼出热键屏蔽名单：程序文件名的 JSON 字符串数组（小写、带 `.exe`、去重），缺省 `[]`；每次呼出现读，不缓存 |
+| `folderActions` | 文件夹动作（文件夹条目 → 子菜单项）：JSON 数组 `[{name, command, autoClose}]`，限制见 `schemas.ts` 的 `folderActionsSchema`（名称 ≤ 30、命令单行 ≤ 500、最多 10 个）。**键不存在 = 用预置的 opencode 与 Claude Code 两项**；一保存就整份写入，删光存 `[]`（不会被预置顶回来）；库里的值手改坏了按没存过处理。渲染端启动时读一次，保存后回填 |
 | `termShell` / `termFontSize` | 终端程序 / 字号 |
 | `uiFont` / `monoFont` | 界面字体 / 等宽字体（旧键 `termFont` 由 `fontsMigrated` 标记迁到 `monoFont`） |
 | `toolAlias:<id>` | 工具别名 |
 | `clipPasteWindow` | 剪贴板素材时限，单位秒，0 = 关 |
+| `toolIdleMinutes` | 工具后台存活时间，单位分钟，只认 5 / 10 / 30 / 60 / 0（0 = 不自动关闭），缺省与脏值都回落 10；窗口每次隐藏时渲染端现读，终端不受它管 |
 | `youdaoAppKey` / `youdaoAppSecret` | 有道密钥 |
 | `aiModels` | AI 模型配置 JSON |
 | `aiExpertsSeeded` | 出厂专家播种标记 |
@@ -43,14 +45,14 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、图库抓取的 `p
 | `pinned` | 钉住状态，"1"/"0"（置顶不落库） |
 | `galleryPassword` | 图库密码 |
 | `galleryFoldersMigrated` | 图库文件归位迁移已完成，"1" 后启动不再跑；有文件被占用没归位时不写，下次重试 |
-| `window_state` | 窗口尺寸与最大化状态 |
+| `window_state` | 窗口位置、宽度和**展开时的高度**（JSON：`x` `y` `width` `height`）。窗口收成一条时的矮高度不存；旧版存的 `maximized` 字段不再读 |
 
 自启不存这里，交给系统登录项（`app.setLoginItemSettings`，见 `src/main/server/autostart.ts`）。
 
 ## 其他表
 
 - `experts`：AI 专家（提示词预设）。
-- `items`：快捷启动条目，全局一份。`icon` 列存图标包（Material Icon Theme）里的图标名，空 = 自动匹配；旧版在这列存过网站图标的缓存文件名，现已不用，渲染端认不得的值一律当「自动」，所以无需迁移。主进程只校验格式（字母数字和 `_.-`，≤64），不认图标名（图标包只在渲染端）。`auto_close` 列（`INTEGER NOT NULL DEFAULT 0`）：仅终端命令有意义，1 = 命令成功后自动关掉终端标签；老库用 `PRAGMA` 探测后 `ALTER` 补列，已有条目全为 0。对外字段是布尔 `autoClose`，SQLite 读出来是 0/1，主进程统一转成布尔再给渲染端；条目弹窗只在类型为终端命令时给这个开关，其他类型一律存 0。
+- `items`：快捷启动条目，全局一份。`icon` 列存图标包（Material Icon Theme）里的图标名，空 = 自动匹配；旧版在这列存过网站图标的缓存文件名，现已不用，渲染端认不得的值一律当「自动」，所以无需迁移。主进程只校验格式（字母数字和 `_.-`，≤64），不认图标名（图标包只在渲染端）。`auto_close` 列（`INTEGER NOT NULL DEFAULT 0`）：仅终端命令有意义，1 = 命令成功后自动关掉终端；老库用 `PRAGMA` 探测后 `ALTER` 补列，已有条目全为 0。对外字段是布尔 `autoClose`，SQLite 读出来是 0/1，主进程统一转成布尔再给渲染端；条目弹窗只在类型为终端命令时给这个开关，其他类型一律存 0。
 - `gallery_groups` / `gallery_images` / `gallery_tags` / `gallery_wall`：图库（工具 gallery）的分组、图片元数据、图片 tag、图片墙。
 - `notes` / `note_images`：便签（工具 notes），全局一份。`created_at` / `updated_at` 是毫秒时间戳；`note_images` 存格式（jpg/png/gif/webp/bmp，主进程按文件头判定）与顺序，外键级联到 `notes`。`note_images.id` 用 `AUTOINCREMENT` 不复用，这样 `mpimg://note/<id>` 不会命中旧图缓存，别改掉。文字不 trim 原样存，全是空白时存空串。
 
@@ -78,8 +80,8 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、图库抓取的 `p
 
 ## 渲染端 localStorage
 
-界面语言、侧栏布局偏好（宽度与是否收成图标条）、翻译语言和图库操作偏好存这里，键名统一 `mypage-` 开头。换 origin 会重置，已知。它存在 `browser-data` 里，改数据目录时跟着搬。
+界面语言、翻译语言和图库操作偏好存这里，键名统一 `mypage-` 开头。换 origin 会重置，已知。它存在 `browser-data` 里，改数据目录时跟着搬。旧版的 `mypage-sidebar-width`、`mypage-sidebar-collapsed` 是侧栏偏好，侧栏去掉后没人读，留着无害。
 
 ## 不落库的运行时状态
 
-已打开的工具标签和终端会话是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。
+活着的工具、终端会话和当前显示的是哪一个是运行时状态，**每次启动从空开始（用户决策，勿加还原）**。

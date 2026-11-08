@@ -253,7 +253,7 @@ export default function GalleryTool() {
             return !!n && (n.tagName === "INPUT" || n.tagName === "TEXTAREA" || n.isContentEditable);
         }
         function usable(): boolean {
-            // 标签排对非活动标签隐藏保活：offsetParent 为 null 时按键不归我们管
+            // 工具区对没显示的工具 display:none 保活：offsetParent 为 null 时按键不归我们管
             if (rootRef.current?.offsetParent == null) return false;
             if (viewerIndex != null) return false; // 查看器自己吃按键
             if (slideshow) return false; // 放映层同理

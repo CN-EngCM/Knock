@@ -6,6 +6,7 @@ import { Empty, EmptyDescription } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api, type Shortcut } from "@/api/client";
+import { matchText } from "@/lib/pinyinMatch";
 import { useI18n } from "@/i18n/useI18n";
 
 type Props = {
@@ -36,7 +37,8 @@ export function ShortcutPickerDialog({ open, onClose, onPick }: Props) {
 
     const q = query.trim().toLowerCase();
     const visible = (shortcuts ?? []).filter(
-        (s) => !q || s.name.toLowerCase().includes(q) || s.target.toLowerCase().includes(q),
+        // 名称认拼音，目标路径只做字面匹配
+        (s) => !q || matchText(s.name, q) || s.target.toLowerCase().includes(q),
     );
 
     return (

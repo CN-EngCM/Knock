@@ -3,7 +3,7 @@ import type { MessageKey } from "./zh";
 // 英文文案。类型标注 Record<MessageKey, string> 保证：
 // 与 zh.ts 的 key 集合完全一致——多写、少写、拼错都会编译报错。
 export const en: Record<MessageKey, string> = {
-    "search.placeholder": "type to filter…",
+    "search.placeholder": "type to search, / lists all items and tools",
     "btn.settings": "Settings",
     "btn.browse": "Browse…",
 
@@ -37,6 +37,14 @@ export const en: Record<MessageKey, string> = {
     "settings.clip": "Auto-paste window",
     "settings.clipHint":
         "On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)",
+    "settings.toolIdle": "Auto-close idle tools",
+    "settings.toolIdle.m5": "5 minutes",
+    "settings.toolIdle.m10": "10 minutes",
+    "settings.toolIdle.m30": "30 minutes",
+    "settings.toolIdle.m60": "60 minutes",
+    "settings.toolIdle.never": "Never",
+    "settings.toolIdleHint":
+        "If the window stays hidden this long, open tools are closed and reset (terminals are never closed)",
     "settings.info": "Runtime",
     "settings.dataDir": "Data directory",
     "settings.dataDir.change": "Change…",
@@ -46,6 +54,17 @@ export const en: Record<MessageKey, string> = {
     "settings.dataDir.err.occupied": "Target folder is not empty — pick an empty one",
     "settings.dataDir.err.failed": "Migration failed — original data untouched, you can retry",
     "settings.basic": "Basic",
+    "settings.launcher": "Quick launch",
+    "settings.launcher.add": "Add item",
+    "settings.launcher.hint":
+        "Find items from the search box: type, or press / to list them all. Folder items also offer “Open terminal here” and more via the → key. Order is automatic (by type, then title).",
+    "settings.launcher.empty": "No quick-launch items yet — use “Add item” for a bookmark, app, file or command.",
+    "settings.folderActions": "Folder actions",
+    "settings.folderActions.add": "Add action",
+    "settings.folderActions.hint":
+        "The menu a folder item opens with →. “Open terminal here” always comes first, followed by the actions below: open a terminal in that folder and run a command.",
+    "settings.folderActions.empty": "No actions yet — use “Add action” to create one.",
+    "settings.folderActions.full": "Up to 10 actions",
     "settings.tools": "Built-in tools",
     "settings.tools.aliasPlaceholder": "aliases (space/comma separated, optional)",
     "settings.tools.aliasHint": "Tools are searchable by their aliases",
@@ -161,6 +180,12 @@ export const en: Record<MessageKey, string> = {
     "item.autoClose": "Auto close",
     "item.autoClose.hint":
         "Close the terminal when the command succeeds; kept open on failure so you can read the error",
+    "folderAction.new": "Add action",
+    "folderAction.edit": "Edit action",
+    "folderAction.name": "Name",
+    "folderAction.name.placeholder": "e.g. VS Code (shown as “Open VS Code here”)",
+    "folderAction.command": "Command",
+    "folderAction.command.placeholder": "e.g. code . (runs inside that folder)",
     "item.icon": "Icon",
     "item.icon.auto": "Auto (by type and name)",
     "iconPicker.title": "Pick an icon",
@@ -173,13 +198,11 @@ export const en: Record<MessageKey, string> = {
     "picker.empty": "(no matches)",
     "launch.missing": "Target not found",
 
-    "menu.open": "Open",
     "menu.edit": "Edit…",
     "menu.delete": "Delete…",
     "menu.rename": "Rename…",
     "menu.terminalHere": "Open terminal here",
-    "menu.opencodeHere": "Open opencode here",
-    "menu.claudeHere": "Open Claude Code here",
+    "menu.openHere": "Open {name} here",
 
     "common.create": "Create",
     "common.save": "Save",
@@ -190,14 +213,19 @@ export const en: Record<MessageKey, string> = {
     "common.loading": "Loading…",
 
     "search.noHit": "(no matches)",
+    "search.listEmpty": "No items yet — add some under Settings › Quick launch",
+    "search.moreActions": "more ways to open",
+    "search.listAll": "list all items and tools",
     "search.recommended": "recommended",
     "search.pathGroup": "path",
+    "search.itemsGroup": "quick launch",
+    "search.toolsGroup": "tools",
     "search.openFile": "open file",
     "search.gotoFolder": "go to folder",
 
     // ── v2.2: tools zone / terminal zone ──
     "tools.menu": "Tools",
-    "tools.opened": "open",
+    "tools.alive": "running",
     "tool.json.name": "json",
     "tool.json.desc": "JSON format / minify",
     "tool.qr.name": "qrcode",
@@ -489,21 +517,7 @@ export const en: Record<MessageKey, string> = {
     "btn.topmost": "always on top",
     "btn.untopmost": "not always on top",
     "btn.topmostHint": "pin first to keep on top",
-
-    // ── quick launch list / tools home ──
-    "side.title": "Quick launch",
-    "side.addItem": "Add launch item",
-    "side.empty": "No launch items yet",
-    "side.emptyHint": "Use the + button to add a bookmark, app, file or command.",
-
-    // ── quick launch list ──
-    "tools.home": "Tools home",
-    "home.title": "Everyday tools, one click away",
-    "home.sub": "Local only · open as you go",
-    "home.desc": "Pick a tool below, or search favorites, apps and files at the top.",
-    "home.kbd.search": "search",
-    "home.kbd.select": "pick result",
-    "home.kbd.open": "open",
+    "btn.collapse": "collapse tool area (tools and terminals keep running)",
 
     "offline.title": "Main process unreachable",
     "offline.hint": "Retrying automatically every 5s… If it persists, restart the app.",

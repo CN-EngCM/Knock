@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, protocol, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, protocol, screen, session, shell } from "electron";
 import { join } from "node:path";
 // 本文件由 index.ts 在数据目录引导完成后才动态 import：下面这些模块经 server/util/settings → db
 // 在 import 求值期同步打开 SQLite，所以静态 import 在这里是安全的，而在 index.ts 里不行
@@ -12,7 +12,14 @@ import { serveCandidate, serveImage } from "./server/gallery";
 import { serveNoteImage } from "./server/notes";
 import { freshClipboardText, startClipWatch } from "./clipWatch";
 import { initHotkey, isBlockedByForeground, shutdownHotkey, unlockForeground } from "./hotkey";
-import { loadWindowState, trackWindowState } from "./windowState";
+import {
+    getExpandedHeight,
+    loadWindowState,
+    MIN_EXPANDED_HEIGHT,
+    MIN_WIDTH,
+    TITLEBAR_HEIGHT,
+    trackWindowState,
+} from "./windowState";
 import { initPin, isPinned, isTopmost, setPinned, setTopmost } from "./server/pin";
 import { createTray } from "./tray";
 
@@ -109,6 +116,15 @@ export function startApp(): void {
         if (win && !win.isDestroyed()) win.setAlwaysOnTop(isTopmost());
     });
 
+    // 窗口形态：渲染端每次「展开与否」或「收起时临时需要的高度」变了就报一次（fire-and-forget）
+    ipcMain.on("mp:set-layout", (_e, expanded: unknown, room: unknown) => {
+        layout = {
+            expanded: expanded === true,
+            room: typeof room === "number" && Number.isFinite(room) ? Math.min(Math.max(Math.round(room), 0), 2000) : 0,
+        };
+        applyLayout();
+    });
+
     // 二次启动唤起已有实例的窗口：引导期间还没有窗口可唤起，引导完成后才挂监听
     app.on("second-instance", () => showWindow());
 
@@ -155,11 +171,13 @@ function createWindow(): BrowserWindow {
     const st = loadWindowState();
     const w = new BrowserWindow({
         width: st.width,
-        height: st.height,
+        // 启动时什么工具都没开：先收成只剩顶栏的一条，展开由渲染端经 mp:set-layout 通知
+        height: TITLEBAR_HEIGHT,
         x: st.x,
         y: st.y,
-        minWidth: 840,
-        minHeight: 520,
+        minWidth: MIN_WIDTH,
+        // 窗口高度由内容决定（有工具才展开），最大化与这套形态冲突
+        maximizable: false,
         show: !startHidden, // 隐藏启动：首帧就不可见，等热键呼出
         autoHideMenuBar: true,
         frame: false, // 无边框：顶栏空白处可拖动，交互区域由渲染端排除。
@@ -172,8 +190,17 @@ function createWindow(): BrowserWindow {
             sandbox: true,
         },
     });
-    if (st.maximized) w.maximize();
-    trackWindowState(w);
+    layout = { expanded: false, room: 0 };
+    applyLayout(w);
+    trackWindowState(w, () => layout.expanded);
+
+    // 显隐通知渲染端：工具的后台存活计时从「窗口藏起来」开始数
+    w.on("show", () => {
+        if (!w.isDestroyed()) w.webContents.send("mp:window-visible", true);
+    });
+    w.on("hide", () => {
+        if (!w.isDestroyed()) w.webContents.send("mp:window-visible", false);
+    });
 
     // 关闭按钮 = 隐藏（程序继续常驻托盘）；真正的退出只走托盘菜单
     w.on("close", (e) => {
@@ -226,6 +253,35 @@ function createWindow(): BrowserWindow {
     }
     win = w;
     return w;
+}
+
+// ── 窗口形态：有工具/终端在显示就「展开」，否则收成只剩顶栏的一条 ──
+// 窗口无边框、不透明，「只有顶栏」只能靠窗口自己变矮实现。收起时搜索下拉、弹窗、提示需要竖向空间，
+// 渲染端把它们要的总高度报成 room，窗口取 max(顶栏高度, room)，东西消失就缩回去。
+// 展开时 room 不起作用：下拉和弹窗直接悬浮在工具区上面。
+let layout = { expanded: false, room: 0 };
+
+function applyLayout(target: BrowserWindow | null = win): void {
+    const w = target;
+    if (!w || w.isDestroyed()) return;
+    const b = w.getBounds();
+    const height = layout.expanded
+        ? Math.max(getExpandedHeight(), MIN_EXPANDED_HEIGHT)
+        : Math.max(TITLEBAR_HEIGHT, layout.room);
+    // 先放开上下限再改尺寸，不然旧的限制会把新尺寸夹回去
+    w.setMinimumSize(MIN_WIDTH, 0);
+    w.setMaximumSize(0, 0);
+    // 窗口往下长，快碰到屏幕底边时整体往上挪（缩回去不挪回，下次长的时候已经放得下了）
+    const area = screen.getDisplayMatching(b).workArea;
+    const y = Math.max(area.y, Math.min(b.y, area.y + area.height - height));
+    if (b.height !== height || b.y !== y) w.setBounds({ x: b.x, y, width: b.width, height });
+    if (layout.expanded) {
+        w.setMinimumSize(MIN_WIDTH, MIN_EXPANDED_HEIGHT);
+    } else {
+        // 收起时高度锁死：不能竖着拖；宽度仍可拖
+        w.setMinimumSize(MIN_WIDTH, height);
+        w.setMaximumSize(10000, height);
+    }
 }
 
 function showWindow(): void {

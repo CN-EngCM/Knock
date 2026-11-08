@@ -10,6 +10,8 @@ import type { AiEvent } from "../main/server/ai";
 //                     fire-and-forget，无需返回值）
 //   setPinned      —— 钉子按钮同步钉住状态（mp:set-pinned，同上）；钉住落库、跨重启保持
 //   setTopmost     —— 钉住下的置顶开关（mp:set-topmost，同上）；仅内存，重启复位
+//   setLayout      —— 窗口形态（mp:set-layout，同上）：展开与否 + 收起时临时需要的高度，主进程据此改窗口高度
+//   onWindowVisible —— 订阅窗口显隐（show/hide），渲染端的工具后台存活计时靠它
 //   onOpenSettings —— 订阅托盘菜单「设置」事件
 //   onFocusSearch  —— 订阅窗口呼出事件（双击 Ctrl 等，渲染端聚焦搜索框）
 //   onPtyEvent     —— 订阅终端输出流（v2.2：pty data/exit 下行事件），返回退订函数：
@@ -36,6 +38,14 @@ contextBridge.exposeInMainWorld("knock", {
     },
     setTheme: (theme: "dark" | "light"): void => {
         ipcRenderer.send("mp:set-theme", theme);
+    },
+    setLayout: (expanded: boolean, room: number): void => {
+        ipcRenderer.send("mp:set-layout", expanded, room);
+    },
+    onWindowVisible: (cb: (visible: boolean) => void): (() => void) => {
+        const handler = (_e: unknown, visible: boolean) => cb(visible);
+        ipcRenderer.on("mp:window-visible", handler);
+        return () => ipcRenderer.removeListener("mp:window-visible", handler);
     },
     filePathFor: (file: File): string => webUtils.getPathForFile(file),
     onOpenSettings: (cb: () => void): void => {

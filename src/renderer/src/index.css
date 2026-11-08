@@ -1007,23 +1007,10 @@
     color: var(--primary);
 }
 
-/* ── 搜索下拉/悬浮层入场:从触发器上方展开 ── */
-.drop-anim {
-    transform-origin: top center;
-    transition:
-        opacity 100ms var(--motion-ease),
-        transform 100ms var(--motion-ease);
-    @starting-style {
-        opacity: 0;
-        transform: translateY(-4px) scale(0.98);
-    }
-}
-
 /* ── 减弱动态:去过渡与动画,保留颜色变化 ── */
 @media (prefers-reduced-motion: reduce) {
     .ghost-btn,
-    .knock-search,
-    .drop-anim {
+    .knock-search {
         transition: none;
     }
 }

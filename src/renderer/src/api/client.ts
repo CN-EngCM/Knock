@@ -10,6 +10,7 @@ export type {
     NoteImage,
     Kind,
     HotkeyId,
+    FolderAction,
     CreateItemInput,
     UpdateItemInput,
     ShellId,
@@ -63,6 +64,10 @@ declare global {
             setTopmost: (v: boolean) => void;
             /** 主题切换即时同步：主进程更新窗口底色与系统边线（持久化另走 api.setTheme） */
             setTheme: (theme: ThemeId) => void;
+            /** 窗口形态：expanded = 有工具/终端在显示；room = 收起时临时需要的窗口总高度（0 = 不需要） */
+            setLayout: (expanded: boolean, room: number) => void;
+            /** 窗口显隐通知（show/hide），返回退订函数 */
+            onWindowVisible: (cb: (visible: boolean) => void) => () => void;
             /** 拖拽导入取本机路径：Electron 32+ 渲染进程 File 不再带 .path，经 webUtils 在 preload 换 */
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
@@ -96,6 +101,8 @@ export const api: MpApi = {
     setHotkey: (hotkey) => invoke("setHotkey", hotkey),
     getHotkeyBlock: () => invoke("getHotkeyBlock"),
     setHotkeyBlock: (apps) => invoke("setHotkeyBlock", apps),
+    getFolderActions: () => invoke("getFolderActions"),
+    setFolderActions: (actions) => invoke("setFolderActions", actions),
     listShortcuts: (refresh) => invoke("listShortcuts", refresh),
     ptySpawn: (opts) => invoke("ptySpawn", opts),
     ptyWrite: (id, data) => invoke("ptyWrite", id, data),
@@ -111,6 +118,8 @@ export const api: MpApi = {
     setToolAliases: (patch) => invoke("setToolAliases", patch),
     getClipPaste: () => invoke("getClipPaste"),
     setClipPaste: (seconds) => invoke("setClipPaste", seconds),
+    getToolIdle: () => invoke("getToolIdle"),
+    setToolIdle: (minutes) => invoke("setToolIdle", minutes),
     getTheme: () => invoke("getTheme"),
     setTheme: (theme) => invoke("setTheme", theme),
     getPinState: () => invoke("getPinState"),

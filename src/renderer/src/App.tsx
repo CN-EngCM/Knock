@@ -1,11 +1,12 @@
 import { useCallback, Dispatch, useEffect, useRef, SetStateAction, useState } from "react";
-import { toast } from "sonner";
-import { ArrowUpToLine, Pin, Plus, Settings2 } from "lucide-react";
+import { toast, useSonner } from "sonner";
+import { ArrowUpToLine, ChevronUp, Pin, Settings2 } from "lucide-react";
 import {
     api,
     onPtyEvent,
     type ApiError,
     type ApiResult,
+    type FolderAction,
     type FontPatch,
     type Item,
     type TermPatch,
@@ -13,17 +14,13 @@ import {
     type ToolAliasPatch,
 } from "./api/client";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Marker } from "@/components/ui/marker";
 import { Toaster } from "@/components/ui/sonner";
 import { Titlebar, TitlebarWell } from "@/components/ui/titlebar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { LauncherList } from "./components/LauncherList";
 import { SearchBox } from "./components/SearchBox";
-import { ToolsMenu } from "./components/ToolsMenu";
-import { ToolTabs, termTabKey, toolTabKey, type Tab } from "./components/ToolTabs";
-import { RAIL_WIDTH, SidebarResizer, loadSidebar } from "./components/SidebarResizer";
-import { cn } from "@/lib/utils";
+import { ToolArea, type Shown, type Term } from "./components/ToolArea";
+import { TITLEBAR_HEIGHT, useMaxRoom, useWindowRoom } from "./lib/windowRoom";
 import { disposeTerm, setTermFont } from "./components/termStore";
 import type { ToolId } from "./tools/registry";
 import { clearToolInput, dispatchToolFocus, dispatchToolInput } from "./tools/toolInput";
@@ -42,15 +39,19 @@ const TOOL_SETTINGS_SECTION: Partial<Record<ToolId, SectionId>> = {
     ai: "ai",
 };
 
-// 全部弹窗收敛为一个可辨识联合（discriminated union）：
+// 条目弹窗收敛为一个可辨识联合（discriminated union）：
 // 用 kind 字段区分形态，switch 后每个分支的 payload 类型自动收窄。
-type DialogState =
-    | { kind: "none" }
-    | { kind: "item-create" }
-    | { kind: "item-edit"; item: Item }
-    | { kind: "item-delete"; item: Item }
-    // section：设置页打开时直接定位的分节（工具内「打开设置」引导用；缺省回基础设置）
-    | { kind: "settings"; section?: SectionId };
+// 设置页单独一个状态：新增、编辑、删除条目都从设置页的「快速启动」分节发起，条目弹窗要叠在设置页上面，两者必须能同时开着。
+type ItemDialogState =
+    { kind: "none" } | { kind: "create" } | { kind: "edit"; item: Item } | { kind: "delete"; item: Item };
+
+/** 报错提示出现时，窗口收成一条也要撑开：顶栏 + 一条提示的高度，多条叠着再加 */
+function ToastRoom() {
+    const { toasts } = useSonner();
+    const n = Math.min(toasts.length, 3);
+    useWindowRoom(n > 0 ? TITLEBAR_HEIGHT + 120 + 64 * (n - 1) : 0);
+    return null;
+}
 
 /** 启动期只读一次的设置类 RPC：挂载即拉一次，失败保持 null（界面以 … 占位，不阻塞首帧） */
 function useRpcValue<T>(load: () => Promise<ApiResult<T>>): [T | null, Dispatch<SetStateAction<T | null>>] {
@@ -71,12 +72,11 @@ export default function App() {
     const [serverOk, setServerOk] = useState<boolean | null>(null);
     const [items, setItems] = useState<Item[]>([]);
     // 本机目录条目 id：file 类型同时表示文件与文件夹，只能运行时 stat 判定，
-    // 右键菜单据此决定要不要显示「在此打开终端」
+    // 子菜单（按 →）据此决定哪些条目有「在此打开终端」
     const [dirIds, setDirIds] = useState<ReadonlySet<number>>(() => new Set());
-    const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
-    // 侧栏：宽度（最后一次完整侧栏的）+ 是否收成只有图标的窄条，拖拽与持久化都在 SidebarResizer
-    const [sidebar, setSidebar] = useState(loadSidebar);
-    const sidebarCollapsed = sidebar.collapsed;
+    const [itemDialog, setItemDialog] = useState<ItemDialogState>({ kind: "none" });
+    // 设置页：null = 关着；section 是打开时直接定位的分节（工具内「打开设置」引导用，缺省回基础设置）
+    const [settings, setSettings] = useState<{ section?: SectionId } | null>(null);
     const [platform, setPlatform] = useState("");
     // 界面主题：初始值来自 index.html 首帧前套好的 <html> 类；切换经 settings 表持久化
     const [theme, setTheme] = useState<ThemeId>(currentTheme);
@@ -119,7 +119,7 @@ export default function App() {
 
     // 托盘菜单「设置」→ 唤起窗口的同时打开设置对话框（preload 转发的主进程事件）
     useEffect(() => {
-        window.knock.onOpenSettings(() => setDialog({ kind: "settings" }));
+        window.knock.onOpenSettings(() => setSettings({}));
     }, []);
 
     // ── 钉住 / 置顶：钉住豁免「失焦自动隐藏」（挂终端/对照工作的场景）──
@@ -192,6 +192,10 @@ export default function App() {
     // 工具别名启动时拉一次：喂 SearchBox 参与候选匹配
     const [toolAliases, setToolAliases] = useRpcValue(api.getToolAliases);
 
+    // 文件夹动作同样启动时拉一次：喂 SearchBox 的文件夹子菜单，设置页整份保存后回填
+    const [folderActionsData, setFolderActionsData] = useRpcValue(api.getFolderActions);
+    const folderActions = folderActionsData?.actions ?? null;
+
     // 设置页各分项提交的公共路径：失败统一 toast 并返回 false（弹窗内自行回滚），成功交给 apply 回填。
     // 现状没有 memo 需求，普通闭包定义即可（要吃到 i18n 文案，故放在组件内）
     async function patchSetting<T>(call: () => Promise<ApiResult<T>>, apply: (data: T) => void): Promise<boolean> {
@@ -224,6 +228,11 @@ export default function App() {
     // 设置页提交工具别名：成功回填（SearchBox 的候选匹配随 props 即时生效）
     function patchToolAlias(p: ToolAliasPatch): Promise<boolean> {
         return patchSetting(() => api.setToolAliases(p), setToolAliases);
+    }
+
+    // 设置页保存文件夹动作（整份替换）：成功回填，SearchBox 的子菜单随之更新
+    function saveFolderActions(actions: FolderAction[]): Promise<boolean> {
+        return patchSetting(() => api.setFolderActions(actions), setFolderActionsData);
     }
 
     // ── 变更操作：成功后重拉数据并轻提示，失败统一 toast ──
@@ -263,12 +272,12 @@ export default function App() {
 
     // 打开条目防抖：同一条目 500ms 内（≈Windows 默认双击间隔）的点击视为误连点。
     // 被拦的点击同样刷新时间戳——连点期间封锁持续顺延，点多久都只开一次，
-    // 停手超过 500ms 后的下一次点击才真正打开；侧栏与搜索候选共用此入口
+    // 停手超过 500ms 后的下一次点击才真正打开；搜索候选与 / 列表共用此入口
     const lastOpenRef = useRef<{ id: number; at: number } | null>(null);
 
     // ── 打开条目：书签交给系统浏览器；终端命令驱动终端执行；应用/文件走后端启动器 ──
     // 书签、应用、文件启动成功后隐藏窗口（用户决策 2026-08）：失败保留窗口让 toast 可见；
-    // 终端命令开在本窗口的标签里，不藏
+    // 终端命令开在本窗口的终端里，不藏
     async function openItem(item: Item) {
         const now = Date.now();
         const blocked = lastOpenRef.current?.id === item.id && now - lastOpenRef.current.at < 500;
@@ -303,14 +312,20 @@ export default function App() {
         });
     }
 
-    // ── 文件夹条目：在应用内终端打开该目录（标签名取文件夹名），opencode / claude
-    //    作为会话首条命令送入。目录不存在由 spawnSession 按 launch.missing 提示。
-    //    名字按标签上限截断，ptySpawn 的 label 本身也有长度上限 ──
-    function openInTerminal(item: Item, command?: "opencode" | "claude") {
+    // ── 文件夹条目：在应用内终端打开该目录。不带动作 = 只开终端（终端名取文件夹名）；
+    //    带动作 = 终端名「动作名 · 文件夹名」，动作的命令作为会话首条命令送入，自动关闭照动作的开关。
+    //    目录不存在由 spawnSession 按 launch.missing 提示。
+    //    文件夹名按终端名上限截断，ptySpawn 的 label 本身也有长度上限 ──
+    function openInTerminal(item: Item, action?: FolderAction) {
         const folderPath = item.target;
         const trimmed = folderPath.replace(/[\\/]+$/, "");
         const folder = cleanTermTitle(trimmed.split(/[\\/]/).pop() || folderPath) ?? folderPath;
-        void spawnSession({ cwd: folderPath, label: command ? `${command} · ${folder}` : folder, command });
+        void spawnSession({
+            cwd: folderPath,
+            label: action ? `${action.name} · ${folder}` : folder,
+            command: action?.command,
+            autoClose: action?.autoClose,
+        });
     }
 
     // ── 搜索框路径直达动作（打开文件 / 前往文件夹）：同样走 openPath，报错口径与 openItem 一致 ──
@@ -324,32 +339,57 @@ export default function App() {
         }
     }
 
-    // 「/」随时聚焦搜索框
+    // ── 工具区：活着的工具、终端会话，以及当前显示的是哪一个（同一时间只显示一个）──
+    // 这三样归这里持有；关掉 = 卸载组件（工具回初始态，终端会话结束）。
+    // 有东西在显示窗口就展开，没有就收成只剩顶栏的一条。
+    // termsRef 给 closeTerm 读最新值：shell 退出事件的订阅只挂一次，闭包里的状态会是旧的
+    const [tools, setTools] = useState<ToolId[]>([]);
+    const [terms, setTerms] = useState<Term[]>([]);
+    const [shown, setShown] = useState<Shown>(null);
+    // 等确认关闭的终端会话：会话一关，里面正在跑的程序就跟着没了，所以先问一句
+    const [confirmTerm, setConfirmTerm] = useState<number | null>(null);
+    const termsRef = useRef(terms);
+    termsRef.current = terms;
+
+    // 搜索下拉面板画进 <main>（见 SearchBox 文件头注释）：拿到节点才能 portal，所以用 state 存而不是 ref
+    const [mainEl, setMainEl] = useState<HTMLElement | null>(null);
+
+    // ── 窗口形态：报给主进程。断线提示也要占地方，算展开；
+    //    收起时搜索下拉、弹窗、提示要的高度由 windowRoom 汇总（展开时主进程不看 room）──
+    const expanded = shown !== null || serverOk === false;
+    const room = useMaxRoom();
     useEffect(() => {
-        function onWindowKeyDown(e: KeyboardEvent) {
-            if (e.key !== "/" || e.ctrlKey || e.altKey || e.metaKey) return;
-            const el = e.target as HTMLElement;
-            if (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable) return;
-            e.preventDefault();
-            document.getElementById("search")?.focus();
-        }
-        window.addEventListener("keydown", onWindowKeyDown);
-        return () => window.removeEventListener("keydown", onWindowKeyDown);
+        window.knock.setLayout(expanded, expanded ? 0 : room);
+    }, [expanded, room]);
+
+    // ── 后台自动关闭工具：窗口藏起来满「存活时间」，关掉所有非终端工具（终端永不自动关）。
+    //    存活时间每次隐藏时现读，设置里改了从下一次隐藏起生效；中途窗口再显示就取消计时 ──
+    useEffect(() => {
+        let timer: number | undefined;
+        let hidden = false;
+        const off = window.knock.onWindowVisible((visible) => {
+            hidden = !visible;
+            window.clearTimeout(timer);
+            if (visible) return;
+            void api.getToolIdle().then((r) => {
+                // 读设置期间窗口又显示了，就不用计时了
+                if (!hidden || !r.ok || r.data.minutes === 0) return;
+                window.clearTimeout(timer);
+                timer = window.setTimeout(() => {
+                    setTools([]);
+                    setShown((cur) => (cur?.kind === "tool" ? null : cur));
+                }, r.data.minutes * 60_000);
+            });
+        });
+        return () => {
+            off();
+            window.clearTimeout(timer);
+        };
     }, []);
 
-    // ── 标签：工具和终端会话是同一排里并列的页，按打开顺序排 ──
-    // 标签列表与激活项归这里持有；关闭标签 = 卸载组件（工具回初始态，终端会话结束）。
-    // tabsRef / activeRef 给 closeTab 读最新值：shell 退出事件的订阅只挂一次，闭包里的状态会是旧的
-    const [tabs, setTabs] = useState<Tab[]>([]);
-    const [activeKey, setActiveKey] = useState<string | null>(null);
-    const tabsRef = useRef(tabs);
-    tabsRef.current = tabs;
-    const activeRef = useRef(activeKey);
-    activeRef.current = activeKey;
-
-    // 打开工具：已开着的只切过去，没开的加到最后。
+    // 打开工具：已开着的只切过去，没开的加进去并显示。
     // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
-    // 已开着的标签（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
+    // 已活着的工具（双通道与时序问题见 tools/toolInput.ts）；裸开则清残留素材。
     // expertId 仅 ai 工具有意义（进入指定专家）；它与 input 相互独立，
     // 「只有专家、没有素材」同样要过注入通道，让组件收到新注入的边沿信号
     function openTool(id: ToolId, input?: string | null, expertId?: number) {
@@ -358,40 +398,40 @@ export default function App() {
             void spawnSession();
             return;
         }
-        const key = toolTabKey(id);
-        setTabs((cur) => (cur.some((tab) => tab.key === key) ? cur : [...cur, { key, kind: "tool", toolId: id }]));
-        setActiveKey(key);
+        setTools((cur) => (cur.includes(id) ? cur : [...cur, id]));
+        setShown({ kind: "tool", id });
         if (input != null || expertId != null) dispatchToolInput({ tool: id, text: input ?? "", expertId });
         else clearToolInput(id);
         dispatchToolFocus(id);
     }
 
-    // 关标签：终端要先结束 pty 并释放 xterm 实例；关的是当前标签才换，优先右邻、再左邻，都没有回首页
-    const closeTab = useCallback((key: string) => {
-        const cur = tabsRef.current;
-        const index = cur.findIndex((tab) => tab.key === key);
-        if (index < 0) return;
-        const closing = cur[index];
-        if (closing.kind === "term") {
-            void api.ptyKill(closing.sessionId);
-            disposeTerm(closing.sessionId);
-        }
-        const next = cur.filter((tab) => tab.key !== key);
-        setTabs(next);
-        if (activeRef.current === key) setActiveKey((next[index] ?? next[index - 1])?.key ?? null);
+    // 关工具：卸载组件，工具回初始态。关的正是当前显示的，窗口随之收成一条（不自动切到别的）
+    const closeTool = useCallback((id: ToolId) => {
+        setTools((cur) => cur.filter((x) => x !== id));
+        setShown((cur) => (cur?.kind === "tool" && cur.id === id ? null : cur));
     }, []);
 
-    // 终端程序用 OSC 标题改名时，跟着换标签名
-    const renameTermTab = useCallback((sessionId: number, title: string) => {
-        setTabs((cur) =>
-            cur.some((tab) => tab.kind === "term" && tab.sessionId === sessionId && tab.title !== title)
-                ? cur.map((tab) => (tab.kind === "term" && tab.sessionId === sessionId ? { ...tab, title } : tab))
+    // 关终端：先结束 pty 并释放 xterm 实例。用户手动关和 shell 自己退出共用；
+    // 已经不在列表里的（关了之后 pty 的 exit 事件再来一次）直接忽略
+    const closeTerm = useCallback((sessionId: number) => {
+        if (!termsRef.current.some((x) => x.sessionId === sessionId)) return;
+        void api.ptyKill(sessionId);
+        disposeTerm(sessionId);
+        setTerms((cur) => cur.filter((x) => x.sessionId !== sessionId));
+        setShown((cur) => (cur?.kind === "term" && cur.sessionId === sessionId ? null : cur));
+    }, []);
+
+    // 终端程序用 OSC 标题改名时，菜单里跟着换名字
+    const renameTerm = useCallback((sessionId: number, title: string) => {
+        setTerms((cur) =>
+            cur.some((x) => x.sessionId === sessionId && x.title !== title)
+                ? cur.map((x) => (x.sessionId === sessionId ? { ...x, title } : x))
                 : cur,
         );
     }, []);
 
-    // 开新会话（工具菜单 / 终端命令条目 / 文件夹条目共用）：cwd 由调用方决定，缺省主目录；
-    // 命令条目的整行命令在建好后写入执行——首屏输出由 termStore 的缓冲兜住，标签挂载后回放
+    // 开新会话（「终端」工具行 / 终端命令条目 / 文件夹条目共用）：cwd 由调用方决定，缺省主目录；
+    // 命令条目的整行命令在建好后写入执行——首屏输出由 termStore 的缓冲兜住，终端挂载后回放
     async function spawnSession(req?: { cwd?: string; label?: string; command?: string; autoClose?: boolean }) {
         const r = await api.ptySpawn(req ? { cwd: req.cwd, label: req.label } : undefined);
         if (!r.ok) {
@@ -400,10 +440,9 @@ export default function App() {
             else toast.error(t("toast.error"));
             return;
         }
-        const key = termTabKey(r.data.id);
-        setTabs((cur) => [...cur, { key, kind: "term", sessionId: r.data.id, title: r.data.label }]);
-        setActiveKey(key);
-        // 自动关闭：命令后面追加「成功才退出 shell」，shell 一退出，下面的 exit 事件处理就会关掉标签；
+        setTerms((cur) => [...cur, { sessionId: r.data.id, title: r.data.label }]);
+        setShown({ kind: "term", sessionId: r.data.id });
+        // 自动关闭：命令后面追加「成功才退出 shell」，shell 一退出，下面的 exit 事件处理就会关掉这个终端；
         // 命令失败时 shell 留着，报错还看得见。追加什么由主进程按实际 shell 给出
         if (req?.command) {
             const tail = req.autoClose ? r.data.exitSuffix : "";
@@ -411,86 +450,107 @@ export default function App() {
         }
     }
 
-    // shell 自己退出（exit / 进程崩溃）：关掉它的标签（closeTab 里会释放 xterm 实例，
+    // shell 自己退出（exit / 进程崩溃）：关掉这个终端（closeTerm 里会释放 xterm 实例，
     // ptyKill 对已退会话是空操作）
     useEffect(() => {
         const off = onPtyEvent((e) => {
-            if (e.type === "exit") closeTab(termTabKey(e.id));
+            if (e.type === "exit") closeTerm(e.id);
         });
         return off;
-    }, [closeTab]);
+    }, [closeTerm]);
 
-    // 终端字体/字号：termStore 直改实例并重排，不经过标签组件
+    // 终端字体/字号：termStore 直改实例并重排，不经过终端组件
     useEffect(() => {
         setTermFont(fontCfg?.monoFont ?? "", termCfg?.fontSize ?? 13);
     }, [fontCfg, termCfg]);
 
-    // 工具内「打开设置」引导：分节跟随当前标签里的工具（translate/ai 有缺配置态）
+    // 工具内「打开设置」引导：分节跟随当前显示的工具（translate/ai 有缺配置态）
     function openSettingsForActiveTool() {
-        const active = tabs.find((tab) => tab.key === activeKey);
-        const toolId = active?.kind === "tool" ? active.toolId : undefined;
-        setDialog({ kind: "settings", section: (toolId && TOOL_SETTINGS_SECTION[toolId]) || "translate" });
+        const toolId = shown?.kind === "tool" ? shown.id : undefined;
+        setSettings({ section: (toolId && TOOL_SETTINGS_SECTION[toolId]) || "translate" });
     }
 
     return (
         <TooltipProvider>
             <div className="flex h-screen flex-col overflow-hidden font-sans text-foreground">
                 <Toaster position="bottom-center" />
+                <ToastRoom />
 
-                {/* Titlebar 根节点即 gan-drag 拖拽区；搜索井、右侧按钮在 no-drag 里。
-                    品牌、搜索井、空白全放进左槽，左槽吃满剩余宽度（flex-1）、拉满行高并改回 drag，
-                    搜索井右边的空白就是拖窗口的地方；右槽只放四个固定按钮。
-                    中槽不用（hidden），否则它的内边距和间距会白占位置；
-                    overflow-visible 让搜索下拉能悬出 40px 顶栏。 */}
+                {/* 顶栏 48px（TITLEBAR_HEIGHT，主进程收成一条时窗口也是这个高度）。
+                    Titlebar 根节点即 gan-drag 拖拽区：左槽（品牌）和右槽都拉满行高并改回 drag，
+                    搜索井两侧的空白都能拖窗口，右槽里只有按钮组是 no-drag。
+                    搜索井放中槽：左右槽定宽且相等（140px，右槽按钮组最宽约 124px），中槽吃满剩下的全部宽度（没有上限），
+                    所以搜索井始终在顶栏正中，窗口拖多宽它就多宽；最窄 276px（井 260 + 内边距 16），窗口不窄于最小宽度 840 时远够用，
+                    按钮也不会被挤掉。 */}
                 <Titlebar
                     role="banner"
                     windowControls="none"
                     trafficLights={false}
-                    className="z-20 h-[40px] flex-none overflow-visible [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-center]]:hidden"
+                    className="h-[48px] flex-none [&>[data-slot=titlebar-left]]:w-[140px] [&>[data-slot=titlebar-left]]:flex-none [&>[data-slot=titlebar-left]]:self-stretch [&>[data-slot=titlebar-left]]:gan-drag [&>[data-slot=titlebar-right]]:w-[140px] [&>[data-slot=titlebar-right]]:flex-none [&>[data-slot=titlebar-right]]:self-stretch [&>[data-slot=titlebar-right]]:gan-drag [&>[data-slot=titlebar-center]]:flex-1 [&>[data-slot=titlebar-center]]:min-w-[276px]"
                     left={
-                        <>
-                            {/* mr-3 在左槽统一的 8px 间距上再加 12px，品牌与搜索井拉开到 20px */}
-                            <span className="gan-drag mr-3 flex h-full flex-none select-none items-center gap-2.5">
-                                <span
-                                    className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
-                                    aria-hidden
-                                >
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
-                                    <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
-                                </span>
-                                {/* 中英文品牌都是 Knock，上下叠两行：11px 字、12px 行高，两行合计 24px，放得进 40px 顶栏 */}
-                                <strong className="flex flex-col text-[11px] font-medium leading-3 tracking-wider">
-                                    <span>{t("app.brand")}</span>
-                                    <span>{t("app.brand")}</span>
-                                </strong>
+                        <span className="gan-drag flex h-full flex-none select-none items-center gap-2.5">
+                            <span
+                                className="grid w-[17px] flex-none grid-cols-2 gap-[3px] -rotate-[8deg] text-foreground"
+                                aria-hidden
+                            >
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current" />
+                                <b className="block h-[7px] w-[7px] rounded-[2px] border-[1.5px] border-current bg-current" />
                             </span>
-                            {/* 28px 搜索井：relative 供 SearchBox 下拉定位，左右内边距与原搜索井一致（10px）。
-                            再矮会挤到素材 chip（约 20px，井上下内边距各 4px）。
-                            期望宽 540px、最窄 260px */}
-                            <TitlebarWell className="relative h-[28px] w-[540px] min-w-[260px] shrink-[1000] flex-row px-2.5 overflow-visible">
-                                <SearchBox
-                                    items={items}
-                                    dirIds={dirIds}
-                                    light={theme === "light"}
-                                    // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
-                                    toolAliases={toolAliases ?? {}}
-                                    onOpenItem={openItem}
-                                    onOpenTool={openTool}
-                                    onOpenPath={openLocalPath}
-                                />
-                            </TitlebarWell>
-                            {/* 弹性空白：同时是拖窗口的地方 */}
-                            <div className="gan-drag min-w-0 flex-1 self-stretch" />
-                        </>
+                            {/* 中英文品牌都是 Knock，上下叠两行：11px 字、12px 行高，两行合计 24px，放得进 48px 顶栏 */}
+                            <strong className="flex flex-col text-[11px] font-medium leading-3 tracking-wider">
+                                <span>{t("app.brand")}</span>
+                                <span>{t("app.brand")}</span>
+                            </strong>
+                        </span>
+                    }
+                    center={
+                        /* 32px 搜索井：左右内边距 10px。
+                           再矮会挤到素材 chip（约 20px，井上下内边距各 4px）。宽度跟中槽走（w-full） */
+                        <TitlebarWell className="h-8 w-full flex-row px-2.5">
+                            <SearchBox
+                                items={items}
+                                dirIds={dirIds}
+                                light={theme === "light"}
+                                // 别名未拉到（null）时按空表处理：搜索不该等设置项就绪
+                                toolAliases={toolAliases ?? {}}
+                                onOpenItem={openItem}
+                                onOpenTool={openTool}
+                                onOpenPath={openLocalPath}
+                                onOpenInTerminal={openInTerminal}
+                                // 没拉到（null）按空表处理：子菜单只剩固定的「在此打开终端」
+                                folderActions={folderActions ?? []}
+                                aliveTools={tools}
+                                terms={terms}
+                                shown={shown}
+                                onShowTerm={(sessionId) => setShown({ kind: "term", sessionId })}
+                                onCloseTool={closeTool}
+                                onCloseTerm={setConfirmTerm}
+                                panelHost={mainEl}
+                            />
+                        </TitlebarWell>
                     }
                     right={
-                        <div className="flex flex-none items-center gap-1">
-                            <ToolsMenu
-                                openTools={tabs.flatMap((tab) => (tab.kind === "tool" ? [tab.toolId] : []))}
-                                onOpen={openTool}
-                            />
+                        <div className="gan-no-drag flex flex-none items-center gap-1">
+                            {/* 收起：窗口缩成一条，工具和终端都继续活着，只是不显示（只在展开时出现） */}
+                            {shown !== null && (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="size-7"
+                                            onClick={() => setShown(null)}
+                                            aria-label={t("btn.collapse")}
+                                        >
+                                            <ChevronUp className="size-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{t("btn.collapse")}</TooltipContent>
+                                </Tooltip>
+                            )}
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <Button
@@ -534,7 +594,7 @@ export default function App() {
                                         variant="ghost"
                                         size="icon"
                                         className="size-7"
-                                        onClick={() => setDialog({ kind: "settings" })}
+                                        onClick={() => setSettings({})}
                                         aria-label={t("btn.settings")}
                                     >
                                         <Settings2 className="size-4" />
@@ -546,114 +606,37 @@ export default function App() {
                     }
                 />
 
-                {/* 左侧快捷启动 + 右侧标签区 */}
-                <div className="relative z-10 flex min-h-0 flex-1">
-                    {/* 宽度可拖拽并记住，往左拖到头会收成只有图标的窄条（RAIL_WIDTH）。
-                        max-w-[40%] 是窗口变窄时完整侧栏的上限，与 SidebarResizer 里的比例是同一个数。
-                        relative z-10：让右边缘那条看不见的拖拽区（SidebarResizer，探出 2px 到右侧区域上）盖在它之上 */}
-                    <aside
-                        className="app-no-drag relative z-10 flex min-h-0 max-w-[40%] flex-none flex-col bg-background"
-                        style={{ width: sidebarCollapsed ? RAIL_WIDTH : sidebar.width }}
-                    >
-                        <SidebarResizer state={sidebar} onChange={setSidebar} />
-
-                        {/* 标题行高 32px（含底边线）。图标条里没有地方放字：去掉标题，「＋」居中留着，新建入口不能丢 */}
-                        <div
-                            className={cn(
-                                "flex h-8 flex-none items-center border-b border-line",
-                                sidebarCollapsed ? "justify-center" : "justify-between pr-2 pl-4",
-                            )}
-                        >
-                            {!sidebarCollapsed && <span className="text-xs font-medium">{t("side.title")}</span>}
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-7"
-                                onClick={() => setDialog({ kind: "item-create" })}
-                                title={t("side.addItem")}
-                                aria-label={t("side.addItem")}
-                            >
-                                <Plus className="size-3.5" />
+                {/* 工具区：窗口收成一条时它没有高度；搜索下拉面板 absolute 铺满它（relative 是给面板定位用的） */}
+                <main ref={setMainEl} className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
+                    {serverOk === false ? (
+                        /* 断线态：居中提示，自动 5s 重试（这时窗口按展开算，不然这段话没地方放） */
+                        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
+                            <Marker structure="separator" variant="muted" className="max-w-[460px]">
+                                {t("offline.title")}
+                            </Marker>
+                            <span className="max-w-[460px] text-center text-xs text-dim-foreground">
+                                {t("offline.hint")}
+                            </span>
+                            <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
+                                {t("offline.retry")}
                             </Button>
                         </div>
-
-                        {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器） */}
-                        <div className="min-h-0 flex-1">
-                            {items.length === 0 ? (
-                                /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响；
-                                   图标条里这段话塞不下，不显示，只剩上面的「＋」 */
-                                !sidebarCollapsed && (
-                                    <Empty className="px-3 py-8">
-                                        <EmptyHeader>
-                                            <EmptyTitle>{t("side.empty")}</EmptyTitle>
-                                            <EmptyDescription>{t("side.emptyHint")}</EmptyDescription>
-                                        </EmptyHeader>
-                                    </Empty>
-                                )
-                            ) : (
-                                <LauncherList
-                                    collapsed={sidebarCollapsed}
-                                    items={items}
-                                    dirIds={dirIds}
-                                    light={theme === "light"}
-                                    onOpenInTerminal={openInTerminal}
-                                    onOpen={openItem}
-                                    onEditItem={(item) => setDialog({ kind: "item-edit", item })}
-                                    onDeleteItem={(item) => setDialog({ kind: "item-delete", item })}
-                                />
-                            )}
-                        </div>
-                    </aside>
-
-                    {/* 右侧区域没有外圈描边：和侧栏的分界靠底色深浅（bg-background 对 bg-canvas） */}
-                    <main className="relative flex min-w-0 flex-1 flex-col bg-canvas">
-                        {serverOk === false ? (
-                            /* 断线态：右列居中提示（左栏保留已拉到的数据），自动 5s 重试 */
-                            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-                                <Marker structure="separator" variant="muted" className="max-w-[460px]">
-                                    {t("offline.title")}
-                                </Marker>
-                                <span className="max-w-[460px] text-center text-xs text-dim-foreground">
-                                    {t("offline.hint")}
-                                </span>
-                                <Button appearance="standard" variant="outline" size="sm" onClick={() => refresh()}>
-                                    {t("offline.retry")}
-                                </Button>
-                            </div>
-                        ) : (
-                            <ToolTabs
-                                tabs={tabs}
-                                activeKey={activeKey}
-                                onActivate={setActiveKey}
-                                onClose={closeTab}
-                                onTermTitle={renameTermTab}
-                                onOpenTool={openTool}
-                                onOpenSettings={openSettingsForActiveTool}
-                            />
-                        )}
-                    </main>
-                </div>
+                    ) : (
+                        <ToolArea
+                            tools={tools}
+                            terms={terms}
+                            shown={shown}
+                            onTermTitle={renameTerm}
+                            onOpenSettings={openSettingsForActiveTool}
+                        />
+                    )}
+                </main>
 
                 {/* ── 弹窗区 ── */}
-                <ItemDialog
-                    open={dialog.kind === "item-create" || dialog.kind === "item-edit"}
-                    item={dialog.kind === "item-edit" ? dialog.item : null}
-                    platform={platform}
-                    light={theme === "light"}
-                    onClose={() => setDialog({ kind: "none" })}
-                    onSubmit={
-                        dialog.kind === "item-edit"
-                            ? (values: ItemFormValues) =>
-                                  mutate(() => api.updateItem(dialog.item.id, values), t("toast.saved"))
-                            : (values: ItemFormValues) => mutate(() => api.createItem(values), t("toast.saved"))
-                    }
-                />
-
                 <SettingsDialog
-                    open={dialog.kind === "settings"}
-                    initialSection={dialog.kind === "settings" ? dialog.section : undefined}
-                    onClose={() => setDialog({ kind: "none" })}
+                    open={settings !== null}
+                    initialSection={settings?.section}
+                    onClose={() => setSettings(null)}
                     lang={lang}
                     onChangeLang={setLang}
                     platform={platform}
@@ -665,16 +648,50 @@ export default function App() {
                     onFontPatch={patchFont}
                     toolAliases={toolAliases}
                     onToolAlias={patchToolAlias}
+                    items={items}
+                    dirIds={dirIds}
+                    onAddItem={() => setItemDialog({ kind: "create" })}
+                    onEditItem={(item) => setItemDialog({ kind: "edit", item })}
+                    onDeleteItem={(item) => setItemDialog({ kind: "delete", item })}
+                    folderActions={folderActions}
+                    onSaveFolderActions={saveFolderActions}
+                />
+
+                {/* 条目弹窗放在设置页之后：从设置页的「快速启动」分节打开时叠在它上面 */}
+                <ItemDialog
+                    open={itemDialog.kind === "create" || itemDialog.kind === "edit"}
+                    item={itemDialog.kind === "edit" ? itemDialog.item : null}
+                    platform={platform}
+                    light={theme === "light"}
+                    onClose={() => setItemDialog({ kind: "none" })}
+                    onSubmit={
+                        itemDialog.kind === "edit"
+                            ? (values: ItemFormValues) =>
+                                  mutate(() => api.updateItem(itemDialog.item.id, values), t("toast.saved"))
+                            : (values: ItemFormValues) => mutate(() => api.createItem(values), t("toast.saved"))
+                    }
                 />
 
                 <ConfirmDialog
-                    open={dialog.kind === "item-delete"}
-                    title={dialog.kind === "item-delete" ? `${t("menu.delete")}:${dialog.item.title}` : ""}
-                    onClose={() => setDialog({ kind: "none" })}
+                    open={itemDialog.kind === "delete"}
+                    title={itemDialog.kind === "delete" ? `${t("menu.delete")}:${itemDialog.item.title}` : ""}
+                    onClose={() => setItemDialog({ kind: "none" })}
                     onConfirm={async () => {
-                        if (dialog.kind === "item-delete") {
-                            await mutate(() => api.deleteItem(dialog.item.id), t("toast.deleted"));
+                        if (itemDialog.kind === "delete") {
+                            await mutate(() => api.deleteItem(itemDialog.item.id), t("toast.deleted"));
                         }
+                    }}
+                />
+
+                {/* 关终端前先确认：会话一关，里面正在跑的程序就没了 */}
+                <ConfirmDialog
+                    open={confirmTerm !== null}
+                    title={t("term.closeConfirm")}
+                    description={t("term.closeConfirmHint")}
+                    confirmLabel={t("common.close")}
+                    onClose={() => setConfirmTerm(null)}
+                    onConfirm={async () => {
+                        if (confirmTerm !== null) closeTerm(confirmTerm);
                     }}
                 />
             </div>

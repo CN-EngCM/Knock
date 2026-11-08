@@ -1,7 +1,7 @@
 // 中文文案。en.ts 用 Record<MessageKey, string> 约束自己：key 少写、写错都会在编译期报错。
 // key 采用「区域.用途」的扁平命名，避免嵌套取值的复杂类型。
 export const zh = {
-    "search.placeholder": "输入以过滤条目…",
+    "search.placeholder": "输入搜索，按 / 列出全部条目和工具",
     "btn.settings": "设置",
     "btn.browse": "浏览…",
 
@@ -34,6 +34,14 @@ export const zh = {
         "这些程序在最前面时，呼出热键不响应（比如全屏游戏，免得手滑弹出来）。一行一个程序文件名，如 game.exe，可在任务管理器的「详细信息」页签里看到。",
     "settings.clip": "自动粘贴时限",
     "settings.clipHint": "呼出时，时限内复制的文本自动填入搜索框（秒；0 = 关闭）",
+    "settings.toolIdle": "后台自动关闭工具",
+    "settings.toolIdle.m5": "5 分钟",
+    "settings.toolIdle.m10": "10 分钟",
+    "settings.toolIdle.m30": "30 分钟",
+    "settings.toolIdle.m60": "60 分钟",
+    "settings.toolIdle.never": "不自动关闭",
+    "settings.toolIdleHint":
+        "窗口藏起来超过这段时间还没回来，打开着的工具会被关闭、回到初始状态（终端不受影响，一直保留）",
     "settings.info": "运行环境",
     "settings.dataDir": "数据目录",
     "settings.dataDir.change": "更改…",
@@ -43,6 +51,17 @@ export const zh = {
     "settings.dataDir.err.occupied": "目标目录非空，请选择空文件夹",
     "settings.dataDir.err.failed": "迁移失败，原数据未变动，可重试",
     "settings.basic": "基础设置",
+    "settings.launcher": "快速启动",
+    "settings.launcher.add": "新增条目",
+    "settings.launcher.hint":
+        "条目在搜索框里找：直接输入，或按 / 列出全部；文件夹条目按 → 还有「在此打开终端」等方式。顺序按类型和标题自动排列。",
+    "settings.launcher.empty": "还没有快速启动条目，点右上角「新增条目」添加网页、应用、文件或命令。",
+    "settings.folderActions": "文件夹动作",
+    "settings.folderActions.add": "新增动作",
+    "settings.folderActions.hint":
+        "文件夹条目按 → 展开的菜单。「在此打开终端」固定在最前，后面是这里的动作：在该文件夹里开一个终端并执行命令。",
+    "settings.folderActions.empty": "还没有动作，点右上角「新增动作」添加。",
+    "settings.folderActions.full": "最多 10 个动作",
     "settings.tools": "内置工具",
     "settings.tools.aliasPlaceholder": "别名（空格或逗号分隔，可选）",
     "settings.tools.aliasHint": "搜索时输入别名也能找到对应工具",
@@ -155,7 +174,13 @@ export const zh = {
     "item.pickShortcut": "从开始菜单选择",
     "item.pickScript": "选择脚本…",
     "item.autoClose": "自动关闭",
-    "item.autoClose.hint": "命令成功后关闭终端标签，失败时保留，方便看报错",
+    "item.autoClose.hint": "命令成功后关闭终端，失败时保留，方便看报错",
+    "folderAction.new": "添加动作",
+    "folderAction.edit": "编辑动作",
+    "folderAction.name": "名称",
+    "folderAction.name.placeholder": "如 VS Code（菜单里显示为「在此打开 VS Code」）",
+    "folderAction.command": "命令",
+    "folderAction.command.placeholder": "如 code .（在该文件夹里执行）",
     "item.icon": "图标",
     "item.icon.auto": "自动（按类型和名称匹配）",
     "iconPicker.title": "选择图标",
@@ -168,13 +193,11 @@ export const zh = {
     "picker.empty": "（无匹配快捷方式）",
     "launch.missing": "目标不存在",
 
-    "menu.open": "打开",
     "menu.edit": "编辑…",
     "menu.delete": "删除…",
     "menu.rename": "重命名…",
     "menu.terminalHere": "在此打开终端",
-    "menu.opencodeHere": "在此打开 opencode",
-    "menu.claudeHere": "在此打开 Claude Code",
+    "menu.openHere": "在此打开 {name}",
 
     "common.create": "创建",
     "common.save": "保存",
@@ -185,14 +208,19 @@ export const zh = {
     "common.loading": "加载中…",
 
     "search.noHit": "（无匹配）",
+    "search.listEmpty": "还没有条目，到设置的「快速启动」里添加",
+    "search.moreActions": "更多打开方式",
+    "search.listAll": "列出全部条目和工具",
     "search.recommended": "推荐",
     "search.pathGroup": "路径",
+    "search.itemsGroup": "快速启动",
+    "search.toolsGroup": "工具",
     "search.openFile": "打开文件",
     "search.gotoFolder": "前往文件夹",
 
     // ── v2.2：工具区 / 终端区 ──
     "tools.menu": "工具集",
-    "tools.opened": "已打开",
+    "tools.alive": "运行中",
     "tool.json.name": "json",
     "tool.json.desc": "JSON 格式化 / 压缩",
     "tool.qr.name": "qrcode",
@@ -478,21 +506,7 @@ export const zh = {
     "btn.topmost": "置顶",
     "btn.untopmost": "取消置顶",
     "btn.topmostHint": "先钉住才能置顶",
-
-    // ── 左侧快捷启动 / 工具首页 ──
-    "side.title": "快捷启动",
-    "side.addItem": "添加启动项",
-    "side.empty": "还没有快捷启动项",
-    "side.emptyHint": "点右上角的加号，添加网页、应用、文件或命令。",
-
-    // ── 快捷启动列表 ──
-    "tools.home": "工具首页",
-    "home.title": "常用工具，随手打开",
-    "home.sub": "本机运行 · 随用随开",
-    "home.desc": "选择下方工具，或在顶部搜索收藏、应用和文件。",
-    "home.kbd.search": "搜索",
-    "home.kbd.select": "选择结果",
-    "home.kbd.open": "打开",
+    "btn.collapse": "收起工具区（工具和终端继续保留）",
 
     "offline.title": "主进程未连接",
     "offline.hint": "正在自动重试（每 5 秒）……若持续失败，请重启应用。",

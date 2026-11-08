@@ -19,19 +19,19 @@
 新增工具按固定顺序改三处，漏一处 `pnpm typecheck` 即报错：
 
 1. `src/main/server/schemas.ts`：`TOOL_IDS` 尾部追加 id（小写短词）。工具别名按 `toolAlias:<id>` 存库，id 词汇必须前后端共享，所以事实来源在 schemas 而非 registry。带主进程的工具把请求/配置的 zod schema 也写在这里。
-2. `src/renderer/src/tools/registry.ts`：`TOOLS` 数组追加一条 `ToolMeta`（必填 `icon`：Lucide 图标组件，工具首页卡片与工具菜单共用）。
+2. `src/renderer/src/tools/registry.ts`：`TOOLS` 数组追加一条 `ToolMeta`（必填 `icon`：SVG 资源，`/` 列表与搜索候选共用）。
 3. `src/renderer/src/i18n/zh.ts` 与 `en.ts` **同时**补 `tool.<id>.name` / `tool.<id>.desc`（en 用 `Record<MessageKey, string>` 强制对齐）。
 
-`acceptsText` 只给「能吃文本素材」的工具标（见 §4）。新工具要排进搜索框推荐区的特定位置时，在 `SearchBox.tsx` 里排，不要为此挪 `TOOLS` 数组（它决定工具首页和工具集菜单的顺序，便签就是追加在数组末尾）。
+`acceptsText` 只给「能吃文本素材」的工具标（见 §4）。新工具要排进搜索框推荐区的特定位置时，在 `SearchBox.tsx` 里排，不要为此挪 `TOOLS` 数组（它决定 `/` 列表里工具段的顺序，便签就是追加在数组末尾）。
 
 ## 3. 组件契约（src/renderer/src/tools/）
 
 - 文件放 `src/renderer/src/tools/<Name>Tool.tsx`：语义名 + Tool 后缀（先例：id 是 `files`，文件叫 `FileSearchTool.tsx`），**默认导出**组件（React.lazy 的要求）。
 - props 签名固定为 `{ initialInput?: string | null; openSettings?: () => void }`——registry 的 `ToolMeta.Component` 类型就是它，多传的 props 没人给你传进去。
-  - `openSettings` 由 App → ToolTabs 透传，供「缺配置」类状态直达设置页；用不上的工具不接。
+  - `openSettings` 由 App → ToolArea 透传，供「缺配置」类状态直达设置页；用不上的工具不接。
 - 组件在 registry 里一律 `lazy(() => import(...))`；工具的重依赖在组件文件里**静态 import** 即可——chunk 本身就是懒加载的，关闭即整体卸载。
-- 生命周期铁律：**关闭标签 = 卸载组件**，状态与代码库一起释放，重开回初始态；切换标签是 `display:none` 保活，草稿不丢。禁止做「重开还原上次内容」——每次启动从空开始是用户决策。
-- 终端是可多开的工具：注册表只提供入口信息，`Component` 为 `null`，由 App 每次新建独立会话，开成独立标签（xterm 实例归 termStore，见 components/TermPanel.tsx）。工具菜单、首页卡片和工具搜索共用该入口；关闭标签结束对应会话。
+- 生命周期铁律：**关闭工具 = 卸载组件**，状态与代码库一起释放，重开回初始态；切到别的工具是 `display:none` 保活，草稿不丢。窗口藏起来超过存活时间（设置里可调）时，App 会把所有非终端工具一起关掉，等同于被关闭——工具里没保存的内容别指望还在。禁止做「重开还原上次内容」——每次启动从空开始是用户决策。
+- 终端是可多开的工具：注册表只提供入口信息，`Component` 为 `null`，由 App 每次新建独立会话，出现在 `/` 列表的「运行中」段（xterm 实例归 termStore，见 components/TermPanel.tsx）。工具段的「终端」行和工具搜索共用新开会话的入口；关闭结束对应会话，终端不参与后台超时自动关闭。
 - 唯一例外（同为用户决策，2026-08）：AI 助手的会话经模块级内存 store（`src/renderer/src/tools/aiSessions.ts`）在关 tab 后保留、流继续推进、重开恢复；应用重启仍从空开始（不落盘）。
 
 ## 4. 素材注入（acceptsText）
@@ -41,7 +41,7 @@
 - 文本输入框的值一律来自 `useToolInput(id, initialInput)`（toolInput.ts），它把「挂载吃 pending」与「实时事件」两条通道对组件透明。**不要**自己监听 `TOOL_INPUT_EVENT` 或读模块级 pending——那两个通道的时序坑已经收口在 hook 里。
 - **素材按工具 id 投递**：`ToolInputDetail` 带工具 id，挂载消费和实时事件两条通道都按它比对，素材只给对应的工具。
 - **挂载通道的读和清分开**：渲染必须是纯的，React 可能把一次渲染丢掉重来；在渲染里就清 pending，重来的那次就拿不到素材（懒加载 chunk 首次下载时实测会丢）。所以 hook 在渲染里只读（`peekToolInput`），提交后的 effect 才清。
-- **聚焦事件**：标签已开着时再被「打开」，组件不会重新挂载。`App.openTool` 每次都会发一个聚焦事件（`dispatchToolFocus`），要在这时聚焦的工具用 `useToolFocus` 接收（目前只有便签）。
+- **聚焦事件**：工具已活着时再被「打开」，组件不会重新挂载。`App.openTool` 每次都会发一个聚焦事件（`dispatchToolFocus`），要在这时聚焦的工具用 `useToolFocus` 接收（目前只有便签）。
 - **搜索框里带字与否看行在哪个区**：推荐区的行带入文字，命中区的行（所有工具都能在这里按名称、id、别名、描述搜到）只打开。规则对所有工具一样，详见 `docs/spec/ui.md` 的「搜索框」。
 - 便签（`NotesTool.tsx`）是「把草稿和注入管道分开」的先例：像 AiTool 一样用 `seq` 边沿追加到草稿，`handledSeq` 避开 StrictMode 重复执行；已有草稿时换行追加，不覆盖。
 - `initialInput` 只是 props 契约的一部分（兼容直接挂载的场景），正常链路下素材走 pending 通道；组件只管把它透传给 `useToolInput` 第二参。没有素材时要显示默认内容就用第三参 `fallback`（qrcode 的 `https://`），不要塞进第二参：第二参非 null 会跳过挂载通道，首次打开就收不到素材。
@@ -74,7 +74,7 @@
 - **异步竞态**（输入驱动请求的工具必备）：防抖 300–600ms + `seq` ref 序号，晚归旧包直接丢弃；清理函数取消定时器；输入清空时推进序号并回 idle。FileSearchTool / TranslateTool 是同款范式。
 - **操作反馈**：sonner toast；成功用具体文案，失败兜底 `toast.error`。复制走 `navigator.clipboard` + try/catch（`app.ts` 只放行了写权限，读剪贴板走 `api.clipboardRead`）。
 - **视觉骨架**（GaN.UI 中性灰体系，令牌见 `src/renderer/src/index.css`，与现有工具保持一致，具体值可微调但不要另起炉灶）：
-  - 工具区是右侧的标签排（components/ToolTabs.tsx），标签页内容铺满：标签排不提供外围留白，留白由各工具的根容器自己给（见下条）；
+  - 工具区（components/ToolArea.tsx）同一时间只显示一个工具，内容铺满：工具区不提供外围留白，留白由各工具的根容器自己给（见下条）；
   - 根容器吃满 `h-full`；工具栏一律用 `@/components/ui/toolbar` 的 `Toolbar`（高度取 `--size-toolbar`，regular 43px）+ `ToolbarGroup` / `ToolbarSeparator`，搜索框用 `ToolbarSearch`；默认纵向流 `flex flex-col gap-2 p-3`，表单/画布类可 `p-4`（qr 先例）；
   - 结果区 `min-h-0 flex-1 overflow-auto`，工具条 `flex-none`；双栏编辑器中间用 `border-l border-line` 分隔，代码/结果区底 `bg-well`；
   - 按钮用 `@/components/ui/button` 的 Button 组件（GaN.UI v1.0.0 版）：主操作 `appearance="standard" variant="primary"`（蓝实心），次操作 `appearance="standard" variant="outline"`；工具内默认 **size sm**（h-22px，紧凑工具栏密度），弹窗底部主/次按钮用 **size default**（25px）。按钮文案直接写动词短语，不加方括号装饰；
