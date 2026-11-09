@@ -7,6 +7,7 @@ import { TOOLS, type ToolId } from "@/tools/registry";
 import { api, type Expert, type Item, type ToolAliases, type Workspace } from "@/api/client";
 import { KindIcon } from "@/lib/kindIcon";
 import { sortItems } from "@/lib/itemOrder";
+import { matchText } from "@/lib/pinyinMatch";
 import { useExperts } from "@/lib/experts";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription } from "@/components/ui/empty";
@@ -19,6 +20,9 @@ import { useI18n } from "@/i18n/useI18n";
 // 下拉分三块，各答一件事：
 //   命中区（我想找什么）= 匹配的条目（全局与工作区条目都按标题；文件夹条目的目标路径也算）
 //     + 匹配的全部内置工具（名称/id/别名，描述不参与）。选中只打开、不带入文字，不管工具吃不吃文本。
+//     标题、工具名、别名除了字面包含，还能用拼音（全拼或首字母）命中，规则见 lib/pinyinMatch。
+//     顺序分四档：条目字面 → 条目拼音 → 工具字面 → 工具拼音，每档内部保持侧栏顺序，共 9 行封顶；
+//     拼音只是字面之外的补充，不会挤掉字面命中。
 //     工作区条目的行尾带所属工作区名；选中后在它所属的工作区里打开并切过去（见 App.openItem）。
 //   推荐区（这段字交给谁）= 能吃文本的工具 + 勾了推荐的 AI 专家，恒在。
 //     选中一律注入「chip ?? 手打 query」。同一个工具可能在两块各出现一次，意思不同。
@@ -145,37 +149,41 @@ export function SearchBox({
     // 匹配源：素材 chip 优先（chip 在场时用完整剪贴板文本去匹配条目/工具）
     const q = (clip ?? query).trim().toLowerCase();
 
-    // 命中区：条目在前、工具在后；工具不论吃不吃文本都在这里，选中只打开
+    // 命中区：条目在前、工具在后；各自再分「字面命中在前、拼音命中在后」。
+    // 工具不论吃不吃文本都在这里，选中只打开
     const hits = useMemo(() => {
-        const out: Candidate[] = [];
-        if (q) {
-            // 先按侧栏同一套规则排序再匹配：候选顺序与列表顺序一致，不会随数据落库次序跳动。
-            // 全局条目排前、工作区条目排后（各自内部再排序），全局的候选次序不受工作区条目影响。
-            // 目标只对文件夹条目参与匹配（用路径找文件夹，全局与工作区的一视同仁）；
-            // 网址、应用、命令、文件的目标一律不匹配，否则打 "com"、"exe" 之类会命中一大片。
-            // 目录判定是异步的，回来之前文件夹条目只按标题命中
-            const global = items.filter((item) => item.workspaceId === null);
-            const inWorkspace = items.filter((item) => item.workspaceId !== null);
-            for (const item of [...sortItems(global), ...sortItems(inWorkspace)]) {
-                const targetHit = dirIds.has(item.id) && item.target.toLowerCase().includes(q);
-                if (item.title.toLowerCase().includes(q) || targetHit) {
-                    out.push({ kind: "item", item });
-                    if (out.length >= MAX_CANDIDATES) break;
-                }
-            }
-            for (const tool of TOOLS) {
-                if (out.length >= MAX_CANDIDATES) break;
-                const name = t(tool.nameKey);
-                const aliases = aliasesOf(toolAliases, tool.id);
-                // 描述只在候选行尾显示，不参与匹配：描述句子里的字太杂，打一两个字就会命中一片
-                const hit =
-                    name.toLowerCase().includes(q) ||
-                    tool.id.includes(q) ||
-                    aliases.some((a) => a.toLowerCase().includes(q));
-                if (hit) out.push({ kind: "tool", id: tool.id, name, desc: tool.descKey });
-            }
+        if (!q) return [];
+        const itemLiteral: Candidate[] = [];
+        const itemPinyin: Candidate[] = [];
+        const toolLiteral: Candidate[] = [];
+        const toolPinyin: Candidate[] = [];
+
+        // 先按侧栏同一套规则排序再匹配：候选顺序与列表顺序一致，不会随数据落库次序跳动。
+        // 全局条目排前、工作区条目排后（各自内部再排序），全局的候选次序不受工作区条目影响。
+        // 目标只对文件夹条目参与匹配（用路径找文件夹，全局与工作区的一视同仁）；
+        // 网址、应用、命令、文件的目标一律不匹配，否则打 "com"、"exe" 之类会命中一大片。
+        // 路径也不走拼音：路径一长，首字母串跟着变长，短关键词会乱命中。
+        // 目录判定是异步的，回来之前文件夹条目只按标题命中
+        const global = items.filter((item) => item.workspaceId === null);
+        const inWorkspace = items.filter((item) => item.workspaceId !== null);
+        for (const item of [...sortItems(global), ...sortItems(inWorkspace)]) {
+            const targetHit = dirIds.has(item.id) && item.target.toLowerCase().includes(q);
+            const kind = targetHit ? "literal" : matchText(item.title, q);
+            if (kind === "literal") itemLiteral.push({ kind: "item", item });
+            else if (kind === "pinyin") itemPinyin.push({ kind: "item", item });
         }
-        return out;
+
+        for (const tool of TOOLS) {
+            const name = t(tool.nameKey);
+            // 名称和别名可走拼音（别名可能是中文）；id 本来就是英文，只做字面匹配。
+            // 描述只在候选行尾显示，不参与匹配：描述句子里的字太杂，打一两个字就会命中一片
+            const kinds = [name, ...aliasesOf(toolAliases, tool.id)].map((text) => matchText(text, q));
+            const candidate: Candidate = { kind: "tool", id: tool.id, name, desc: tool.descKey };
+            if (tool.id.includes(q) || kinds.includes("literal")) toolLiteral.push(candidate);
+            else if (kinds.includes("pinyin")) toolPinyin.push(candidate);
+        }
+
+        return [...itemLiteral, ...itemPinyin, ...toolLiteral, ...toolPinyin].slice(0, MAX_CANDIDATES);
     }, [q, items, dirIds, t, toolAliases]);
 
     // 推荐工具：能吃文本素材的工具，基础顺序便签在前，再按嗅探结果把命中项置顶（其余相对顺序不变）
