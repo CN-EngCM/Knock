@@ -135,7 +135,9 @@ export default function FileSearchTool({ initialInput }: { initialInput?: string
             const delta = e.key === "ArrowDown" ? 1 : -1;
             setSelected((s) => (s + delta + hits.length) % hits.length);
         } else if (e.key === "Enter") {
-            void openHit(hits[Math.min(selected, hits.length - 1)]);
+            const hit = hits[Math.min(selected, hits.length - 1)];
+            // Ctrl+Enter（macOS 为 Cmd+Enter）= 在文件夹里显示，和行尾的「定位」按钮同一个动作
+            void (e.ctrlKey || e.metaKey ? revealHit(hit) : openHit(hit));
         }
     }
 

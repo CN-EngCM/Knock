@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { IDockviewPanelProps } from "@/components/ui/dock-layout";
 import { api } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
+import { shortcutOf } from "@/lib/appShortcuts";
 import { cleanTermTitle } from "@/lib/termTitle";
 import { getTerm, registerTerm, termFont, themeFromVars } from "./termStore";
 
@@ -58,6 +59,9 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             term.loadAddon(fit);
             term.onData((d) => void api.ptyWrite(sessionId, d));
             term.attachCustomKeyEventHandler((ev) => {
+                // 窗口内快捷键（Ctrl+Tab 切面板、Ctrl+` 切工作区）：xterm 不处理，按键才会冒泡到 App 的监听；
+                // 否则 Ctrl+Tab 会变成 Tab 敲进 shell。不 preventDefault，由 App 那边统一拦
+                if (shortcutOf(ev) !== null) return false;
                 if (ev.type !== "keydown" || ev.altKey) return true;
                 if (ev.key === "Enter" && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
                     // xterm 对 Shift+Enter 与 Enter 都发 \r，Claude Code 这类程序分不出来，

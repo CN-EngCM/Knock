@@ -48,6 +48,25 @@ export const zh = {
     "settings.dataDir.err.occupied": "目标目录非空，请选择空文件夹",
     "settings.dataDir.err.failed": "迁移失败，原数据未变动，可重试",
     "settings.basic": "基础设置",
+    "settings.shortcuts": "快捷键",
+    "shortcut.group.summon": "呼出",
+    "shortcut.group.window": "窗口内",
+    "shortcut.group.tools": "工具内",
+    "shortcut.summon":
+        "窗口藏着时呼出，并聚焦搜索框；窗口已经在前面时再按，只聚焦搜索框并全选里面的字，不会收起。具体按键在「基础设置」里改。",
+    "shortcut.slash": "聚焦搜索框（焦点不在输入框里时）",
+    "shortcut.pick": "搜索框里选择候选、打开",
+    "shortcut.esc":
+        "收起整个窗口，不关任何面板。搜索框里先清掉素材标签和文字，都空了再按才收起；其他输入框、终端、网页里的 Esc 归它们自己；钉住时不收起。",
+    "shortcut.workspace": "切到下一个 / 上一个工作区，顺序同左侧栏，首尾相接。终端和网页里也能用。",
+    "shortcut.panel":
+        "切到下一个 / 上一个面板：范围是当前工作区，按格子从左到右、从上到下，格内按标签顺序，首尾相接。终端和网页里也能用。",
+    "shortcut.notes": "便签：保存（macOS 为 Cmd+Enter），回车是换行；编辑时 Esc 取消",
+    "shortcut.translate": "翻译：不等输入停顿，立即翻译（macOS 为 Cmd+Enter）",
+    "shortcut.files": "文件搜索：回车打开文件，Ctrl+Enter 在文件夹里显示（macOS 为 Cmd+Enter）",
+    "shortcut.termNewline": "终端：换行（实际发送 Alt+Enter，Claude Code 里用来换行）",
+    "shortcut.termPaste": "终端：粘贴（macOS 为 Cmd+V）。右键：有选中文字就复制，没有就粘贴；Ctrl+C 始终用来中断程序",
+    "shortcut.note": "这里只做说明，不能改键。",
     "settings.tools": "内置工具",
     "settings.tools.aliasPlaceholder": "别名（空格或逗号分隔，可选）",
     "settings.tools.aliasHint": "搜索时输入别名也能找到对应工具",
@@ -230,6 +249,9 @@ export const zh = {
     "json.copy": "复制结果",
     "json.clear": "清空",
     "json.ok": "格式正确",
+    "json.errAt": "第 {line} 行第 {col} 列附近有错",
+    "json.errEnd": "JSON 不完整，到末尾还缺内容",
+    "json.errUnknown": "不是合法的 JSON",
     "json.copied": "已复制到剪贴板",
 
     "qr.content": "内容",
@@ -516,6 +538,7 @@ export const zh = {
     "side.addItem": "添加启动项",
     "side.empty": "还没有快捷启动项",
     "side.emptyHint": "点右上角的加号，添加网页、应用、文件或命令。",
+    "side.dropMany": "一次只能添加一个，已取第一个",
 
     // ── 侧栏顶部的工作区 ──
     "ws.title": "工作区",

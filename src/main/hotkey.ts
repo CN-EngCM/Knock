@@ -39,7 +39,7 @@ const COMBO_ACCELERATORS: Partial<Record<HotkeyId, string>> = {
 /** 当前生效热键（启动时由 initHotkey 读出并应用） */
 let active: HotkeyId | null = null;
 
-/** 呼出动作（显隐切换），由 app.ts 注入，本模块不持有窗口引用 */
+/** 热键动作（窗口在前就聚焦搜索框，否则呼出），由 app.ts 注入，本模块不持有窗口引用 */
 let onToggle: (() => void) | null = null;
 
 // 双击检测状态：

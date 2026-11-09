@@ -32,7 +32,7 @@ import { useI18n } from "@/i18n/useI18n";
 //     没有任何命中时不预选行、Enter 不做事（手打的字不会悄悄带进便签），要带字先按 ↓。
 //   素材 chip 在场：路径区、推荐区、命中区依次排列，高亮第一行。不是路径时第一行就是推荐，
 //     Enter 即注入，保住「复制 → 呼出 → Enter」的素材流契约。
-// 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query。
+// 键盘：↑↓ 移动高亮、Enter 打开/注入高亮项、Esc 先清 chip 再清 query，都空了再按收起窗口。
 
 const MAX_CANDIDATES = 9;
 const CHIP_MAX_CHARS = 32;
@@ -143,6 +143,15 @@ export function SearchBox({
             setQuery("");
             setClip(text);
             inputRef.current?.focus();
+        });
+    }, []);
+
+    // 窗口已在前面时又按呼出热键：只聚焦并全选已有的字，不清空、不重读剪贴板（别把打到一半的字顶掉）。
+    // 全选是为了接着打字直接替换；素材 chip 不在输入框里，不受影响
+    useEffect(() => {
+        return window.knock.onRefocusSearch(() => {
+            inputRef.current?.focus();
+            inputRef.current?.select();
         });
     }, []);
 
@@ -291,9 +300,11 @@ export function SearchBox({
             const c = candidates[hi];
             if (c) select(c);
         } else if (e.key === "Escape") {
-            // 先清素材 chip，再清普通 query
+            // 一层一层退：先清素材 chip，再清普通 query，都空了再按就收起整个窗口（钉住时主进程不收）。
+            // 其他输入框里的 Esc 不收窗口，只有搜索框是例外——一呼出就在用它
             if (clip !== null) setClip(null);
-            else setQuery("");
+            else if (query !== "") setQuery("");
+            else window.knock.hideWindow();
         }
     }
 

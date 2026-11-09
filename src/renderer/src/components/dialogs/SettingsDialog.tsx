@@ -18,6 +18,7 @@ import { ToolsSection } from "./settings/ToolsSection";
 import { TranslateSection } from "./settings/TranslateSection";
 import { AiSection } from "./settings/AiSection";
 import { GallerySection } from "./settings/GallerySection";
+import { ShortcutsSection } from "./settings/ShortcutsSection";
 
 type Props = {
     open: boolean;
@@ -47,6 +48,7 @@ type Props = {
 // 分节导航定义：新增设置分节 = 这里加一项 + dialogs/settings/ 下加分节组件 + 下方渲染分支补一段
 const SECTION_DEFS = [
     { id: "basic", labelKey: "settings.basic" },
+    { id: "shortcuts", labelKey: "settings.shortcuts" },
     { id: "tools", labelKey: "settings.tools" },
     { id: "translate", labelKey: "settings.translate" },
     { id: "ai", labelKey: "settings.ai" },
@@ -92,7 +94,7 @@ export function SettingsDialog({
                 </DialogHeader>
 
                 {/* 两栏：左=分节导航（SECTION_DEFS 驱动），右=当前分节内容。
-                    forceMount 让五个分节常驻，切走再切回不丢未提交的表单草稿；
+                    forceMount 让各分节常驻，切走再切回不丢未提交的表单草稿；
                     非激活面板由库的 data-[state=inactive]:hidden 隐藏。 */}
                 <Tabs
                     orientation="vertical"
@@ -123,6 +125,9 @@ export function SettingsDialog({
                                 scratchMinutes={scratchMinutes}
                                 onScratchMinutes={onScratchMinutes}
                             />
+                        </TabsContent>
+                        <TabsContent value="shortcuts" forceMount className="grid content-start gap-3">
+                            <ShortcutsSection />
                         </TabsContent>
                         <TabsContent value="tools" forceMount className="grid content-start gap-3">
                             <ToolsSection toolAliases={toolAliases} onToolAlias={onToolAlias} />

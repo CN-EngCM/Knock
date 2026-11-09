@@ -17,8 +17,10 @@ import {
     onPtyEvent,
     type ApiError,
     type ApiResult,
+    type AppShortcut,
     type FontPatch,
     type Item,
+    type Kind,
     type TermPatch,
     type ThemeId,
     type ToolAliasPatch,
@@ -52,9 +54,12 @@ import { applyFonts } from "./lib/fonts";
 import { itemIconName } from "./lib/kindIcon";
 import { cleanTermTitle } from "./lib/termTitle";
 import { applyTheme, currentTheme } from "./lib/theme";
+import { isTextEntry, overlayOpen, shortcutOf } from "./lib/appShortcuts";
 import {
     addPanelPreferEmptyGroup,
     clearDockLayout,
+    cyclePanel,
+    focusPanel,
     hasMultipleGroups,
     restoreDockLayout,
     watchDockLayout,
@@ -78,9 +83,12 @@ const TOOL_SETTINGS_SECTION: Partial<Record<ToolId, SectionId>> = {
 
 // 全部弹窗收敛为一个可辨识联合（discriminated union）：
 // 用 kind 字段区分形态，switch 后每个分支的 payload 类型自动收窄。
+// 拖文件、链接进左侧栏时带来的预填内容：只填类型、标题和目标，其余字段仍走弹窗默认值，用户确认后才保存
+type ItemPrefill = { kind: Kind; title: string; target: string };
+
 type DialogState =
     | { kind: "none" }
-    | { kind: "item-create"; workspaceId: number | null }
+    | { kind: "item-create"; workspaceId: number | null; prefill?: ItemPrefill }
     | { kind: "item-edit"; item: Item }
     | { kind: "item-delete"; item: Item }
     | { kind: "ws-create"; initialName: string }
@@ -158,17 +166,19 @@ export default function App() {
         return workspace.folder || undefined;
     }
     // 切换工作区：先落库再重拉；停靠区实例常驻，切换只是换显示，不动任何面板与终端
+    // 返回是否切成功：快捷键切换据此决定要不要把焦点交给新工作区的面板
     const switchWorkspace = useCallback(
-        async (id: number) => {
+        async (id: number): Promise<boolean> => {
             // 切回原工作区时不能让浮层自己弹出来
             setTreeOpenFor(null);
             const r = await api.setActiveWorkspace(id);
             if (!r.ok) {
                 toast.error(t("toast.error"));
-                return;
+                return false;
             }
             const next = await api.getWorkspaces();
             if (next.ok) setWsData(next.data);
+            return true;
         },
         [t, setWsData],
     );
@@ -514,6 +524,72 @@ export default function App() {
         return () => window.removeEventListener("keydown", onWindowKeyDown);
     }, []);
 
+    // ── 窗口内快捷键：Ctrl+` 切工作区、Ctrl+Tab 切面板（带 Shift 反向），Esc 收起窗口 ──
+    // 切工作区后要把键盘焦点交给新工作区里激活的面板：旧工作区的终端被藏起来后焦点就丢了，
+    // 不补这一步，切过去以后打字没处落。所以先记下目标工作区，等界面切换提交后（下面的 effect）再聚焦
+    const focusAfterSwitch = useRef<number | null>(null);
+    const switching = useRef(false);
+    function runShortcut(name: AppShortcut) {
+        if (name === "panel-next" || name === "panel-prev") {
+            const dock = activeWorkspaceId === null ? undefined : dockCtl.current.apis.get(activeWorkspaceId);
+            const panel = dock && cyclePanel(dock, name === "panel-next" ? 1 : -1);
+            if (panel) requestAnimationFrame(() => focusPanel(panel));
+            return;
+        }
+        // 顺序同左侧栏（临时工作区在最前），首尾相接。切换是异步的（先落库再重拉），
+        // 没切完时再按会算出同一个目标，直接忽略
+        const list = wsData?.workspaces ?? [];
+        if (list.length < 2 || switching.current) return;
+        const from = list.findIndex((w) => w.id === activeWorkspaceId);
+        const delta = name === "workspace-next" ? 1 : -1;
+        const target = list[(from + delta + list.length) % list.length];
+        switching.current = true;
+        focusAfterSwitch.current = target.id;
+        void switchWorkspace(target.id).then((ok) => {
+            switching.current = false;
+            if (!ok) focusAfterSwitch.current = null;
+        });
+    }
+    useEffect(() => {
+        const id = activeWorkspaceId;
+        if (id === null || focusAfterSwitch.current !== id) return;
+        focusAfterSwitch.current = null;
+        requestAnimationFrame(() => {
+            const panel = dockCtl.current.apis.get(id)?.activePanel;
+            if (panel) focusPanel(panel);
+        });
+    }, [activeWorkspaceId]);
+
+    // 监听只挂一次，回调经 ref 取最新的 runShortcut（它闭包里读当前工作区与列表）
+    const runShortcutRef = useRef(runShortcut);
+    runShortcutRef.current = runShortcut;
+    useEffect(() => {
+        function onKeyDown(e: KeyboardEvent) {
+            // 别人（弹层、图库查看器……）已经处理过的按键不再管；输入法选词中的按键更不能碰
+            if (e.defaultPrevented || e.isComposing) return;
+            if (e.key === "Escape") {
+                if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
+                // 输入框里的 Esc 归输入框（搜索框自己处理，见 SearchBox）；有弹窗、菜单开着就留给它们。
+                // 终端的输入框也在此列，所以 vim、Claude Code 要用的 Esc 不会被抢。
+                // 网页里的按键到不了这里
+                if (isTextEntry(e.target) || overlayOpen()) return;
+                window.knock.hideWindow(); // 钉住时主进程不收
+                return;
+            }
+            const name = shortcutOf(e);
+            if (!name || overlayOpen()) return;
+            e.preventDefault();
+            if (!e.repeat) runShortcutRef.current(name);
+        }
+        window.addEventListener("keydown", onKeyDown);
+        // 网页面板里按的键由主进程拦下转来（网页吃掉按键）
+        const offWeb = window.knock.onShortcut((name) => runShortcutRef.current(name));
+        return () => {
+            window.removeEventListener("keydown", onKeyDown);
+            offWeb();
+        };
+    }, []);
+
     // ── 工具生命周期：激活权威是 dockview——已开的面板 setActive，未开 addPanel ──
     //（有空格子优先进空格子，全满了进第一格，见 lib/dockLayout.ts）；关闭走面板 × / 右键菜单，App 只订阅面板移除做善后。
     // input 非空 = 带素材打开：素材落模块级 pending，组件挂载时消费 + 事件覆盖
@@ -730,6 +806,54 @@ export default function App() {
     // 移动条目归属（左侧 ↔ 工作区）：成功后重拉全量，界面只认服务端结果
     async function moveItem(item: Item, workspaceId: number | null) {
         await mutate(() => api.moveItem(item.id, workspaceId), t("toast.moved"));
+    }
+
+    // ── 拖进左侧栏添加快捷启动：文件、文件夹、exe 或快捷方式、浏览器里的网页链接 ──
+    // 只是把弹窗预填好，用户确认后才保存，不直接建条目；工作区工具栏不接这个（用户决策）
+    const [dropActive, setDropActive] = useState(false);
+    function acceptsDrop(e: React.DragEvent): boolean {
+        return e.dataTransfer.types.includes("Files") || e.dataTransfer.types.includes("text/uri-list");
+    }
+    async function prefillFromDrop(files: File[], uriList: string) {
+        // 一次只加一个：多拖的忽略，但要说一声，免得以为都加进去了
+        if (files.length > 1) toast.info(t("side.dropMany"));
+        // 从网页里拖出来的图片这类 File 没有本机路径，空串就当没有文件，继续看有没有链接
+        const path = files[0] ? window.knock.filePathFor(files[0]) : "";
+        if (path) {
+            const stat = await api.statPath(path);
+            if (!stat.ok) {
+                toast.error(t("toast.error"));
+                return;
+            }
+            // 应用：Windows 的 exe 与快捷方式，mac 的 .app（它是文件夹，所以不能只看是不是目录）；
+            // 其余是「文件」类型，文件和文件夹都归它
+            const isApp = /\.(exe|lnk)$/i.test(path) || (platform === "darwin" && /\.app$/i.test(path));
+            const name =
+                path
+                    .replace(/[\\/]+$/, "")
+                    .split(/[\\/]/)
+                    .pop() || path;
+            // 文件夹名里的点不是扩展名（v1.2 不能被剪成 v1）
+            const title = stat.data.isDir && !isApp ? name : name.replace(/\.[^.]+$/, "");
+            setDialog({
+                kind: "item-create",
+                workspaceId: null,
+                prefill: { kind: isApp ? "app" : "file", title, target: path },
+            });
+            return;
+        }
+        // uri-list 每行一个地址，# 开头的是注释
+        const url = uriList
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .find((line) => /^https?:\/\//i.test(line));
+        if (url) {
+            setDialog({
+                kind: "item-create",
+                workspaceId: null,
+                prefill: { kind: "bookmark", title: hostOf(url), target: url },
+            });
+        }
     }
 
     // shell 自己退出（exit / 进程崩溃）：先释放 xterm 实例再关面板（触发上面的
@@ -1020,8 +1144,31 @@ export default function App() {
                             </Button>
                         </div>
 
-                        {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器） */}
-                        <div className="min-h-0 flex-1">
+                        {/* 滚动与内边距都归列表自管（行高 26 需要整行统一的滚动容器）。
+                            整块（含空态、图标条）都能接拖进来的文件和链接，拖到上面时铺一层选中底色 */}
+                        <div
+                            className={cn("min-h-0 flex-1", dropActive && "bg-(--state-selected)")}
+                            onDragOver={(e) => {
+                                if (!acceptsDrop(e)) return;
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = "copy";
+                                setDropActive(true);
+                            }}
+                            // 拖到子元素上也会触发 dragleave，只有真的离开整块才撤底色
+                            onDragLeave={(e) => {
+                                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropActive(false);
+                            }}
+                            onDrop={(e) => {
+                                if (!acceptsDrop(e)) return;
+                                e.preventDefault();
+                                setDropActive(false);
+                                // DataTransfer 只在这次事件里有效：先取出要用的，再异步处理
+                                void prefillFromDrop(
+                                    Array.from(e.dataTransfer.files),
+                                    e.dataTransfer.getData("text/uri-list"),
+                                );
+                            }}
+                        >
                             {globalItems.length === 0 ? (
                                 /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响；
                                    图标条里这段话塞不下，不显示，只剩上面的「＋」 */
@@ -1173,6 +1320,7 @@ export default function App() {
                 <ItemDialog
                     open={dialog.kind === "item-create" || dialog.kind === "item-edit"}
                     item={dialog.kind === "item-edit" ? dialog.item : null}
+                    prefill={dialog.kind === "item-create" ? dialog.prefill : undefined}
                     platform={platform}
                     inWorkspace={itemDialogInWorkspace}
                     workspaceFolder={itemDialogInWorkspace ? itemDialogWorkspace?.folder : undefined}

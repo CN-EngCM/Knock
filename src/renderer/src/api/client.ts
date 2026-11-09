@@ -1,7 +1,7 @@
 import type { MpApi } from "../../../main/server/api";
 import type { PtyEvent } from "../../../main/server/pty";
 import type { AiEvent } from "../../../main/server/ai";
-import type { ThemeId } from "../../../main/server/schemas";
+import type { AppShortcut, ThemeId } from "../../../main/server/schemas";
 
 // 类型再导出：前端组件从这里拿行类型，避免组件重复引用主进程模块的深路径
 export type {
@@ -23,6 +23,7 @@ export type {
     ToolId,
     ToolAliases,
     ToolAliasPatch,
+    AppShortcut,
     FileSearchInput,
     FileSortId,
     TranslateConfig,
@@ -69,6 +70,10 @@ declare global {
             filePathFor: (file: File) => string;
             onOpenSettings: (cb: () => void) => void;
             onFocusSearch: (cb: (clip: string | null) => void) => () => void;
+            /** 窗口已在前面时又按了呼出热键：只聚焦搜索框并全选，不收起、不读剪贴板 */
+            onRefocusSearch: (cb: () => void) => () => void;
+            /** 网页面板里按下的窗口内快捷键（网页吃掉按键，由主进程拦下转来）；其余位置渲染端自己监听 */
+            onShortcut: (cb: (name: AppShortcut) => void) => () => void;
             /** 窗口被藏起来（失焦自动隐藏、热键或托盘收起）；钉住时被别的窗口盖住不算 */
             onWindowHidden: (cb: () => void) => () => void;
             /** 窗口被显示出来（与 onWindowHidden 配对，临时工作区小工具的自动关闭计时用） */

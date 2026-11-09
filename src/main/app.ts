@@ -128,7 +128,10 @@ export function startApp(): void {
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed(permission));
     // 应用内网页：网页要新开窗口时通知渲染端在当前工作区开新面板（会话与安全设置见 webView.ts）
-    initWebView((url) => win?.webContents.send("mp:web-open", url));
+    initWebView(
+        (url) => win?.webContents.send("mp:web-open", url),
+        (name) => win?.webContents.send("mp:shortcut", name),
+    );
     createWindow();
     // 剪贴板打点：呼出时据此判断最近一次复制是否落在时限内（见 clipWatch.ts）
     startClipWatch();
@@ -290,9 +293,9 @@ function hideMainWindow(): void {
     win?.hide();
 }
 
-// 显隐切换（热键与托盘共用）：未钉住时可见即藏（不判 isFocused——激活被拒的僵死窗口也能被收掉）；
+// 显隐切换（只有托盘点击用）：未钉住时可见即藏（不判 isFocused——激活被拒的僵死窗口也能被收掉）；
 // 钉住时窗口是工作台，已在最前就不动，藏起/最小化/失焦才呼出。
-// summon 是「呼出」动作，由调用方决定要不要加限制，「收起」始终不受限
+// 呼出热键不走这里：窗口在前时热键不收起，只聚焦搜索框，见 toggleByHotkey
 function toggle(summon: () => void): void {
     if (isPinned()) {
         if (nativeDialogOpen()) return;
@@ -309,10 +312,27 @@ function toggleWindow(): void {
     toggle(showWindow);
 }
 
-/** 呼出热键：前台是屏蔽名单里的程序（比如全屏游戏）时，只拦「呼出」，收起照常。
- *  被拦时一声不吭——任何提示都会再盖到游戏上 */
+/** 窗口此刻是否「在前」：可见、没最小化、有焦点 */
+function windowInFront(): boolean {
+    return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused();
+}
+
+/** 窗口已经在前面时再按热键：不收起，只把焦点交给搜索框（收起靠 Esc）。
+ *  焦点可能正在 <webview> 里（网页是独立进程），先把键盘焦点收回主页面，渲染端的聚焦才算数 */
+function refocusSearch(): void {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.focus();
+    win.webContents.send("mp:refocus-search");
+}
+
+/** 呼出热键（双击修饰键与组合键预设共用）：窗口在前就聚焦搜索框，否则呼出。
+ *  屏蔽名单（比如全屏游戏）只拦「呼出」，被拦时一声不吭——任何提示都会再盖到游戏上；
+ *  窗口已在前面时前台就是自己，不用查。原生对话框在场时不动，免得窗口盖到对话框上 */
 function toggleByHotkey(): void {
-    toggle(() => {
-        if (!isBlockedByForeground()) showWindow();
-    });
+    if (nativeDialogOpen()) return;
+    if (windowInFront()) {
+        refocusSearch();
+        return;
+    }
+    if (!isBlockedByForeground()) showWindow();
 }

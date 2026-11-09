@@ -417,6 +417,12 @@ export type HotkeyId = (typeof HOTKEY_IDS)[number];
 
 export const hotkeySchema = z.object({ hotkey: z.enum(HOTKEY_IDS) });
 
+// ── 窗口内快捷键：切工作区（Ctrl+`）与切面板（Ctrl+Tab）──
+// 主进程只在网页面板里用得上：<webview> 会吃掉所有按键，得在主进程拦下再转给主窗口。
+// 其余位置由渲染端自己监听 keydown，键名与这里的映射要保持一致（见 renderer 的 lib/appShortcuts.ts）
+export const APP_SHORTCUTS = ["workspace-next", "workspace-prev", "panel-next", "panel-prev"] as const;
+export type AppShortcut = (typeof APP_SHORTCUTS)[number];
+
 // 前台程序屏蔽名单：这些程序在最前面时呼出热键不响应。条目是程序文件名，
 // 具体整理规则（小写、补 .exe、去重）在 hotkey.ts 的 normalizeBlockApps，这里只限长防乱写
 export const hotkeyBlockSchema = z.array(z.string().max(260)).max(200);

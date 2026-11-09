@@ -51,6 +51,27 @@ export const en: Record<MessageKey, string> = {
     "settings.dataDir.err.occupied": "Target folder is not empty — pick an empty one",
     "settings.dataDir.err.failed": "Migration failed — original data untouched, you can retry",
     "settings.basic": "Basic",
+    "settings.shortcuts": "Shortcuts",
+    "shortcut.group.summon": "Summon",
+    "shortcut.group.window": "In the window",
+    "shortcut.group.tools": "In tools",
+    "shortcut.summon":
+        "Summons the window when it is hidden and focuses the search box. If the window is already in front, it only focuses the search box and selects its text — it does not hide. Change the key in Basic settings.",
+    "shortcut.slash": "Focus the search box (when focus is not in an input)",
+    "shortcut.pick": "Pick a result and open it in the search box",
+    "shortcut.esc":
+        "Hide the whole window without closing any panel. In the search box it first clears the clip chip and the text, and hides only once both are empty. Esc in other inputs, terminals and web pages belongs to them. Does nothing while pinned.",
+    "shortcut.workspace":
+        "Switch to the next / previous workspace, in the sidebar order, wrapping around. Works in terminals and web pages too.",
+    "shortcut.panel":
+        "Switch to the next / previous panel in the current workspace: groups left to right then top to bottom, tabs in order inside a group, wrapping around. Works in terminals and web pages too.",
+    "shortcut.notes": "Notes: save (Cmd+Enter on macOS); Enter inserts a newline; Esc cancels an edit",
+    "shortcut.translate": "Translate: translate now without waiting for the typing pause (Cmd+Enter on macOS)",
+    "shortcut.files": "File search: Enter opens the file, Ctrl+Enter reveals it in its folder (Cmd+Enter on macOS)",
+    "shortcut.termNewline": "Terminal: newline (sends Alt+Enter, which Claude Code treats as a newline)",
+    "shortcut.termPaste":
+        "Terminal: paste (Cmd+V on macOS). Right-click copies the selection, or pastes when nothing is selected; Ctrl+C always interrupts the program",
+    "shortcut.note": "These are for reference only and cannot be remapped.",
     "settings.tools": "Built-in tools",
     "settings.tools.aliasPlaceholder": "aliases (space/comma separated, optional)",
     "settings.tools.aliasHint": "Tools are searchable by their aliases",
@@ -235,6 +256,9 @@ export const en: Record<MessageKey, string> = {
     "json.copy": "copy result",
     "json.clear": "clear",
     "json.ok": "valid JSON",
+    "json.errAt": "Error near line {line}, column {col}",
+    "json.errEnd": "Incomplete JSON: it ends too early",
+    "json.errUnknown": "Not valid JSON",
     "json.copied": "copied to clipboard",
 
     "qr.content": "content",
@@ -527,6 +551,7 @@ export const en: Record<MessageKey, string> = {
     "side.addItem": "Add launch item",
     "side.empty": "No launch items yet",
     "side.emptyHint": "Use the + button to add a bookmark, app, file or command.",
+    "side.dropMany": "Only one at a time — took the first",
 
     // ── workspaces at the top of the sidebar ──
     "ws.title": "Workspaces",

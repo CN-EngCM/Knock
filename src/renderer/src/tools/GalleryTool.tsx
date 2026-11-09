@@ -269,6 +269,8 @@ export default function GalleryTool() {
                 setSelectedIds(new Set(items.map((i) => i.id)));
             } else if (e.key === "Escape") {
                 if (!usable() || editable(e.target)) return;
+                // 已处理就标记出来：App 层的 Esc 看到 defaultPrevented 就不会把整个窗口收起
+                e.preventDefault();
                 exitSelectMode();
             }
         }

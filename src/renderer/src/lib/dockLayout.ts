@@ -56,6 +56,13 @@ export function hasMultipleGroups(workspaceId: number): boolean {
     return json !== null && countGroups(json.grid.root as GridNode) > 1;
 }
 
+/** 网格里的格子，按它们在页面上的顺序排：左→右、上→下。格子的 DOM 顺序就是布局树的顺序；浮动窗口不算 */
+function gridGroupsInOrder(dock: DockviewApi) {
+    return dock.groups
+        .filter((group) => group.api.location.type === "grid")
+        .sort((a, b) => (a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+}
+
 /**
  * 开面板（工具、终端、网页共用）：有空格子就优先填空格子，格子全有面板了就往第一格填。
  * 先后顺序是格子在页面上的顺序，左→右、上→下：恢复出来的一排空格子会被依次填满。
@@ -68,16 +75,40 @@ export function addPanelPreferEmptyGroup(
     // 落点由这里决定，调用方不传 position，也不开浮动窗口
     options: Omit<Parameters<DockviewApi["addPanel"]>[0], "position" | "floating">,
 ): void {
-    const gridGroups = dock.hasMaximizedGroup()
-        ? []
-        : dock.groups
-              .filter((group) => group.api.location.type === "grid")
-              // 格子的 DOM 顺序就是布局树的顺序
-              .sort((a, b) =>
-                  a.element.compareDocumentPosition(b.element) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-              );
+    const gridGroups = dock.hasMaximizedGroup() ? [] : gridGroupsInOrder(dock);
     const target = gridGroups.find((group) => group.panels.length === 0) ?? gridGroups[0];
     dock.addPanel(target ? { ...options, position: { referenceGroup: target } } : options);
+}
+
+/**
+ * Ctrl+Tab 切面板：把本工作区所有面板按「格子从左到右、从上到下，格内按标签顺序」排成一列，
+ * 切到下一个（delta = 1）或上一个（-1），首尾相接。返回切到的面板，没得切返回 null。
+ * 最大化时只在那一格里轮换：别的格子藏着，切过去看不见。浮动窗口里的面板不在轮换里（和开面板的落点规则一致）。
+ */
+export function cyclePanel(dock: DockviewApi, delta: 1 | -1) {
+    const groups = dock.hasMaximizedGroup() && dock.activeGroup ? [dock.activeGroup] : gridGroupsInOrder(dock);
+    const panels = groups.flatMap((group) => group.panels);
+    if (panels.length < 2) return null;
+    const current = panels.findIndex((panel) => panel.id === dock.activePanel?.id);
+    // 当前没有激活的网格面板（比如焦点在浮动窗口里）：往后从头切、往前从尾切
+    const next =
+        current === -1 ? (delta === 1 ? 0 : panels.length - 1) : (current + delta + panels.length) % panels.length;
+    panels[next].api.setActive();
+    return panels[next];
+}
+
+/**
+ * 把键盘焦点交给面板里该接键盘的地方：网页面板给 <webview>，终端给 xterm 的输入框，其余取第一个输入框。
+ * dockview 激活面板只切显示，不会动键盘焦点；跨格子切面板时终端也不会自己重新聚焦（它只在「从隐藏变可见」时聚焦），
+ * 不补这一步，切过去以后打字还落在原来的面板里。没有可聚焦的东西（扫码这类）就保持原样。
+ */
+export function focusPanel(panel: { view: { content: { element: HTMLElement } } }): void {
+    const root = panel.view.content.element;
+    const target =
+        root.querySelector<HTMLElement>("webview") ??
+        root.querySelector<HTMLElement>(".xterm-helper-textarea") ??
+        root.querySelector<HTMLElement>("textarea, input:not([type=file]):not([type=hidden])");
+    target?.focus();
 }
 
 // 每个工作区一个等待中的保存计时器

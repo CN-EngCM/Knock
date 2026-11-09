@@ -28,6 +28,8 @@ type Props = {
     open: boolean;
     /** 编辑时传入；新建时为 null */
     item: Item | null;
+    /** 新建时的预填内容（拖文件、链接进左侧栏）：只填类型、标题、目标，其余字段仍用默认值 */
+    prefill?: { kind: Kind; title: string; target: string };
     /** 服务端平台（win32 才显示快捷方式选择器与「选择脚本…」） */
     platform: string;
     /** 归属普通工作区：新建时默认给终端命令（项目工具栏里命令最常见） */
@@ -49,6 +51,7 @@ function dirOf(path: string): string {
 export function ItemDialog({
     open,
     item,
+    prefill,
     platform,
     inWorkspace = false,
     workspaceFolder,
@@ -70,18 +73,18 @@ export function ItemDialog({
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
     // 每次打开时用 item / 默认值重置表单（编辑回填）。
-    // 工作区里新建默认终端命令：项目启动项绝大多数是命令，省掉每次改下拉
+    // 工作区里新建默认终端命令：项目启动项绝大多数是命令，省掉每次改下拉；拖进来的预填优先于这个默认
     useEffect(() => {
         if (!open) return;
-        setKind(item?.kind ?? (inWorkspace ? "command" : "bookmark"));
-        setTitle(item?.title ?? "");
-        setTarget(item?.target ?? "");
+        setKind(item?.kind ?? prefill?.kind ?? (inWorkspace ? "command" : "bookmark"));
+        setTitle(item?.title ?? prefill?.title ?? "");
+        setTarget(item?.target ?? prefill?.target ?? "");
         setArgs(item?.args ?? "");
         // 库里认不得的图标名（旧版遗留、包升级删了）按「自动」回填：既与列表里的显示一致，
         // 也不会把可能不合格式的旧值原样提交回去，保存一次顺便清掉
         setIcon(item?.icon && isKnownIcon(item.icon) ? item.icon : null);
         setAutoClose(item?.autoClose ?? false);
-    }, [open, item, inWorkspace]);
+    }, [open, item, prefill, inWorkspace]);
 
     const targetLabel =
         kind === "bookmark"

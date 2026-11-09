@@ -86,7 +86,8 @@
   - 空态用 `Empty` 族，加载用 `Spinner`，计数用 `Badge`，章节分隔用 `Marker structure="separator"` 或 `Separator`，底部固定信息条用 `StatusBar` + `StatusBarItem`，长任务进度用 `Progress`；
   - 表单行用 `Field` + `FieldLabel`（定宽标签列由 `shared.tsx` 的 `FormRow` 提供），`htmlFor`/`id` 必须成对，点标签要能聚焦控件；
   - 表单控件一律复用 GaN.UI 公共组件：普通单行输入用 `@/components/ui/input` 的 `Input`，固定选项选择用 `@/components/ui/select` 的 `Select`，普通多行输入用 `@/components/ui/textarea` 的 `Textarea`——输入面材质、焦点背景与错误态由组件提供，调用处只保留宽度/高度/布局类。多控件组合的复合输入（输入区内嵌按钮等）用 `@/components/ui/input-group` 的 `InputGroup` 系列，焦点与错误只由容器表达。占满整栏的编辑区 `Textarea` 覆盖 `rounded-none shadow-none dark:shadow-none`，避免内嵌卡片观感；隐藏文件入口 `input type="file"` 保留原生写法（另有可见按钮触发）。
-- **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。
+- **键盘**：Enter 执行首选项/打开，Ctrl+Enter 绕过防抖立即提交（translate 先例），列表用方向键移动选中。Ctrl+Enter 的含义随工具定：便签是保存，文件搜索是「在文件夹里显示」（Enter 是打开），不是通用的「提交」。新增、改动工具里的快捷键，要同步到设置页「快捷键」一组（`settings/ShortcutsSection.tsx`）。
+- **自动处理 + 出错定位**（JSON 先例）：输入停顿约 300ms 自动处理，错了只在状态条提示，**不动光标**——边打边触发的处理一旦把光标挪走，正在打的字就被打断；只有用户点了按钮才把光标带到出错位置。报错用中文说明位置（第 N 行第 M 列），行列按原文自己算，不照搬引擎的英文报错。
 - JSON 与翻译的整栏输入区使用聚焦背景色提示，局部覆盖全局键盘焦点轮廓，避免面板内部出现蓝框；普通表单的 `Textarea` 保留公共组件的焦点提示。
 
 ## 8. i18n 约定

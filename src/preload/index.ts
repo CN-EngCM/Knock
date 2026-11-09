@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { PtyEvent } from "../main/server/pty";
 import type { AiEvent } from "../main/server/ai";
+import type { AppShortcut } from "../main/server/schemas";
 
 // ── 渲染进程的唯一暴露面：进程边界即安全边界 ──
 // 不开 nodeIntegration，页面只能通过这几个白名单接口接触主进程：
@@ -12,6 +13,9 @@ import type { AiEvent } from "../main/server/ai";
 //   setTopmost     —— 钉住下的置顶开关（mp:set-topmost，同上）；仅内存，重启复位
 //   onOpenSettings —— 订阅托盘菜单「设置」事件
 //   onFocusSearch  —— 订阅窗口呼出事件（双击 Ctrl 等，渲染端聚焦搜索框）
+//   onRefocusSearch —— 订阅「窗口已在前面时又按了呼出热键」：只聚焦搜索框并全选，不收起
+//   onShortcut     —— 订阅网页面板里按下的窗口内快捷键（切工作区、切面板）：<webview> 吃掉按键，
+//                     只能由主进程拦下转来；其余位置渲染端自己监听 keydown
 //   onWindowHidden —— 订阅窗口被藏起来的事件（失焦自动隐藏、热键/托盘收起），返回退订函数
 //   onWindowShown  —— 订阅窗口被显示出来的事件，与 onWindowHidden 配对，返回退订函数
 //   onWebOpen      —— 订阅「网页要新开窗口」事件（target=_blank / window.open），渲染端在当前工作区开新网页面板
@@ -48,6 +52,16 @@ contextBridge.exposeInMainWorld("knock", {
         const handler = (_e: unknown, clip: string | null) => cb(clip);
         ipcRenderer.on("mp:focus-search", handler);
         return () => ipcRenderer.removeListener("mp:focus-search", handler);
+    },
+    onRefocusSearch: (cb: () => void): (() => void) => {
+        const handler = () => cb();
+        ipcRenderer.on("mp:refocus-search", handler);
+        return () => ipcRenderer.removeListener("mp:refocus-search", handler);
+    },
+    onShortcut: (cb: (name: AppShortcut) => void): (() => void) => {
+        const handler = (_e: unknown, name: AppShortcut) => cb(name);
+        ipcRenderer.on("mp:shortcut", handler);
+        return () => ipcRenderer.removeListener("mp:shortcut", handler);
     },
     onWindowHidden: (cb: () => void): (() => void) => {
         const handler = () => cb();
