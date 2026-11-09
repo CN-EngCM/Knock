@@ -210,6 +210,7 @@ GaN.UI `DockLayout`，业务封装 `DockZone.tsx`，底座 dockview-react。
   - **怎么关面板**：shell 一退出，`App.tsx` 里已有的 pty `exit` 事件处理就会 dispose xterm 并关面板，没有另外的关面板机制。
   - 弹窗里这一行只在类型为「终端命令」时显示，其他类型一律存 0；编辑时按存的值回填。已实测 PowerShell 7、Windows PowerShell 5.1、cmd 三种终端程序。macOS 的 zsh / bash 走 `&& exit`，未实测。
 - **环境变量**：新建会话将 `TERM` 设为 `xterm-256color`、`COLORTERM` 设为 `truecolor`，并清除继承的 `NO_COLOR`，避免启动环境禁用彩色输出。
+- **Shift+Enter 换行**：xterm 对 Shift+Enter 与 Enter 都发 `\r`，Claude Code 一按就提交。`DockTerm.tsx` 的按键处理里拦截 Shift+Enter，改发 `ESC+回车`（Alt+Enter），与 Claude Code 自带 `/terminal-setup` 给 VS Code 写的绑定相同。不靠 xterm 的 Kitty 键盘协议：Claude Code 在 Windows 的 ConPTY 下不会主动请求该协议（实测），开了也没用；ConPTY 的 win32 键盘模式同样不行（Shift+Enter 仍被当成提交）。普通 shell 里 Shift+Enter 也会变成 Alt+Enter。
 - **xterm 实例归 `termStore.ts`**，与面板生命周期解耦：面板拖动重组只重挂 DOM，不丢回滚缓冲；会话结束才 dispose；实例未就绪前的 pty 输出由它缓冲回放。
 - 主题切换经 html 类监听热更新 xterm 配色，不重建进程，不清缓冲。
 

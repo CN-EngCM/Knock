@@ -59,6 +59,15 @@ export function DockTerm({ params, api: panelApi }: IDockviewPanelProps) {
             term.onData((d) => void api.ptyWrite(sessionId, d));
             term.attachCustomKeyEventHandler((ev) => {
                 if (ev.type !== "keydown" || ev.altKey) return true;
+                if (ev.key === "Enter" && ev.shiftKey && !ev.ctrlKey && !ev.metaKey) {
+                    // xterm 对 Shift+Enter 与 Enter 都发 \r，Claude Code 这类程序分不出来，
+                    // 一按就提交。改发 ESC+回车（即 Alt+Enter，程序都当「换行」）。Claude Code
+                    // 在 Windows 的 ConPTY 下不会主动开键盘协议，所以靠 xterm 开协议没用，
+                    // 这里直接发；做法与它自带的 /terminal-setup 给 VS Code 写的按键绑定相同
+                    ev.preventDefault();
+                    void api.ptyWrite(sessionId, "\x1b\r");
+                    return false;
+                }
                 const mod = isMac ? ev.metaKey : ev.ctrlKey;
                 if (mod && ev.key.toLowerCase() === "v") {
                     // return false 只让 xterm 不处理这次按键，拦不住浏览器默认行为：
