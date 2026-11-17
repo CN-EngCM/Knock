@@ -44,8 +44,11 @@ Chromium 的会话数据（缓存、cookie、`localStorage`、网页面板的 `p
 | `galleryPassword` | 图库密码 |
 | `galleryFoldersMigrated` | 图库文件归位迁移已完成，"1" 后启动不再跑；有文件被占用没归位时不写，下次重试 |
 | `window_state` | 窗口尺寸与最大化状态 |
+| `wifiConfig` | Windows 常用 Wi-Fi：`retries` 为失败后重试次数（0～20，默认 5）；`entries` 为最多 4 项的有序数组，各项含 UUID `id`、按钮 `name` 和 `ssid`，同一 SSID 不重复。SSID 最多 32 个 UTF-8 字节，保留前后空格。密码不落库 |
 
 自启不存这里，交给系统登录项（`app.setLoginItemSettings`，见 `src/main/server/autostart.ts`）。
+
+Wi-Fi 密码由 Windows 凭据管理器保存，普通凭据名称为 `Knock/WiFi/<id>`，持久化范围是同一电脑的同一 Windows 用户。迁移数据库到其他电脑或用户后需重新输入密码。编辑时留空保留原密码，改变 SSID 不复用原密码；删除常用项删除本功能的普通凭据，保留 Windows 已保存网络。本功能创建的无线配置名称为 `Knock-<id>`，采用手动连接，不更改已有配置的自动连接偏好。系统连接状态、失败状态和重试任务不落库。
 
 ## 其他表
 

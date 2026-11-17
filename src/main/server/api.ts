@@ -80,7 +80,10 @@ import {
     chromeSync as galleryChromeSync,
 } from "./chromeLogin";
 import { youdaoTranslate, type TranslateResult } from "./youdao";
-import { app, clipboard, dialog } from "electron";
+import { app, clipboard, dialog, shell } from "electron";
+import * as wifi from "./wifi";
+import { WifiFault } from "./wifiNative";
+import { wifiSaveSchema } from "./schemas";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { cp, stat } from "node:fs/promises";
@@ -177,6 +180,7 @@ import {
 // 转发，入参必须当作不可信数据对待）。
 
 export type ApiError =
+    | { kind: "wifi"; code: string; detail: number }
     | { kind: "bad-request" } // 入参校验失败
     | { kind: "not-found" } // 目标条目/专家不存在，或 AI 模型配置未命中
     | { kind: "conflict" } // 组合键被占用 / 自启写入失败
@@ -193,12 +197,28 @@ export type ApiError =
 /** 统一返回形状：可预期错误走 error 分支（判别联合），不靠抛异常 */
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
+/** 无线系统错误只传递代码，不把密码或原生入参返回界面。 */
+function wifiResult<T>(run: () => T): ApiResult<T> {
+    try {
+        return { ok: true, data: run() };
+    } catch (error) {
+        const fault = error instanceof WifiFault ? error : new WifiFault("system");
+        return { ok: false, error: { kind: "wifi", code: fault.code, detail: fault.detail } };
+    }
+}
+
 // 出厂数据播种（专家、临时工作区，均幂等）：主进程业务装载的必经之路就是本模块，
 // 在此显式调一次，避免依赖各 entry 的 import 次序
 ensureSeeded();
 ensureWorkspacesSeeded();
 
 export interface MpApi {
+    /** 常用无线网络，不返回密码。 */
+    getWifiConfig(): Promise<ApiResult<import("./schemas").WifiConfig>>;
+    saveWifiConfig(input: import("./schemas").WifiSave): Promise<ApiResult<import("./schemas").WifiConfig>>;
+    getWifiState(): Promise<ApiResult<import("./schemas").WifiState>>;
+    connectWifi(id: string): Promise<ApiResult<null>>;
+    openWifiSettings(location: boolean): Promise<ApiResult<null>>;
     session(): Promise<ApiResult<{ platform: NodeJS.Platform }>>;
     getData(): Promise<ApiResult<{ items: Item[] }>>;
     // ── 工作区：每个工作区一套独立的停靠区；builtin 行是自带的「临时工作区」，不可删/改名 ──
@@ -408,6 +428,27 @@ function guard<T>(
 }
 
 export const apiHandlers: ApiHandlers = {
+    getWifiConfig: async () => ({ ok: true, data: wifi.getWifiConfig() }),
+    saveWifiConfig: async (input) => {
+        const parsed = wifiSaveSchema.safeParse(input);
+        if (!parsed.success) return { ok: false, error: { kind: "bad-request" } };
+        return wifiResult(() => wifi.saveWifiConfig(parsed.data));
+    },
+    getWifiState: async () => ({ ok: true, data: wifi.getWifiState() }),
+    connectWifi: async (id) => {
+        if (typeof id !== "string" || !wifi.getWifiConfig().entries.some((e) => e.id === id))
+            return { ok: false, error: { kind: "bad-request" } };
+        return wifiResult(() => {
+            wifi.connectWifi(id);
+            return null;
+        });
+    },
+    openWifiSettings: async (location) => {
+        if (typeof location !== "boolean" || process.platform !== "win32")
+            return { ok: false, error: { kind: "bad-request" } };
+        await shell.openExternal(location ? "ms-settings:privacy-location" : "ms-settings:network-wifi");
+        return { ok: true, data: null };
+    },
     // 运行环境探测（前端据 platform 决定是否显示 Windows 快捷方式选择器）
     session: async () => ({ ok: true, data: { platform: process.platform } }),
 

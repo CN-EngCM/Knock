@@ -29,6 +29,14 @@ import type { AppShortcut } from "../main/server/schemas";
 // PtyEvent / AiEvent 都是 type import（编译期擦除），不会把 server 代码带进渲染进程。
 
 contextBridge.exposeInMainWorld("knock", {
+    /** 无线任务在主进程执行，订阅仅负责显示。 */
+    onWifiState: (cb: (value: import("../main/server/schemas").WifiState) => void): (() => void) => {
+        const handler = (_e: unknown, value: import("../main/server/schemas").WifiState) => cb(value);
+        ipcRenderer.on("mp:wifi-state", handler);
+        return () => {
+            ipcRenderer.removeListener("mp:wifi-state", handler);
+        };
+    },
     invoke: (channel: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(channel, ...args),
     /** 首帧前同步取持久化主题（index.html 内联脚本用；值来自主进程已读的 settings 表） */
     getThemeSync: (): "dark" | "light" => ipcRenderer.sendSync("mp:get-theme-sync") ?? "dark",

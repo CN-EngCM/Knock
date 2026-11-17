@@ -5,6 +5,9 @@ import type { AppShortcut, ThemeId } from "../../../main/server/schemas";
 
 // 类型再导出：前端组件从这里拿行类型，避免组件重复引用主进程模块的深路径
 export type {
+    WifiConfig,
+    WifiSave,
+    WifiState,
     Item,
     Workspace,
     Note,
@@ -58,6 +61,8 @@ export type { AiEvent } from "../../../main/server/ai";
 declare global {
     interface Window {
         knock: {
+            /** 无线网络状态更新，返回退订函数。 */
+            onWifiState: (cb: (value: import("../../../main/server/schemas").WifiState) => void) => () => void;
             invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
             /** 首帧前同步取持久化主题（index.html 内联脚本用） */
             getThemeSync: () => "dark" | "light";
@@ -97,6 +102,11 @@ const invoke = window.knock.invoke as <K extends keyof MpApi>(
 // 渲染进程 API：每个方法一行转发到主进程处理器（server/api.ts 的 apiHandlers）。
 // 契约、处理器、此处三方的名字与签名由 MpApi 串成一条类型链。
 export const api: MpApi = {
+    getWifiConfig: () => invoke("getWifiConfig"),
+    saveWifiConfig: (input) => invoke("saveWifiConfig", input),
+    getWifiState: () => invoke("getWifiState"),
+    connectWifi: (id) => invoke("connectWifi", id),
+    openWifiSettings: (location) => invoke("openWifiSettings", location),
     session: () => invoke("session"),
     getData: () => invoke("getData"),
     getWorkspaces: () => invoke("getWorkspaces"),

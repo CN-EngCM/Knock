@@ -8,6 +8,7 @@ import { getSetting } from "./server/util/settings";
 import { apiHandlers } from "./server/api";
 import { killAllSessions, setPtySink } from "./server/pty";
 import { setAiSink } from "./server/ai";
+import { setWifiSink, shutdownWifi } from "./server/wifi";
 import { serveCandidate, serveImage } from "./server/gallery";
 import { serveNoteImage } from "./server/notes";
 import { freshClipboardText, startClipWatch } from "./clipWatch";
@@ -139,6 +140,7 @@ export function startApp(): void {
     setPtySink((ev) => win?.webContents.send("mp:pty-event", ev));
     // AI 对话增量流：与 pty 同款出口注入，工具关闭/组件卸载期间事件自然被忽略
     setAiSink((ev) => win?.webContents.send("mp:ai-event", ev));
+    setWifiSink((ev) => win?.webContents.send("mp:wifi-state", ev));
     createTray(
         () => {
             // 托盘「设置」：唤起窗口并让前端打开设置对话框
@@ -152,6 +154,7 @@ export function startApp(): void {
 
     app.on("before-quit", () => {
         quitting = true;
+        shutdownWifi();
         killAllSessions(); // 终端会话随应用退出回收，避免孤儿 shell 进程
         shutdownHotkey(); // 反注册组合键，避免残留系统级注册
     });

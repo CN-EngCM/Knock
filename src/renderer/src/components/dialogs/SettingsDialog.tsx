@@ -1,3 +1,4 @@
+import { WifiSection } from "./settings/WifiSection";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ type Props = {
 
 // 分节导航定义：新增设置分节 = 这里加一项 + dialogs/settings/ 下加分节组件 + 下方渲染分支补一段
 const SECTION_DEFS = [
+    { id: "wifi", labelKey: "wifi.title" },
     { id: "basic", labelKey: "settings.basic" },
     { id: "shortcuts", labelKey: "settings.shortcuts" },
     { id: "tools", labelKey: "settings.tools" },
@@ -104,13 +106,18 @@ export function SettingsDialog({
                 >
                     {/* 定宽 144px（沿用原导航宽度）由 w-36 保持；表面继续用侧栏的 canvas + 右分隔线 */}
                     <TabsList className="w-36 flex-none flex-col gap-0.5 rounded-none border-e border-line bg-canvas p-2 dark:bg-canvas">
-                        {SECTION_DEFS.map((s) => (
+                        {SECTION_DEFS.filter((s) => s.id !== "wifi" || platform === "win32").map((s) => (
                             <TabsTrigger key={s.id} value={s.id}>
                                 {t(s.labelKey)}
                             </TabsTrigger>
                         ))}
                     </TabsList>
                     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5">
+                        {platform === "win32" && (
+                            <TabsContent value="wifi" forceMount className="grid content-start gap-3">
+                                <WifiSection />
+                            </TabsContent>
+                        )}
                         <TabsContent value="basic" forceMount className="grid content-start gap-3">
                             <BasicSection
                                 lang={lang}

@@ -1,3 +1,4 @@
+import { WifiControls } from "./components/WifiControls";
 import {
     Suspense,
     lazy,
@@ -1042,6 +1043,7 @@ export default function App() {
                     }
                     right={
                         <div className="flex flex-none items-center gap-1">
+                            {platform === "win32" && <WifiControls />}
                             <ToolsMenu getOpenTools={getOpenTools} onOpen={openTool} />
                             <Tooltip>
                                 <TooltipTrigger asChild>

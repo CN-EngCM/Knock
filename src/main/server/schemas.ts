@@ -1,5 +1,55 @@
 import { z } from "zod";
 
+/** 无线网络配置，密码只出现在保存请求中。 */
+export const wifiEntrySchema = z.object({
+    /** 常用项标识，也是系统凭据名称的一部分。 */
+    id: z.string().uuid(),
+    /** 顶栏按钮名称。 */
+    name: z.string().trim().min(1).max(40),
+    /** SSID 保留前后空格，最多 32 个 UTF-8 字节。 */
+    ssid: z
+        .string()
+        .min(1)
+        .refine((s) => !s.includes("\0") && new TextEncoder().encode(s).length <= 32),
+});
+export const wifiConfigSchema = z
+    .object({
+        /** 不包含首次尝试的重试次数。 */
+        retries: z.number().int().min(0).max(20),
+        /** 按顶栏显示顺序保存。 */
+        entries: z.array(wifiEntrySchema).max(4),
+    })
+    .refine(
+        (v) =>
+            new Set(v.entries.map((e) => e.ssid)).size === v.entries.length &&
+            new Set(v.entries.map((e) => e.id)).size === v.entries.length,
+    );
+export const wifiSaveSchema = z
+    .object({
+        retries: z.number().int().min(0).max(20),
+        entries: z.array(wifiEntrySchema.extend({ password: z.string().max(64).optional() })).max(4),
+    })
+    .refine((v) => wifiConfigSchema.safeParse(v).success);
+export type WifiConfig = z.infer<typeof wifiConfigSchema>;
+export type WifiSave = z.infer<typeof wifiSaveSchema>;
+/** 无线任务快照，不包含密码。 */
+export type WifiState = {
+    /** 系统实际连接的 SSID。 */
+    connected: string | null;
+    /** 当前任务对应的常用项。 */
+    target: string | null;
+    /** 当前任务状态。 */
+    phase: "idle" | "scanning" | "connecting" | "failed";
+    /** 当前尝试序号。 */
+    attempt: number;
+    /** 最大尝试次数。 */
+    total: number;
+    /** 可翻译的错误代码。 */
+    error: string | null;
+    /** 系统原因码。 */
+    detail: number;
+};
+
 // ── 请求体 schema（zod）──
 // zod 在 RPC 边界把来自渲染进程的未知参数收窄成可信类型；
 // server/api.ts 的处理器入口用它做校验，非法参数返回 bad-request，
