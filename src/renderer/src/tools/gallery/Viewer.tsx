@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
     ChevronLeft,
     ChevronRight,
@@ -37,7 +38,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 20;
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 
-// 大图查看器：fixed 覆盖层（z-40，低于 Dialog 的 z-50，标签/删除确认弹窗盖得住）。
+// 大图查看器挂到窗口根层，盖住停靠区、左侧栏和顶栏，同时给标签和删除确认弹窗留出更高层。
 // transform = translate(px,py) scale(s) rotate(deg)：translate 在 scale 之前，
 // 平移量直接用屏幕像素，不用除以缩放。缩放一律以画面中心为锚。
 export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDelete }: Props) {
@@ -215,12 +216,12 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
     } as const;
     const textButtonClass = `${actionButton.className} text-[10.5px] font-normal`;
 
-    return (
+    return createPortal(
         <div
             ref={rootRef}
             tabIndex={-1}
             onKeyDown={onKeyDown}
-            className="fixed inset-0 z-40 flex flex-col bg-black/90 outline-none"
+            className="app-no-drag fixed inset-0 z-40 flex flex-col bg-black/90 outline-none"
         >
             <div className="relative min-h-0 flex-1">
                 {/* 顶条：文件名 + 序号 */}
@@ -415,6 +416,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     </ActionBarGroup>
                 </ActionBar>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }
