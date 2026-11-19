@@ -347,38 +347,46 @@ export function BasicSection({
 
             <FormRow>
                 <FieldLabel htmlFor="clip-sec">{t("settings.clip")}</FieldLabel>
-                <CommitInput
-                    id="clip-sec"
-                    type="number"
-                    value={clipSecEdit}
-                    onChange={setClipSecEdit}
-                    onCommit={() => void commitClipSec()}
-                    className="w-24"
-                />
+                <div className="flex items-center gap-2">
+                    <CommitInput
+                        id="clip-sec"
+                        type="number"
+                        value={clipSecEdit}
+                        onChange={setClipSecEdit}
+                        onCommit={() => void commitClipSec()}
+                        className="w-24"
+                    />
+                    <span className="text-xs">{t("settings.clip.unit")}</span>
+                </div>
             </FormRow>
             <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">
                 {t("settings.clipHint")}
             </FieldDescription>
 
             <FormRow>
-                <FieldLabel>{t("settings.scratchClose")}</FieldLabel>
+                <FieldLabel htmlFor="scratch-close">{t("settings.scratchClose")}</FieldLabel>
                 {scratchMinutes === null ? (
                     <Spinner decorative className="size-3.5 text-dim-foreground" />
                 ) : (
-                    <Select value={String(scratchMinutes)} onValueChange={(v) => void onScratchMinutes(Number(v))}>
-                        <SelectTrigger className="w-full">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {SCRATCH_MINUTES_OPTIONS.map((m) => (
-                                <SelectItem key={m} value={String(m)}>
-                                    {m === 0
-                                        ? t("settings.scratchClose.off")
-                                        : `${m} ${t("settings.scratchClose.unit")}`}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <Select value={String(scratchMinutes)} onValueChange={(v) => void onScratchMinutes(Number(v))}>
+                            <SelectTrigger id="scratch-close" aria-describedby="scratch-close-warning" className="w-28">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {SCRATCH_MINUTES_OPTIONS.map((m) => (
+                                    <SelectItem key={m} value={String(m)}>
+                                        {m === 0
+                                            ? t("settings.scratchClose.off")
+                                            : `${m} ${t("settings.scratchClose.unit")}`}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <FieldDescription id="scratch-close-warning" className="font-medium text-foreground">
+                            {t("settings.scratchClose.warning")}
+                        </FieldDescription>
+                    </div>
                 )}
             </FormRow>
             <FieldDescription className="-mt-1 px-1 text-small text-dim-foreground">

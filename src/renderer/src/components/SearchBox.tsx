@@ -134,6 +134,7 @@ export function SearchBox({
     const [focused, setFocused] = useState(false);
     const [hi, setHi] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
     // 勾了推荐的专家列表（AiTool 与此处经共享 store 同步，专家增删改即时反映）
     const experts = useExperts();
 
@@ -268,7 +269,10 @@ export function SearchBox({
 
     // 匹配源 / 素材 / 路径探测结论 / 专家行数变化后高亮回到默认位置
     // （探测结论与推荐专家进出会增删行，旧高亮序号可能指错行，一并重置）
-    useEffect(() => setHi(defaultHi), [q, clip, pathHit, experts, defaultHi]);
+    useEffect(() => {
+        setHi(defaultHi);
+        listRef.current?.scrollTo(0, 0);
+    }, [q, clip, pathHit, experts, defaultHi]);
 
     const open = q.length > 0 && focused;
 
@@ -289,22 +293,25 @@ export function SearchBox({
     }
 
     function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-        if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setHi((h) => Math.min(h + 1, candidates.length - 1));
-        } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            // 未预选（-1）时 ↑ 保持不动，不要凭空跳到第一行
-            setHi((h) => (h <= 0 ? h : h - 1));
-        } else if (e.key === "Enter") {
-            const c = candidates[hi];
-            if (c) select(c);
-        } else if (e.key === "Escape") {
-            // 一层一层退：先清素材 chip，再清普通 query，都空了再按就收起整个窗口（钉住时主进程不收）。
-            // 其他输入框里的 Esc 不收窗口，只有搜索框是例外——一呼出就在用它
+        if (e.key === "Escape") {
+            // 一层一层退：先清素材，再清搜索词，两者都空才收起窗口。
             if (clip !== null) setClip(null);
             else if (query !== "") setQuery("");
             else window.knock.hideWindow();
+            return;
+        }
+
+        if (!open) return;
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            let next = hi;
+            if (e.key === "ArrowDown") next = Math.min(hi + 1, candidates.length - 1);
+            else if (hi > 0) next = hi - 1;
+            setHi(next);
+            listRef.current?.querySelector(`[data-search-candidate="${next}"]`)?.scrollIntoView({ block: "nearest" });
+        } else if (e.key === "Enter") {
+            const c = candidates[hi];
+            if (c) select(c);
         }
     }
 
@@ -352,7 +359,10 @@ export function SearchBox({
             />
             <Kbd className="flex-none">/</Kbd>
             {open && (
-                <div className="drop-anim absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[0_12px_30px_rgb(0_0_0/40%)]">
+                <div
+                    ref={listRef}
+                    className="drop-anim absolute inset-x-0 top-[calc(100%+8px)] z-50 max-h-80 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-[0_12px_30px_rgb(0_0_0/40%)]"
+                >
                     {/* 「无匹配」指命中区和路径区都空；下面照常列推荐区，让用户能 ↓ 选一行带字 */}
                     {hits.length === 0 && pathRows.length === 0 && (
                         <Empty className="px-2.5 py-2">
@@ -413,9 +423,11 @@ export function SearchBox({
                                 <Button
                                     type="button"
                                     variant="ghost"
+                                    data-search-candidate={i}
                                     // 阻止 mousedown 默认行为保住输入框焦点，避免点击候选前下拉先因失焦消失
                                     onMouseDown={(e) => e.preventDefault()}
-                                    onMouseEnter={() => setHi(i)}
+                                    // 列表滚动也会触发鼠标进入另一行，鼠标移过时才切换高亮。
+                                    onMouseMove={() => setHi(i)}
                                     onClick={() => select(c)}
                                     className={`h-auto w-full justify-start gap-2.5 rounded-[4px] px-2 py-1.5 text-left text-xs ${
                                         sel ? "bg-(--state-selected) text-foreground" : "text-muted-foreground"

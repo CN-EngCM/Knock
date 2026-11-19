@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FieldLabel } from "@/components/ui/field";
+import { FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -10,6 +10,7 @@ import { IconPickerDialog } from "./IconPickerDialog";
 import { ShortcutPickerDialog } from "./ShortcutPickerDialog";
 import { api, type Item, type Kind } from "@/api/client";
 import { isKnownIcon, itemIconUrl, useIconSets } from "@/lib/iconSets";
+import { normalizeBookmarkUrl } from "@/lib/webUrl";
 import { useI18n } from "@/i18n/useI18n";
 import { FormRow } from "./settings/shared";
 
@@ -65,6 +66,8 @@ export function ItemDialog({
     const [kind, setKind] = useState<Kind>("bookmark");
     const [title, setTitle] = useState("");
     const [target, setTarget] = useState("");
+    const [targetInvalid, setTargetInvalid] = useState(false);
+    const targetRef = useRef<HTMLInputElement>(null);
     const [args, setArgs] = useState("");
     const [icon, setIcon] = useState<string | null>(null);
     const [autoClose, setAutoClose] = useState(false);
@@ -79,6 +82,7 @@ export function ItemDialog({
         setKind(item?.kind ?? prefill?.kind ?? (inWorkspace ? "command" : "bookmark"));
         setTitle(item?.title ?? prefill?.title ?? "");
         setTarget(item?.target ?? prefill?.target ?? "");
+        setTargetInvalid(false);
         setArgs(item?.args ?? "");
         // 库里认不得的图标名（旧版遗留、包升级删了）按「自动」回填：既与列表里的显示一致，
         // 也不会把可能不合格式的旧值原样提交回去，保存一次顺便清掉
@@ -136,8 +140,14 @@ export function ItemDialog({
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         // 必填兜底：标题与目标不能为空
-        if (!title.trim() || !target.trim()) {
+        const checkedTarget = kind === "bookmark" ? normalizeBookmarkUrl(target) : target.trim();
+        if (!title.trim() || checkedTarget === "") {
             toast.error(t("toast.error"));
+            return;
+        }
+        if (checkedTarget === null) {
+            setTargetInvalid(true);
+            targetRef.current?.focus();
             return;
         }
         setSaving(true);
@@ -145,11 +155,7 @@ export function ItemDialog({
             await onSubmit({
                 kind,
                 title: title.trim(),
-                // 书签缺协议时自动补 https://（否则 href 会变成站内相对路径）
-                target:
-                    kind === "bookmark" && !/^https?:\/\//i.test(target.trim())
-                        ? `https://${target.trim()}`
-                        : target.trim(),
+                target: checkedTarget,
                 // 仅 app/command 复用 args 列（启动参数 / 工作目录），其余类型一律置 null
                 args: (kind === "app" || kind === "command") && args.trim() ? args.trim() : null,
                 icon,
@@ -174,7 +180,13 @@ export function ItemDialog({
                 <form onSubmit={handleSubmit} className="grid gap-4">
                     <FormRow>
                         <FieldLabel htmlFor="item-kind">{t("item.kind")}</FieldLabel>
-                        <Select value={kind} onValueChange={(v) => setKind(v as Kind)}>
+                        <Select
+                            value={kind}
+                            onValueChange={(v) => {
+                                setKind(v as Kind);
+                                setTargetInvalid(false);
+                            }}
+                        >
                             <SelectTrigger id="item-kind" className="w-full">
                                 <SelectValue />
                             </SelectTrigger>
@@ -198,14 +210,20 @@ export function ItemDialog({
                         />
                     </FormRow>
 
-                    <FormRow>
+                    <FormRow className="gap-y-1">
                         <FieldLabel htmlFor="item-target">{t("item.target")}</FieldLabel>
                         <div className="flex gap-2">
                             <Input
                                 id="item-target"
+                                ref={targetRef}
                                 placeholder={targetLabel}
                                 value={target}
-                                onChange={(e) => setTarget(e.target.value)}
+                                onChange={(e) => {
+                                    setTarget(e.target.value);
+                                    setTargetInvalid(false);
+                                }}
+                                aria-invalid={targetInvalid || undefined}
+                                aria-describedby={targetInvalid ? "item-target-error" : undefined}
                                 required
                                 maxLength={1000}
                                 className="flex-1"
@@ -248,6 +266,11 @@ export function ItemDialog({
                                 </Button>
                             )}
                         </div>
+                        {targetInvalid && (
+                            <FieldError id="item-target-error" className="col-start-2">
+                                {t("item.target.invalidBookmark")}
+                            </FieldError>
+                        )}
                     </FormRow>
 
                     {/* args 列被 app（启动参数）与 command（工作目录）复用；command 额外给「浏览…」 */}

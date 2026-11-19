@@ -71,13 +71,14 @@ export const en: Record<MessageKey, string> = {
     "settings.hotkeyBlockHint":
         "The summon hotkey does nothing while one of these apps is in front (e.g. a fullscreen game, so a slip of the finger won't pop it up). One program file name per line, like game.exe; you can find it on the Details tab of Task Manager.",
     "settings.clip": "Auto-paste window",
-    "settings.clipHint":
-        "On summon, text copied within this window is auto-filled into the search box (seconds; 0 = off)",
+    "settings.clip.unit": "sec",
+    "settings.clipHint": "On summon, text copied within this window is auto-filled into the search box (0 = off)",
     "settings.scratchClose": "Auto-close tools",
     "settings.scratchClose.off": "Off",
     "settings.scratchClose.unit": "min",
+    "settings.scratchClose.warning": "Unsaved content is lost without warning.",
     "settings.scratchCloseHint":
-        "Once the window has been hidden, or you've been in another workspace, for this long, the tools open in the scratch workspace are closed (terminals and browsers stay). Unsaved content is lost, and there is no notice when it happens.",
+        "Once the window has been hidden, or you've been in another workspace, for this long, the tools open in the scratch workspace are closed (terminals and browsers stay).",
     "settings.info": "Runtime",
     "settings.dataDir": "Data directory",
     "settings.dataDir.change": "Change…",
@@ -213,6 +214,7 @@ export const en: Record<MessageKey, string> = {
     "item.title": "Title",
     "item.target": "Target",
     "item.target.bookmark": "URL (https://…)",
+    "item.target.invalidBookmark": "Enter a valid HTTP or HTTPS address.",
     "item.target.app": "Program path (e.g. D:\\Apps\\app.exe)",
     "item.target.file": "File or folder path (e.g. D:\\Projects)",
     "item.target.command": "Command (e.g. pnpm dev)",
@@ -585,7 +587,7 @@ export const en: Record<MessageKey, string> = {
     "side.title": "Quick launch",
     "side.addItem": "Add launch item",
     "side.empty": "No launch items yet",
-    "side.emptyHint": "Use the + button to add a bookmark, app, file or command.",
+    "side.emptyHint": "You can also drag a link, app, file, or folder here.",
     "side.dropMany": "Only one at a time — took the first",
 
     // ── workspaces at the top of the sidebar ──

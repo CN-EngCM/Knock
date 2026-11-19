@@ -68,12 +68,14 @@ export const zh = {
     "settings.hotkeyBlockHint":
         "这些程序在最前面时，呼出热键不响应（比如全屏游戏，免得手滑弹出来）。一行一个程序文件名，如 game.exe，可在任务管理器的「详细信息」页签里看到。",
     "settings.clip": "自动粘贴时限",
-    "settings.clipHint": "呼出时，时限内复制的文本自动填入搜索框（秒；0 = 关闭）",
+    "settings.clip.unit": "秒",
+    "settings.clipHint": "呼出时，时限内复制的文本自动填入搜索框（0 = 关闭）",
     "settings.scratchClose": "小工具自动关闭",
     "settings.scratchClose.off": "关闭",
     "settings.scratchClose.unit": "分钟",
+    "settings.scratchClose.warning": "自动关闭时不提示，未保存的内容会丢失。",
     "settings.scratchCloseHint":
-        "窗口藏起来，或当前不在临时工作区，满这么久后，自动关掉临时工作区里打开的小工具（终端和浏览器不关）。没保存的内容会丢，关闭时没有提示。",
+        "窗口隐藏或切到其他工作区达到设定时长后，自动关掉临时工作区里打开的小工具（终端和浏览器不关）。",
     "settings.info": "运行环境",
     "settings.dataDir": "数据目录",
     "settings.dataDir.change": "更改…",
@@ -206,6 +208,7 @@ export const zh = {
     "item.title": "标题",
     "item.target": "目标",
     "item.target.bookmark": "URL（https://…）",
+    "item.target.invalidBookmark": "请输入有效的 HTTP 或 HTTPS 网址。",
     "item.target.app": "程序路径（如 D:\\Apps\\app.exe）",
     "item.target.file": "文件或文件夹路径（如 D:\\Projects）",
     "item.target.command": "命令（如 pnpm dev）",
@@ -569,9 +572,9 @@ export const zh = {
 
     // ── 左侧快捷启动 / 工具首页 ──
     "side.title": "快捷启动",
-    "side.addItem": "添加启动项",
+    "side.addItem": "添加快捷启动项",
     "side.empty": "还没有快捷启动项",
-    "side.emptyHint": "点右上角的加号，添加网页、应用、文件或命令。",
+    "side.emptyHint": "也可以把网页链接、应用、文件或文件夹拖到这里。",
     "side.dropMany": "一次只能添加一个，已取第一个",
 
     // ── 侧栏顶部的工作区 ──

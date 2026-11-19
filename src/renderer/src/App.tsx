@@ -28,7 +28,7 @@ import {
     type Workspace,
 } from "./api/client";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Marker } from "@/components/ui/marker";
 import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
@@ -1175,11 +1175,22 @@ export default function App() {
                                 /* 冷启动空态：引导只占左栏，右侧工具与终端不受影响；
                                    图标条里这段话塞不下，不显示，只剩上面的「＋」 */
                                 !sidebarCollapsed && (
-                                    <Empty className="px-3 py-8">
+                                    <Empty className="max-h-full justify-start overflow-y-auto px-3 py-5">
                                         <EmptyHeader>
                                             <EmptyTitle>{t("side.empty")}</EmptyTitle>
                                             <EmptyDescription>{t("side.emptyHint")}</EmptyDescription>
                                         </EmptyHeader>
+                                        <EmptyContent>
+                                            <Button
+                                                type="button"
+                                                appearance="standard"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setDialog({ kind: "item-create", workspaceId: null })}
+                                            >
+                                                {t("side.addItem")}
+                                            </Button>
+                                        </EmptyContent>
                                     </Empty>
                                 )
                             ) : (
