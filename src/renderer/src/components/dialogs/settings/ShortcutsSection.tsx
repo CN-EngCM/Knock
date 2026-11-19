@@ -36,6 +36,7 @@ const GROUPS: { title: MessageKey; rows: Row[] }[] = [
             { keys: ["Ctrl+Enter"], desc: "shortcut.notes" },
             { keys: ["Ctrl+Enter"], desc: "shortcut.translate" },
             { keys: ["Ctrl+Enter"], desc: "shortcut.files" },
+            { keys: ["↑", "↓"], desc: "gallery.favorite.shortcutSettings" },
             { keys: ["Shift+Enter"], desc: "shortcut.termNewline" },
             { keys: ["Ctrl+V"], desc: "shortcut.termPaste" },
         ],

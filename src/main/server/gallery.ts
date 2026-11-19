@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { readFile, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { promisify } from "node:util";
@@ -14,6 +14,7 @@ import { withNativeDialog } from "./util/nativeDialog";
 import { getSetting, setSetting } from "./util/settings";
 import {
     GALLERY_FORMATS,
+    GALLERY_GROUP_NAME_MAX,
     type GalleryCandidate,
     type GalleryDownloadInput,
     type GalleryGroup,
@@ -68,29 +69,16 @@ function thumbsDir(): string {
 }
 
 // better-sqlite3 的 .all()/.get() 返回 unknown[]，在 SQL 边界断言成行类型（同 api.ts 的 as* 约定）。
-// inWall 在 SQL 里是 EXISTS 的 0/1，查询收尾处再折成 boolean
-type ImageRow = Omit<GalleryImage, "tags" | "inWall"> & { inWall: number };
-
-/** 幂等播种内置收件箱：name 固定存「收件箱」，渲染端对 inbox=1 的组用 i18n 键显示，DB 名不参与展示 */
-function ensureInbox(): void {
-    db.prepare(
-        "INSERT INTO gallery_groups (name, inbox, created_at) SELECT '收件箱', 1, ? " +
-            "WHERE NOT EXISTS (SELECT 1 FROM gallery_groups WHERE inbox = 1)",
-    ).run(Date.now());
-}
+type ImageRow = Omit<GalleryImage, "tags" | "favorite"> & { favorite: number };
 
 // 导入/删除等热路径循环里反复用的语句提为模块级复用（better-sqlite3 不缓存
 // prepared statement，函数内每次调用都重新编译）；就近声明，读函数不用跳转
-const stmtGroupById = db.prepare("SELECT id, inbox FROM gallery_groups WHERE id = ?");
+const stmtGroupExists = db.prepare("SELECT 1 FROM gallery_groups WHERE id = ?");
 const stmtGroupName = db.prepare("SELECT name FROM gallery_groups WHERE id = ?");
 const stmtGroupFilePrefix = db.prepare("SELECT file FROM gallery_images WHERE group_id = ? LIMIT 1");
 const stmtShaExists = db.prepare("SELECT 1 FROM gallery_images WHERE sha256 = ?");
 const stmtImageExists = db.prepare("SELECT 1 FROM gallery_images WHERE id = ?");
 const stmtFileTaken = db.prepare("SELECT 1 FROM gallery_images WHERE file = ?");
-
-function getGroup(id: number): { id: number; inbox: number } | undefined {
-    return stmtGroupById.get(id) as { id: number; inbox: number } | undefined;
-}
 
 // ── 组文件夹：图片按分组名落 gallery/<组文件夹>/，不再平级堆在 gallery/ 根 ──
 
@@ -108,26 +96,37 @@ function sanitizeFolderName(groupId: number, name: string): string {
     return !f || /^(con|prn|aux|nul|com\d|lpt\d)$/i.test(f) ? `group-${groupId}` : f;
 }
 
-/** 文件夹名是否已被占用：目录存在且非空（空目录无害，可复用）。读失败（权限等，
- *  非「不存在」）保守视为占用 */
+/** 导入会先创建目录再写入图片，已经存在的空目录也算占用，避免两个组写入同一目录。 */
 function folderTaken(dir: string): boolean {
     try {
-        return readdirSync(dir).length > 0;
+        lstatSync(dir);
+        return true;
     } catch (e) {
-        return (e as NodeJS.ErrnoException).code !== "ENOENT";
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+        return false;
     }
 }
 
-/** 现算组文件夹名（并确保目录存在），不信任行内前缀：组名清洗而来，与其他组的
- *  现存目录撞名则兜底 group-<id>（DB 允许重名组，磁盘不允许混居）。同一组无图期间
- *  现算结果可能因他组先占了目录而变，但无图 = 无文件，只影响未来写入，一致性无损 */
+/** 同名分组各用独立目录。改名时允许继续使用当前目录。 */
+function availableGroupFolder(groupId: number, name: string, current?: string): string {
+    const preferred = sanitizeFolderName(groupId, name);
+    if (preferred === current || !folderTaken(join(galleryDir(), preferred))) return preferred;
+    const base = `group-${groupId}`;
+    let folder = base;
+    for (let n = 2; folder !== current && folderTaken(join(galleryDir(), folder)); n++) folder = `${base}-${n}`;
+    return folder;
+}
+
+/** 分组还没有图片路径可用时分配目录。查询占用和创建目录连续执行。 */
 function computeGroupFolder(groupId: number): string {
     const name = stmtGroupName.get(groupId) as { name: string } | undefined;
-    let f = name ? sanitizeFolderName(groupId, name.name) : `group-${groupId}`;
-    if (folderTaken(join(galleryDir(), f))) f = `group-${groupId}`;
-    mkdirSync(join(galleryDir(), f), { recursive: true });
+    const f = availableGroupFolder(groupId, name?.name ?? `group-${groupId}`);
+    mkdirSync(join(galleryDir(), f));
     return f;
 }
+
+// 第一张图片入库前还没有路径可查；同一组的并发写入共用已分配的目录。
+const pendingGroupFolders = new Map<number, string>();
 
 /** 组的磁盘文件夹名：组已有图片则以行内 file 前缀为准——磁盘现状优先，改名/移动后的
  *  寻址恒定。前缀只对含 / 的行可信（含 / = 已是「组文件夹/文件名」形态）；不含 / 的
@@ -135,7 +134,11 @@ function computeGroupFolder(groupId: number): string {
 function groupFolder(groupId: number): string {
     const row = stmtGroupFilePrefix.get(groupId) as { file: string } | undefined;
     if (row && row.file.includes("/")) return row.file.split("/")[0];
-    return computeGroupFolder(groupId);
+    const pending = pendingGroupFolders.get(groupId);
+    if (pending) return pending;
+    const folder = computeGroupFolder(groupId);
+    pendingGroupFolders.set(groupId, folder);
+    return folder;
 }
 
 /** 一次性归位迁移（模块加载即执行，幂等可重跑；全部行归位后写 galleryFoldersMigrated
@@ -236,25 +239,22 @@ export function unlockLibrary(password: string): ApiResult<null> {
         : { ok: false, error: { kind: "gallery", code: "wrong-password" } };
 }
 
-/** 分组标记/取消私密。锁定与否不影响标记本身；收件箱同改名/删除一律拒绝 */
+/** 分组标记或取消私密，锁定状态不影响标记本身 */
 export function setGroupPrivate(id: number, isPrivate: boolean): ApiResult<null> {
-    const row = getGroup(id);
-    if (!row) return notFound;
-    if (row.inbox !== 0) return badRequest;
+    if (!stmtGroupExists.get(id)) return notFound;
     db.prepare("UPDATE gallery_groups SET private = ? WHERE id = ?").run(isPrivate ? 1 : 0, id);
     return { ok: true, data: null };
 }
 
-export function listGroups(password?: string): ApiResult<GalleryGroup[]> {
-    ensureInbox();
+function listGroups(password?: string): ApiResult<GalleryGroup[]> {
     // 锁定视角直接不下发私密分组行——渲染端无需（也不该）自行过滤
     const rows = db
         .prepare(
-            `SELECT id, name, inbox, private FROM gallery_groups ${
+            `SELECT id, name, private FROM gallery_groups ${
                 unlockedView(password) ? "" : "WHERE private = 0"
-            } ORDER BY inbox DESC, id ASC`,
+            } ORDER BY id ASC`,
         )
-        .all() as { id: number; name: string; inbox: number; private: number }[];
+        .all() as { id: number; name: string; private: number }[];
     // count 一把查询后 JS 拼装：个人工具规模，比按行关联子查询直白
     const counts = new Map<number, number>();
     for (const r of db.prepare("SELECT group_id, COUNT(*) AS n FROM gallery_images GROUP BY group_id").all() as {
@@ -268,7 +268,6 @@ export function listGroups(password?: string): ApiResult<GalleryGroup[]> {
         data: rows.map((r) => ({
             id: r.id,
             name: r.name,
-            inbox: r.inbox !== 0,
             private: r.private !== 0,
             count: counts.get(r.id) ?? 0,
         })),
@@ -276,31 +275,24 @@ export function listGroups(password?: string): ApiResult<GalleryGroup[]> {
 }
 
 export function createGroup(name: string): ApiResult<{ id: number }> {
-    const info = db
-        .prepare("INSERT INTO gallery_groups (name, inbox, created_at) VALUES (?, 0, ?)")
-        .run(name, Date.now());
+    const info = db.prepare("INSERT INTO gallery_groups (name, created_at) VALUES (?, ?)").run(name, Date.now());
     return { ok: true, data: { id: Number(info.lastInsertRowid) } };
 }
 
-/** 收件箱是内置组：改名/删除一律拒绝（渲染端按 inbox 字段隐藏入口，这里兜底）。
- *  改名连带把组文件夹一起 rename 并回写行内 file 前缀——先挪磁盘再改行（挪失败即报错，
+/** 改名连带把组文件夹一起 rename 并回写行内 file 前缀——先挪磁盘再改行（挪失败即报错，
  *  行不动，下次重试）；行 UPDATE 与文件夹 rename 之间的崩溃窗口是已知取舍（个人工具，
  *  404 兜底），先物理后 DB 让「行永远指向真实位置」的概率最大化 */
 export function renameGroup(id: number, name: string): ApiResult<null> {
-    const row = getGroup(id);
-    if (!row) return notFound;
-    if (row.inbox !== 0) return badRequest;
+    if (!stmtGroupExists.get(id)) return notFound;
     const prefixRow = stmtGroupFilePrefix.get(id) as { file: string } | undefined;
     if (prefixRow) {
         const old = prefixRow.file.split("/")[0];
-        let folder = sanitizeFolderName(id, name);
-        if (folder !== old && folderTaken(join(galleryDir(), folder))) folder = `group-${id}`;
-        if (folder !== old) {
-            try {
-                renameSync(join(galleryDir(), old), join(galleryDir(), folder));
-            } catch (e) {
-                return { ok: false, error: { kind: "failed", path: String(e) } };
-            }
+        let folder: string;
+        try {
+            folder = availableGroupFolder(id, name, old);
+            if (folder !== old) renameSync(join(galleryDir(), old), join(galleryDir(), folder));
+        } catch (e) {
+            return { ok: false, error: { kind: "failed", path: String(e) } };
         }
         db.transaction(() => {
             db.prepare("UPDATE gallery_groups SET name = ? WHERE id = ?").run(name, id);
@@ -319,9 +311,7 @@ export function renameGroup(id: number, name: string): ApiResult<null> {
 }
 
 export async function deleteGroup(id: number): Promise<ApiResult<null>> {
-    const row = getGroup(id);
-    if (!row) return notFound;
-    if (row.inbox !== 0) return badRequest;
+    if (!stmtGroupExists.get(id)) return notFound;
     // 先查文件清单再删行：行没了就再也找不到磁盘上的图了。
     // 删组行即可——images 与 tag 都由 FK ON DELETE CASCADE 级联清掉
     const images = db.prepare("SELECT id, file, format FROM gallery_images WHERE group_id = ?").all(id) as {
@@ -330,6 +320,7 @@ export async function deleteGroup(id: number): Promise<ApiResult<null>> {
         format: string;
     }[];
     db.prepare("DELETE FROM gallery_groups WHERE id = ?").run(id);
+    pendingGroupFolders.delete(id);
     for (const img of images) await removeImageFiles(img.id, img.file, img.format);
     // 组目录收尾：文件都删净了顺手移走空目录；非空（个别文件删失败/异常残留）留着当垃圾
     if (images.length > 0) {
@@ -359,14 +350,7 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
     // where 片段与参数严格按同一顺序推进（group → search → tags），别打乱
     const where: string[] = [];
     const params: (string | number)[] = [];
-    if (input.group === "wall") {
-        // 画廊视图：成员籍交集。私密图仅解锁视角下发（画廊是用户主动策展的，
-        // 解锁后要能放进放映——与「全部」解锁也不混入私密的规则刻意不同）
-        where.push("id IN (SELECT image_id FROM gallery_wall)");
-        if (!unlockedView(input.password)) {
-            where.push("group_id NOT IN (SELECT id FROM gallery_groups WHERE private = 1)");
-        }
-    } else if (input.group !== "all") {
+    if (input.group !== "all") {
         // 私密分组在锁定视角下拒绝（渲染端锁定时根本拿不到该组，属兜底）；
         // 组不存在照走空结果（与既有行为一致）
         const grp = db.prepare("SELECT private FROM gallery_groups WHERE id = ?").get(input.group) as
@@ -381,6 +365,7 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
         // 「全部」的计数与内容稳定不跳变，想看私密走侧栏底部的锁入口
         where.push("group_id NOT IN (SELECT id FROM gallery_groups WHERE private = 1)");
     }
+    if (input.favoriteOnly) where.push("favorite = 1");
     if (input.search) {
         where.push("title LIKE ? ESCAPE '\\'");
         params.push(`%${escapeLike(input.search)}%`);
@@ -397,20 +382,15 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
         );
         params.push(...tags);
     }
-    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-    // ORDER BY 取自固定词表，无用户输入参与拼接。画廊的「时间」序 = 加入顺序（position，
-    // 即放映顺序）——对画廊来说 created_at（图片导入时间）反而是错的维度
-    const orderBy =
-        input.group === "wall" && input.sort === "time"
-            ? "(SELECT position FROM gallery_wall WHERE image_id = gallery_images.id) ASC"
-            : ORDER_BY[input.sort];
+    const whereSql = `WHERE ${where.join(" AND ")}`;
+    const orderBy = ORDER_BY[input.sort];
 
     const total = (db.prepare(`SELECT COUNT(*) AS n FROM gallery_images ${whereSql}`).get(...params) as { n: number })
         .n;
     const rows = db
         .prepare(
-            `SELECT id, group_id AS groupId, title, bytes, width, height, format, source_path AS sourcePath, created_at AS createdAt,
-                    EXISTS(SELECT 1 FROM gallery_wall WHERE image_id = id) AS inWall
+            `SELECT id, group_id AS groupId, title, bytes, width, height, format, source_path AS sourcePath,
+                    created_at AS createdAt, favorite
              FROM gallery_images ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
         )
         .all(...params, input.limit, input.offset) as ImageRow[];
@@ -430,66 +410,26 @@ export function queryImages(input: GalleryQueryInput): ApiResult<{ total: number
     }
     return {
         ok: true,
-        data: { total, items: rows.map((r) => ({ ...r, inWall: r.inWall !== 0, tags: tagsOf.get(r.id) ?? [] })) },
+        data: { total, items: rows.map((r) => ({ ...r, favorite: r.favorite === 1, tags: tagsOf.get(r.id) ?? [] })) },
     };
 }
 
-// ── 画廊（放映墙）──
-// 跨分组的成员籍叠加：图片仍属原分组（gallery_images.group_id 不动），这里只记在册状态。
-// 快照语义：整组加入收的是那一刻的成员，之后组内增删不自动跟随（再整组加入 = 幂等并集）。
-// 图片删除/分组删除时 FK ON DELETE CASCADE 自动移出画廊（foreign_keys 已开，见 db.ts）。
-
-/** 画廊可见计数（侧栏行）：锁定视角剔除私密组的图——与画廊查询同一隔离边界 */
-function wallCount(password?: string): ApiResult<{ count: number }> {
-    const privateFilter = unlockedView(password)
-        ? ""
-        : " AND group_id NOT IN (SELECT id FROM gallery_groups WHERE private = 1)";
-    const n = (
-        db
-            .prepare(
-                `SELECT COUNT(*) AS n FROM gallery_images
-                 WHERE id IN (SELECT image_id FROM gallery_wall)${privateFilter}`,
-            )
-            .get() as { n: number }
-    ).n;
-    return { ok: true, data: { count: n } };
-}
-
-/** 批量加入画廊（ids 须已过 zod 校验）；已在册/不存在的 id 幂等跳过，返回真正新增数 */
-function wallAddInner(ids: number[]): { added: number } {
-    const exists = db.prepare("SELECT 1 FROM gallery_images WHERE id = ?");
-    const ins = db.prepare("INSERT OR IGNORE INTO gallery_wall (image_id, position, added_at) VALUES (?, ?, ?)");
-    let pos = (db.prepare("SELECT IFNULL(MAX(position), 0) AS m FROM gallery_wall").get() as { m: number }).m;
-    let added = 0;
-    db.transaction(() => {
-        for (const id of ids) {
-            if (!exists.get(id)) continue; // 行已不存在（渲染端列表过期）：跳过不炸
-            const r = ins.run(id, pos + 1, Date.now());
-            if (r.changes > 0) {
-                pos += 1;
-                added += 1;
-            }
-        }
-    })();
-    return { added };
-}
-
-export function wallAdd(ids: number[]): ApiResult<{ added: number }> {
-    return { ok: true, data: wallAddInner(ids) };
-}
-
-/** 整组加入（含收件箱）：服务端直接取组内成员入册，免去渲染端翻页收集 id */
-export function wallAddGroup(groupId: number): ApiResult<{ added: number }> {
-    if (!getGroup(groupId)) return notFound;
-    const ids = db.prepare("SELECT id FROM gallery_images WHERE group_id = ?").all(groupId) as { id: number }[];
-    return { ok: true, data: wallAddInner(ids.map((r) => r.id)) };
-}
-
-export function wallRemove(ids: number[]): ApiResult<null> {
-    const del = db.prepare("DELETE FROM gallery_wall WHERE image_id = ?");
-    db.transaction(() => {
-        for (const id of ids) del.run(id);
-    })();
+/**
+ * 保存图片的收藏状态。
+ * @param id 图片编号。
+ * @param favorite 要保存的收藏状态。
+ * @param password 修改私密分组内图片时使用的图库密码。
+ * @returns 保存结果，包含图片不存在或图库锁定的错误。
+ */
+export function setImageFavorite(id: number, favorite: boolean, password?: string): ApiResult<null> {
+    const group = db
+        .prepare("SELECT g.private FROM gallery_images i JOIN gallery_groups g ON g.id = i.group_id WHERE i.id = ?")
+        .get(id) as { private: number } | undefined;
+    if (!group) return notFound;
+    if (group.private !== 0 && !unlockedView(password)) {
+        return { ok: false, error: { kind: "gallery", code: "locked" } };
+    }
+    db.prepare("UPDATE gallery_images SET favorite = ? WHERE id = ?").run(favorite ? 1 : 0, id);
     return { ok: true, data: null };
 }
 
@@ -573,6 +513,7 @@ async function saveImage(
             sourcePath,
             Date.now(),
         );
+        pendingGroupFolders.delete(groupId);
         return true;
     } catch {
         await rm(join(galleryDir(), file), { force: true }).catch(() => {});
@@ -581,11 +522,20 @@ async function saveImage(
 }
 
 export async function importFiles(files: string[], groupId: number): Promise<ApiResult<GalleryImportStats>> {
-    ensureInbox();
-    if (!getGroup(groupId)) return notFound;
-    const folder = groupFolder(groupId);
+    if (!stmtGroupExists.get(groupId)) return notFound;
+    const { imported, skipped } = await importLocalFiles(files, groupId);
+    return { ok: true, data: { imported, skipped } };
+}
+
+/** 文件和文件夹导入共用图片读取、去重和落盘规则。 */
+async function importLocalFiles(
+    files: string[],
+    groupId: number,
+): Promise<GalleryImportStats & { duplicates: number }> {
+    let folder: string | undefined;
     let imported = 0;
     let skipped = 0;
+    let duplicates = 0;
     // 一张一张顺序 await：同时读多张大图会把内存和磁盘都顶满
     for (const f of files) {
         const ext = normalizeExt(f);
@@ -603,13 +553,57 @@ export async function importFiles(files: string[], groupId: number): Promise<Api
         const sha = createHash("sha256").update(buf).digest("hex");
         if (shaExists(sha)) {
             skipped++; // 内容去重：同内容全库只收一份
+            duplicates++;
             continue;
         }
+        folder ??= groupFolder(groupId);
         const name = await writeNewFile(folder, basename(f), buf);
         if (await saveImage(groupId, basename(f), name, sha, buf, f)) imported++;
-        else skipped++;
+        else {
+            skipped++;
+            if (shaExists(sha)) duplicates++;
+        }
     }
-    return { ok: true, data: { imported, skipped } };
+    return { imported, skipped, duplicates };
+}
+
+/** 只读取拖入目录中的普通文件。成功导入的图片与分组一起保留。 */
+export async function importFolder(path: string): Promise<ApiResult<GalleryImportStats & { groupId: number }>> {
+    const name = basename(path)
+        .trimStart()
+        .slice(0, GALLERY_GROUP_NAME_MAX)
+        .replace(/[\uD800-\uDBFF]$/, "")
+        .trimEnd();
+    if (!name) return { ok: false, error: { kind: "gallery-folder", code: "invalidName" } };
+
+    const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
+    if (!entries) return { ok: false, error: { kind: "gallery-folder", code: "unreadable" } };
+    if (entries.length === 0) return { ok: false, error: { kind: "gallery-folder", code: "empty" } };
+    const files = entries
+        .filter((entry) => entry.isFile() && (GALLERY_FORMATS as readonly string[]).includes(normalizeExt(entry.name)))
+        .map((entry) => join(path, entry.name));
+    if (files.length === 0) return { ok: false, error: { kind: "gallery-folder", code: "noImages" } };
+
+    const group = createGroup(name);
+    if (!group.ok) return group;
+    const groupId = group.data.id;
+    try {
+        const { imported, skipped, duplicates } = await importLocalFiles(files, groupId);
+        if (imported > 0) return { ok: true, data: { groupId, imported, skipped } };
+        return {
+            ok: false,
+            error: { kind: "gallery-folder", code: duplicates === files.length ? "duplicates" : "unreadable" },
+        };
+    } catch (e) {
+        return { ok: false, error: { kind: "failed", path: String(e) } };
+    } finally {
+        const deleted = db
+            .prepare(
+                "DELETE FROM gallery_groups WHERE id = ? AND NOT EXISTS (SELECT 1 FROM gallery_images WHERE group_id = ?)",
+            )
+            .run(groupId, groupId);
+        if (deleted.changes > 0) pendingGroupFolders.delete(groupId);
+    }
 }
 
 /** 剪贴板落图文件名：本地时间戳；同一秒多张由 uniqueName 加序号区分 */
@@ -622,7 +616,7 @@ function pasteName(): string {
 export async function pasteFromClipboard(groupId: number): Promise<ApiResult<GalleryImportStats>> {
     const img = clipboard.readImage();
     if (img.isEmpty()) return { ok: false, error: { kind: "gallery", code: "no-image" } };
-    if (!getGroup(groupId)) return notFound;
+    if (!stmtGroupExists.get(groupId)) return notFound;
     const buf = img.toPNG();
     const sha = createHash("sha256").update(buf).digest("hex");
     if (shaExists(sha)) return { ok: true, data: { imported: 0, skipped: 1 } };
@@ -825,23 +819,6 @@ async function downloadBytes(
     });
 }
 
-/** 渲染侧 document.title 的清洗：去内嵌标签、压空白、解码常见实体，截断 50（对齐分组名 schema 上限）；
- *  网址导入单独成组的组名首选 */
-function cleanTitle(raw: string): string | null {
-    const s = raw
-        .replace(/<[^>]*>/g, "")
-        .replace(/\s+/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#0?39;/g, "'")
-        .replace(/&nbsp;/gi, " ")
-        .trim()
-        .slice(0, 50);
-    return s || null;
-}
-
 /** Content-Type → 格式（与 MIME 表互逆；octet-stream 等不在此列，靠魔数/URL 扩展名兜底） */
 const MIME_TO_FORMAT: Record<string, string> = {
     "image/jpeg": "jpg",
@@ -919,7 +896,7 @@ function waitStopLoading(win: BrowserWindow, ms: number): Promise<void> {
 }
 
 /** 渲染收集页面：隐藏窗口真实加载后，从 DOM 一次性收「图片 URL 全集 + 各 URL 的实际
- *  显示尺寸 + <title> + 下一页链接」，结果并进会话 displaySizes。SPA 站（pixiv 等）的
+ *  显示尺寸 + 下一页链接」，结果并进会话 displaySizes。SPA 站（pixiv 等）的
  *  作品图是 JS 插入的，静态 HTML 里只有页脚图标——渲染后的 DOM 才是全量，这是把旧
  *  「只量显示尺寸」的渲染升级为收集主路径的原因。约定：
  *  - 图片允许真实加载（实测教训：images:false 下进入懒加载视口的图会「尝试加载→失败」
@@ -1058,7 +1035,6 @@ export async function renderPage(url: string): Promise<ApiResult<GalleryPageResu
                         urls: Array.from(urls),
                         sizes: Array.from(sizes, ([src, b]) => ({ src: src, w: b.w, h: b.h })),
                         nextUrl: nextUrl,
-                        title: document.title,
                     });
                 })()`)) as string;
         })();
@@ -1073,7 +1049,6 @@ export async function renderPage(url: string): Promise<ApiResult<GalleryPageResu
             urls: string[];
             sizes: { src: string; w: number; h: number }[];
             nextUrl: string;
-            title: string;
         };
         for (const it of data.sizes) {
             if (!it.src || it.w <= 0 || it.h <= 0) continue;
@@ -1086,7 +1061,6 @@ export async function renderPage(url: string): Promise<ApiResult<GalleryPageResu
             data: {
                 imageUrls: data.urls,
                 nextUrl: data.nextUrl || null,
-                title: cleanTitle(data.title || ""),
             },
         };
     } catch (e) {
@@ -1305,7 +1279,7 @@ function nameFromUrl(url: string, format: string): string {
 }
 
 export async function importCandidates(input: GalleryImportCandidatesInput): Promise<ApiResult<GalleryImportStats>> {
-    if (!getGroup(input.groupId)) return notFound;
+    if (!stmtGroupExists.get(input.groupId)) return notFound;
     const folder = groupFolder(input.groupId);
     let imported = 0;
     let skipped = 0;
@@ -1379,7 +1353,7 @@ export function deleteTag(tag: string): ApiResult<null> {
  *  大事务——先物理 rename 再改行（同 renameGroup 的顺序约定），rename 被占用等暂时性
  *  失败则跳过该行（图留在原组，可重试），源文件确实没了（ENOENT）照常改行（404 兜底） */
 export async function moveImages(ids: number[], groupId: number): Promise<ApiResult<null>> {
-    if (!getGroup(groupId)) return notFound;
+    if (!stmtGroupExists.get(groupId)) return notFound;
     const folder = groupFolder(groupId);
     const selFile = db.prepare("SELECT file FROM gallery_images WHERE id = ?");
     const upd = db.prepare("UPDATE gallery_images SET group_id = ?, file = ? WHERE id = ?");
@@ -1393,6 +1367,7 @@ export async function moveImages(ids: number[], groupId: number): Promise<ApiRes
             if ((e as NodeJS.ErrnoException).code !== "ENOENT") continue;
         }
         upd.run(groupId, rel, id);
+        pendingGroupFolders.delete(groupId);
     }
     return { ok: true, data: null };
 }
@@ -1497,19 +1472,16 @@ export async function saveThumb(id: number, bytes: Uint8Array): Promise<ApiResul
     return { ok: true, data: null };
 }
 
-/** 工具打开/刷新时一次取全侧栏需要的数据（分组、标签池、是否设密码、画廊计数），
- *  省掉四次 IPC 往返；各部分沿用原接口的口径（锁定视角过滤等） */
+/** 工具打开或刷新时一次取全侧栏需要的分组、标签池和密码设置状态 */
 export function overview(password?: string): ApiResult<GalleryOverview> {
     const groups = listGroups(password);
     const tags = allTags();
     const has = passwordState();
-    const wall = wallCount(password);
     if (!groups.ok) return groups;
     if (!tags.ok) return tags;
     if (!has.ok) return has;
-    if (!wall.ok) return wall;
     return {
         ok: true,
-        data: { groups: groups.data, tags: tags.data, hasPassword: has.data.has, wallCount: wall.data.count },
+        data: { groups: groups.data, tags: tags.data, hasPassword: has.data.has },
     };
 }

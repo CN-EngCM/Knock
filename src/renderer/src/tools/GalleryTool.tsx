@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { ImagePlus, Play } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown, Globe, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { Progress } from "@/components/ui/progress";
 import { StatusBar, StatusBarItem } from "@/components/ui/statusbar";
 import { Switch } from "@/components/ui/switch";
@@ -12,15 +13,14 @@ import { api, type GalleryGroup, type GalleryImage } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
 import { GroupSidebar } from "./gallery/GroupSidebar";
-import { ImageGrid } from "./gallery/ImageGrid";
+import { ImageGrid, type GridEmptyState } from "./gallery/ImageGrid";
 import { PasswordDialog } from "./gallery/PasswordDialog";
-import { Slideshow } from "./gallery/Slideshow";
 import { TagEditor } from "./gallery/TagEditor";
 import { UrlImport } from "./gallery/UrlImport";
 import { Viewer } from "./gallery/Viewer";
 import { FORMATS, extOf, fmt } from "./gallery/util";
 
-// 图库：左分组栏 + 右网格。数据编排都在这里——查询状态（分组/标签/搜索/排序）
+// 图库：顶部工具栏、左分组栏和右网格。查询状态（分组/标签/收藏/搜索/排序）
 // 是纯组件 state（TOOL_SPEC §5：运行时状态不还原），分页取 200 展 100 增量渲染；
 // 竞态防护用序号 ref（TranslateTool 同款）：查询变更推进序号，晚归旧包丢弃。
 
@@ -30,7 +30,7 @@ const DEBOUNCE_MS = 350; // 搜索输入防抖
 const IMPORT_BATCH = 16; // 导入分批大小（渲染端约定）
 
 type SortId = "time" | "name" | "size";
-type Query = { group: number | "all" | "wall"; tags: string[]; search: string; sort: SortId };
+type Query = { group: number | "all"; tags: string[]; search: string; sort: SortId; favoriteOnly: boolean };
 type ImportState = { total: number; done: number; skipped: number };
 type TagTarget = { mode: "image"; image: GalleryImage } | { mode: "batch"; ids: number[] };
 type ConfirmTarget =
@@ -50,11 +50,19 @@ const SORTS: readonly { id: SortId; key: MessageKey }[] = [
 export default function GalleryTool() {
     const { t } = useI18n();
     const rootRef = useRef<HTMLDivElement>(null);
+    const favoriteSwitchId = useId();
 
     // ── 数据 ──
     const [groups, setGroups] = useState<GalleryGroup[] | null>(null);
+    const [creatingGroup, setCreatingGroup] = useState(false);
     const [allTags, setAllTags] = useState<string[]>([]);
-    const [query, setQuery] = useState<Query>({ group: "all", tags: [], search: "", sort: "time" });
+    const [query, setQuery] = useState<Query>({
+        group: "all",
+        tags: [],
+        search: "",
+        sort: "time",
+        favoriteOnly: false,
+    });
     const [searchInput, setSearchInput] = useState("");
     const [items, setItems] = useState<GalleryImage[]>([]);
     const [total, setTotal] = useState(0);
@@ -70,7 +78,9 @@ export default function GalleryTool() {
     const [selectedIds, setSelectedIds] = useState<ReadonlySet<number>>(new Set());
     const anchorRef = useRef<number | null>(null); // Shift 范围选择的起点
     const [menuIds, setMenuIds] = useState<number[]>([]);
-    const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+    const [viewerId, setViewerId] = useState<number | null>(null);
+    const viewerIndex = viewerId == null ? -1 : items.findIndex((it) => it.id === viewerId);
+    const favoritePending = useRef(false);
     const [tagTarget, setTagTarget] = useState<TagTarget | null>(null);
     const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
     // 图库密码与解锁态：解锁 = 持有明文密码（随列表/查询携带）。只存组件 state
@@ -78,11 +88,8 @@ export default function GalleryTool() {
     const [pwSet, setPwSet] = useState(false); // 是否设了图库密码（锁定开关显隐的依据）
     const [unlocked, setUnlocked] = useState<string | null>(null);
     const [pwTarget, setPwTarget] = useState<PwTarget | null>(null);
-    // 从网址导入：入口在侧栏（导入内容自动单独成组，不落当前视图）
-    const [urlImport, setUrlImport] = useState(false);
-    // 画廊：侧栏计数 + 放映覆盖层（快照取全量，见 Slideshow）
-    const [wallCount, setWallCount] = useState(0);
-    const [slideshow, setSlideshow] = useState(false);
+    // 网址导入在打开弹窗时确定目标，抓取和分批入库期间沿用同一个分组。
+    const [urlImportGroup, setUrlImportGroup] = useState<Pick<GalleryGroup, "id" | "name"> | null>(null);
 
     function exitSelectMode() {
         setSelectMode(false);
@@ -93,7 +100,7 @@ export default function GalleryTool() {
     const [importing, setImporting] = useState<ImportState | null>(null);
     const importBusy = useRef(false);
     const cancelImport = useRef(false);
-    const [dragOver, setDragOver] = useState(false);
+    const [dragOver, setDragOver] = useState<"groups" | "grid" | null>(null);
 
     // 异步回调里要用的最新 state 快照（挂一次的 document 监听避免闭包过期）
     const queryRef = useRef(query);
@@ -105,18 +112,16 @@ export default function GalleryTool() {
 
     // 「全部图片」计数与后端隔离边界一致：私密分组永远不计（解锁与否都不进全部视图）
     const allCount = (groups ?? []).filter((g) => !g.private).reduce((s, g) => s + g.count, 0);
+    const importGroup = groups?.find((g) => g.id === query.group);
+    const importGroupId = importGroup?.id ?? null;
 
-    /** 重拉分组 + 全局 tag 池 + 密码状态 + 画廊计数（一次 IPC），返回新分组表（供「all 视图落收件箱」
-     *  即时取用）。pw = 解锁密码：锁定视角（缺省）下私密分组不随列表下发；密码状态顺带同步
-     *  （设置页改密后，锁入口显隐与解锁态在这里追平） */
-    async function refreshGroups(pw?: string): Promise<GalleryGroup[]> {
+    /** 重拉分组、标签池和密码状态，未传解锁密码时仅返回公开分组。 */
+    async function refreshGroups(pw?: string): Promise<void> {
         const r = await api.galleryOverview(pw);
-        if (!r.ok) return [];
+        if (!r.ok) return;
         setGroups(r.data.groups);
         setAllTags(r.data.tags);
         setPwSet(r.data.hasPassword);
-        setWallCount(r.data.wallCount);
-        return r.data.groups;
     }
 
     /** 任何变更操作后的统一刷新：重拉 groups + tags，图片查询重置到第一页 */
@@ -140,10 +145,7 @@ export default function GalleryTool() {
         setStatus("loading");
         void api
             .galleryImages({
-                group: query.group,
-                tags: query.tags,
-                search: query.search,
-                sort: query.sort,
+                ...query,
                 limit: PAGE,
                 offset: 0,
                 password: unlocked ?? undefined,
@@ -187,6 +189,7 @@ export default function GalleryTool() {
 
     // 增量渲染 + 翻页：先扩展示数，取回的不够看且库里还有再取下一页
     function loadMore() {
+        if (query.favoriteOnly && favoritePending.current) return;
         if (visibleCount < items.length) {
             setVisibleCount((c) => Math.min(c + STEP, items.length));
             return;
@@ -196,17 +199,14 @@ export default function GalleryTool() {
         const my = seq.current;
         void api
             .galleryImages({
-                group: query.group,
-                tags: query.tags,
-                search: query.search,
-                sort: query.sort,
+                ...query,
                 limit: PAGE,
                 offset: items.length,
                 password: unlockedRef.current ?? undefined,
             })
             .then((r) => {
-                fetchingMore.current = false;
                 if (my !== seq.current) return;
+                fetchingMore.current = false;
                 if (!r.ok) return;
                 const got = r.data.items;
                 setItems((prev) => [...prev, ...got]);
@@ -255,13 +255,12 @@ export default function GalleryTool() {
         function usable(): boolean {
             // dock 对非活动面板隐藏保活：offsetParent 为 null 时按键不归我们管
             if (rootRef.current?.offsetParent == null) return false;
-            if (viewerIndex != null) return false; // 查看器自己吃按键
-            if (slideshow) return false; // 放映层同理
+            if (viewerIndex >= 0) return false; // 查看器自己吃按键
             if (document.querySelector("[role=dialog]")) return false; // 弹窗打开时不抢
             return true;
         }
         function onKeyDown(e: KeyboardEvent) {
-            if (!selectMode) return;
+            if (!selectMode || e.defaultPrevented) return;
             if (e.ctrlKey || e.metaKey) {
                 if (e.key !== "a" && e.key !== "A") return;
                 if (!usable() || editable(e.target)) return;
@@ -276,24 +275,15 @@ export default function GalleryTool() {
         }
         document.addEventListener("keydown", onKeyDown);
         return () => document.removeEventListener("keydown", onKeyDown);
-    }, [items, viewerIndex, selectMode, slideshow]);
+    }, [items, viewerIndex, selectMode]);
 
     // ── 粘贴导入 ──
-    /** 粘贴/导入落点：组视图 = 当前组；all/wall 视图 = 收件箱（groups 未就绪先刷一把） */
-    async function targetGroupId(): Promise<number | null> {
-        const q = queryRef.current;
-        if (q.group !== "all" && q.group !== "wall") return q.group;
-        const gs = groupsRef.current ?? (await refreshGroups(unlockedRef.current ?? undefined));
-        return gs.find((g) => g.inbox)?.id ?? null;
-    }
-
-    async function pasteInto() {
-        const gid = await targetGroupId();
-        if (gid == null) {
-            toast.error(t("toast.error"));
+    async function pasteInto(hasImage: boolean) {
+        if (importGroupId == null) {
+            if (hasImage) toast(t("gallery.import.selectGroup"));
             return;
         }
-        const r = await api.galleryPaste(gid);
+        const r = await api.galleryPaste(importGroupId);
         if (!r.ok) {
             // no-image = 剪贴板里没图（用户多半在粘文本）：静默不吵
             if (!(r.error.kind === "gallery" && r.error.code === "no-image")) toast.error(t("toast.error"));
@@ -312,13 +302,22 @@ export default function GalleryTool() {
             if (rootRef.current?.offsetParent == null) return; // 别的 tab 里粘贴不误触
             const el = e.target as HTMLElement | null;
             if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
-            void pasteRef.current();
+            const hasImage = Array.from(e.clipboardData?.items ?? []).some((item) => item.type.startsWith("image/"));
+            void pasteRef.current(hasImage);
         }
         document.addEventListener("paste", onPaste);
         return () => document.removeEventListener("paste", onPaste);
     }, []);
 
     // ── 导入 ──
+    /** 汇总本地导入完成时写入和跳过的图片数量。 */
+    function showImportResult(imported: number, skipped: number) {
+        toast.success(
+            fmt(t("gallery.toast.imported"), { n: imported }) +
+                (skipped > 0 ? fmt(t("gallery.toast.skipped"), { n: skipped }) : ""),
+        );
+    }
+
     async function runImport(paths: string[], groupId: number) {
         const files = paths.filter((p) => FORMATS.includes(extOf(p)));
         if (files.length === 0 || importBusy.current) return;
@@ -342,50 +341,91 @@ export default function GalleryTool() {
         }
         setImporting(null);
         importBusy.current = false;
-        if (ok && imported + skipped > 0) {
-            toast.success(
-                fmt(t("gallery.toast.imported"), { n: imported }) +
-                    (skipped > 0 ? fmt(t("gallery.toast.skipped"), { n: skipped }) : ""),
-            );
-        }
+        if (ok && imported + skipped > 0) showImportResult(imported, skipped);
         refreshAll(); // 取消/失败也刷：让已导入的部分立刻可见
     }
 
     async function importFiles() {
+        const gid = importGroupId;
+        if (gid == null) {
+            toast(t("gallery.import.selectGroup"));
+            return;
+        }
         const r = await api.galleryPickFiles();
         if (!r.ok) {
             toast.error(t("toast.error"));
             return;
         }
         if (r.data.length === 0) return; // 空数组 = 取消选择
-        const gid = await targetGroupId();
-        if (gid == null) {
-            toast.error(t("toast.error"));
-            return;
-        }
         await runImport(r.data, gid);
     }
 
     function openUrlImport() {
-        setUrlImport(true);
+        if (!importGroup) {
+            toast(t("gallery.import.selectGroup"));
+            return;
+        }
+        setUrlImportGroup({ id: importGroup.id, name: importGroup.name });
+    }
+
+    /** 文件夹导入完成后选中新组，失败时刷新已成功写入的图片。 */
+    async function importFolder(path: string) {
+        if (importBusy.current) return;
+        importBusy.current = true;
+        const loading = toast.loading(t("gallery.folder.importing"));
+        try {
+            const result = await api.galleryImportFolder(path);
+            if (!result.ok) {
+                const { error } = result;
+                toast.error(error.kind === "gallery-folder" ? t(`gallery.folder.${error.code}`) : t("toast.error"));
+                return;
+            }
+            const { groupId, imported, skipped } = result.data;
+            setQuery((q) => ({ ...q, group: groupId }));
+            showImportResult(imported, skipped);
+        } catch {
+            toast.error(t("toast.error"));
+        } finally {
+            toast.dismiss(loading);
+            importBusy.current = false;
+            refreshAll();
+        }
+    }
+
+    /** 分组行只接收拖到当前选中行的文件，避免落到指针下方的其他分组。 */
+    function dropGroupId(target: EventTarget): number | null {
+        const row = (target as HTMLElement).closest<HTMLElement>("[data-gallery-group]");
+        return row && row.dataset.galleryGroup !== String(importGroupId) ? null : importGroupId;
     }
 
     function onRootDrop(e: React.DragEvent) {
+        if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
         e.stopPropagation();
-        setDragOver(false);
-        const paths = Array.from(e.dataTransfer.files)
-            .map((f) => window.knock.filePathFor(f))
-            .filter(Boolean);
-        if (paths.length === 0) return;
-        void (async () => {
-            const gid = await targetGroupId();
-            if (gid == null) {
-                toast.error(t("toast.error"));
+        setDragOver(null);
+        const files = Array.from(e.dataTransfer.files);
+        const target = e.target as HTMLElement;
+        if (
+            target.closest("[data-gallery-group-sidebar]") &&
+            Array.from(e.dataTransfer.items).some((item) => item.webkitGetAsEntry()?.isDirectory)
+        ) {
+            if (files.length !== 1) {
+                toast(t("gallery.folder.single"));
                 return;
             }
-            await runImport(paths, gid);
-        })();
+            const path = window.knock.filePathFor(files[0]);
+            if (path) void importFolder(path);
+            else toast.error(t("gallery.folder.unreadable"));
+            return;
+        }
+        const paths = files.map((f) => window.knock.filePathFor(f)).filter(Boolean);
+        if (paths.length === 0) return;
+        const gid = dropGroupId(e.target);
+        if (gid == null) {
+            toast(t("gallery.import.selectGroup"));
+            return;
+        }
+        void runImport(paths, gid);
     }
 
     // ── 分组操作 ──
@@ -396,6 +436,7 @@ export default function GalleryTool() {
             return false;
         }
         toast.success(t("toast.saved"));
+        setQuery((q) => ({ ...q, group: r.data.id }));
         refreshAll();
         return true;
     }
@@ -416,13 +457,12 @@ export default function GalleryTool() {
 
     // ── 图库密码（工具级一个）：解锁态 = 手上握着明文密码，锁定开关在工具条 ──
 
-    /** 锁定：立即收回私密内容。上锁永远免密；清掉可能含私密图的弹窗/查看器/放映层，
+    /** 锁定：立即收回私密内容。上锁永远免密；清掉可能含私密图的弹窗和查看器，
      *  当前组是私密则退回全部。分组表与「全部」由 [unlocked] effect 与主查询 effect 重拉 */
     function lockLibrary() {
         setUnlocked(null);
         setPwTarget(null);
-        setViewerIndex(null);
-        setSlideshow(false);
+        setViewerId(null);
         setTagTarget(null);
         setConfirmTarget(null);
         const q = queryRef.current;
@@ -478,10 +518,14 @@ export default function GalleryTool() {
         return true;
     }
 
-    // ── 网格菜单动作（作用于 menuIds）──
-    async function moveMenuTo(groupId: number) {
-        if (menuIds.length === 0) return;
-        const r = await api.galleryMoveImages(menuIds, groupId);
+    /**
+     * 移动工具栏选中项或右键菜单所指的图片。
+     * @param ids 要移动的图片编号。
+     * @param groupId 目标分组编号。
+     */
+    async function moveImagesTo(ids: number[], groupId: number) {
+        if (ids.length === 0) return;
+        const r = await api.galleryMoveImages(ids, groupId);
         if (!r.ok) {
             toast.error(t("toast.error"));
             return;
@@ -489,6 +533,8 @@ export default function GalleryTool() {
         toast.success(t("toast.saved"));
         refreshAll();
     }
+
+    // ── 网格菜单动作（作用于 menuIds）──
     async function openSingle() {
         if (menuIds.length !== 1) return;
         const r = await api.galleryOpenImage(menuIds[0]);
@@ -502,60 +548,6 @@ export default function GalleryTool() {
     function askDeleteMenu() {
         if (menuIds.length === 0) return;
         setConfirmTarget({ kind: "images", ids: [...menuIds] });
-    }
-
-    // ── 画廊（放映墙）：成员籍操作，图片本体与分组归属都不动 ──
-    // 三者都不走 refreshAll（reloadTick 会把网格滚动归零）：画廊成员籍不影响当前视图
-    // 的行集与顺序，本地补丁 + 重拉侧栏计数即可，滚动位置原地不动（用户实测反馈）。
-
-    /** 加入结果统一提示：有新增报数量，全在册报「已在画廊」（幂等并集的诚实反馈） */
-    function wallToast(added: number) {
-        toast.success(added > 0 ? fmt(t("gallery.wall.added"), { n: added }) : t("gallery.wall.already"));
-    }
-
-    /** 重拉侧栏（分组计数 + 画廊计数），不动网格 */
-    function refreshWallCount() {
-        void refreshGroups(unlockedRef.current ?? undefined);
-    }
-
-    async function wallAddMenu() {
-        if (menuIds.length === 0) return;
-        const r = await api.galleryWallAdd(menuIds);
-        if (!r.ok) {
-            toast.error(t("toast.error"));
-            return;
-        }
-        wallToast(r.data.added);
-        // 只补 inWall 标记（右键「加入画廊」的置灰依据），行集不变
-        const added = new Set(menuIds);
-        setItems((prev) => prev.map((it) => (added.has(it.id) ? { ...it, inWall: true } : it)));
-        refreshWallCount();
-    }
-    async function wallRemoveMenu() {
-        if (menuIds.length === 0) return;
-        const r = await api.galleryWallRemove(menuIds);
-        if (!r.ok) {
-            toast.error(t("toast.error"));
-            return;
-        }
-        toast.success(fmt(t("gallery.wall.removed"), { n: menuIds.length }));
-        // 画廊视图内就地过滤（同查看器删除的本地补丁先例）：行消失、滚动不跳
-        const removed = new Set(menuIds);
-        setItems((prev) => prev.filter((it) => !removed.has(it.id)));
-        setTotal((v) => Math.max(0, v - removed.size));
-        setSelectedIds((prev) => new Set([...prev].filter((id) => !removed.has(id))));
-        refreshWallCount();
-    }
-    async function wallAddGroup(group: GalleryGroup) {
-        const r = await api.galleryWallAddGroup(group.id);
-        if (!r.ok) {
-            toast.error(t("toast.error"));
-            return;
-        }
-        wallToast(r.data.added);
-        // 可见行里属于该组的补上 inWall；组内其余行不在当前视图，无需动
-        setItems((prev) => prev.map((it) => (it.groupId === group.id ? { ...it, inWall: true } : it)));
-        refreshWallCount();
     }
 
     // ── 确认删除（图片批量 / 分组 / 标签词）──
@@ -593,20 +585,81 @@ export default function GalleryTool() {
         toast.success(t("toast.deleted"));
         if (tg.fromViewer) {
             // 列表即时移除并指向相邻一张：优先同索引（原后一张），末尾退一格，全空关闭
-            const idx = viewerIndex ?? 0;
+            const idx = Math.max(viewerIndex, 0);
             const gone = new Set(tg.ids);
             const kept = items.filter((it) => !gone.has(it.id));
             setItems(kept);
             setTotal((v) => Math.max(0, v - tg.ids.length));
             setSelectedIds((prev) => new Set([...prev].filter((id) => !gone.has(id))));
-            if (kept.length === 0) setViewerIndex(null);
-            else setViewerIndex(Math.min(idx, kept.length - 1));
+            setViewerId((kept[idx] ?? kept[idx - 1])?.id ?? null);
             // 不走 refreshAll：reloadTick 会把列表重置回前 200 条、网格滚回顶部，
             // 本地补丁已让行集正确，只需追平侧栏计数
-            refreshWallCount();
+            void refreshGroups(unlockedRef.current ?? undefined);
             return;
         }
         refreshAll();
+    }
+
+    /**
+     * 保存收藏状态，并在收藏筛选中选择仍在列表中的相邻图片。
+     * @param image 正在查看的图片。
+     * @param favorite 要保存的收藏状态。
+     * @returns 保存和界面更新结束后完成。
+     */
+    async function setFavorite(image: GalleryImage, favorite: boolean): Promise<void> {
+        if (favoritePending.current || status !== "done") return;
+        favoritePending.current = true;
+        const removing = query.favoriteOnly && !favorite;
+        const index = viewerIndex;
+        const password = unlocked ?? undefined;
+        // 移除图片会改变后续页的偏移，丢弃按原偏移查询的分页结果。
+        const requestSeq = removing ? ++seq.current : seq.current;
+        if (removing) fetchingMore.current = false;
+        try {
+            const r = await api.gallerySetImageFavorite(image.id, favorite, password);
+            if (requestSeq !== seq.current) return;
+            if (!r.ok) {
+                if (r.error.kind === "gallery" && r.error.code === "locked") {
+                    lockLibrary();
+                    toast.error(t("gallery.pw.locked"));
+                } else {
+                    toast.error(t("toast.error"));
+                }
+                return;
+            }
+            if (!removing) {
+                setItems((prev) => prev.map((it) => (it.id === image.id ? { ...it, favorite } : it)));
+                return;
+            }
+
+            const following = items[index + 1];
+            let nextPageItem: GalleryImage | undefined;
+            let remaining = total - 1;
+            if (!following && items.length < total) {
+                // 当前图是已加载列表的末尾，移除后下一张会落在它原来的位置。
+                const page = await api.galleryImages({ ...query, limit: 1, offset: index, password }).catch(() => null);
+                if (requestSeq !== seq.current) return;
+                if (page?.ok) {
+                    nextPageItem = page.data.items[0];
+                    remaining = page.data.total;
+                } else {
+                    toast.error(t("toast.error"));
+                }
+            }
+            setItems((prev) => {
+                const kept = prev.filter((it) => it.id !== image.id);
+                return nextPageItem ? [...kept, nextPageItem] : kept;
+            });
+            setTotal(remaining);
+            const next = following ?? nextPageItem ?? items[index - 1];
+            setViewerId((id) => (id === image.id ? (next?.id ?? null) : id));
+            anchorRef.current = null;
+            setSelectedIds((prev) => new Set([...prev].filter((id) => id !== image.id)));
+        } catch {
+            toast.error(t("toast.error"));
+        } finally {
+            favoritePending.current = false;
+        }
     }
 
     // ── 标签保存（单图替换 / 批量并集）──
@@ -632,8 +685,7 @@ export default function GalleryTool() {
             );
         }
         toast.success(t("toast.saved"));
-        // 本地补丁行集不变——打标签不该把网格滚回顶部（同画廊操作的补丁先例），
-        // 分组计数/画廊都不受影响，只有标签池可能出新词，重拉它一把即可
+        // 只更新当前行的标签和标签池，保留网格的滚动位置。
         void api.galleryAllTags().then((r) => {
             if (r.ok) setAllTags(r.data);
         });
@@ -647,8 +699,49 @@ export default function GalleryTool() {
         }));
     }
 
+    /** 清除图片筛选，保留当前分组和排序。 */
+    function clearFilters() {
+        setSearchInput("");
+        setQuery((q) => ({ ...q, search: "", tags: [], favoriteOnly: false }));
+    }
+
+    /** 网格无图时，按当前分组和筛选条件提供下一步操作。 */
+    function emptyState(): GridEmptyState | null {
+        if (groups === null) return null;
+        if (query.search || query.tags.length > 0 || query.favoriteOnly) {
+            return {
+                title: t(query.search || query.tags.length > 0 ? "gallery.empty.noMatch" : "gallery.favorite.empty"),
+                action: { label: t("gallery.filter.clear"), onClick: clearFilters },
+            };
+        }
+        if (importGroup) {
+            return {
+                title: t("gallery.empty.group"),
+                description: t("gallery.emptyHint"),
+                action: { label: t("gallery.import"), onClick: () => void importFiles() },
+            };
+        }
+        if (groups.length === 0) {
+            return {
+                title: t("gallery.empty"),
+                description: t("gallery.empty.folderHint"),
+                action: {
+                    label: t("gallery.newGroup"),
+                    onClick: () => setCreatingGroup(true),
+                    disabled: creatingGroup,
+                },
+            };
+        }
+        return { title: t("gallery.empty"), description: t("gallery.import.selectGroup") };
+    }
+
+    const selectedGroupId = selectedIds.size > 0 ? items.find((item) => selectedIds.has(item.id))?.groupId : undefined;
+    const selectedSameGroup =
+        selectedGroupId != null && !items.some((item) => selectedIds.has(item.id) && item.groupId !== selectedGroupId);
+    const moveGroups = (groups ?? []).filter((group) => !selectedSameGroup || group.id !== selectedGroupId);
+
     // ── 派生文案 ──
-    const resetKey = `${query.group}|${query.tags.join(",")}|${query.search}|${query.sort}|${reloadTick}`;
+    const resetKey = `${query.group}|${query.tags.join(",")}|${query.search}|${query.sort}|${query.favoriteOnly}|${reloadTick}`;
     const tagTitle = !tagTarget
         ? ""
         : tagTarget.mode === "batch"
@@ -670,7 +763,7 @@ export default function GalleryTool() {
           ? fmt(t("gallery.delImagesDesc"), { n: confirmTarget.ids.length })
           : confirmTarget.kind === "group"
             ? fmt(t("gallery.delGroupDesc"), {
-                  name: confirmTarget.group.inbox ? t("gallery.inbox") : confirmTarget.group.name,
+                  name: confirmTarget.group.name,
                   n: confirmTarget.group.count,
               })
             : fmt(t("gallery.tag.delDesc"), { tag: confirmTarget.tag });
@@ -684,215 +777,243 @@ export default function GalleryTool() {
     return (
         <div
             ref={rootRef}
-            className="flex h-full"
+            className="flex h-full flex-col"
             onDragOver={(e) => {
                 if (!e.dataTransfer.types.includes("Files")) return;
                 e.preventDefault();
-                setDragOver(true);
+                e.dataTransfer.dropEffect = "copy";
+                // 拖放完成前读不到文件条目，空类型用于提示文件夹可能的落点。
+                if (
+                    (e.target as HTMLElement).closest("[data-gallery-group-sidebar]") &&
+                    Array.from(e.dataTransfer.items).some((item) => item.kind === "file" && !item.type)
+                ) {
+                    setDragOver("groups");
+                } else {
+                    setDragOver(dropGroupId(e.target) != null ? "grid" : null);
+                }
             }}
             onDragLeave={(e) => {
-                if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setDragOver(false);
+                if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setDragOver(null);
             }}
-            // 捕获阶段先复位高亮：拖到分组行导入时子层 stopPropagation，根的 onDrop
-            // 收不到，高亮会赖着不走；capture 在子层处理前必经
-            onDropCapture={() => setDragOver(false)}
             onDrop={onRootDrop}
         >
-            <GroupSidebar
-                groups={groups}
-                allCount={allCount}
-                wallCount={wallCount}
-                active={query.group}
-                onTogglePrivate={togglePrivate}
-                onWallAddGroup={(g) => void wallAddGroup(g)}
-                pwSet={pwSet}
-                locked={unlocked == null}
-                onLockClick={() => (unlocked == null ? setPwTarget({ mode: "unlock" }) : lockLibrary())}
-                allTags={allTags}
-                activeTags={query.tags}
-                onToggleTag={toggleTagFilter}
-                onTagDelete={(tag) => setConfirmTarget({ kind: "tag", tag })}
-                onSelect={(g) => setQuery((q) => ({ ...q, group: g }))}
-                onCreate={createGroup}
-                onRename={renameGroup}
-                onDelete={askDeleteGroup}
-                onDropFiles={(paths, gid) => void runImport(paths, gid)}
-                onUrlImport={openUrlImport}
-            />
-
-            <section className="flex min-w-0 flex-1 flex-col">
-                {/* 工具条 */}
-                <Toolbar className="gan-no-drag h-auto min-h-(--size-toolbar) flex-none flex-wrap gap-1.5 px-2 py-1.5">
-                    <ToolbarGroup>
-                        <Button
-                            type="button"
-                            appearance="standard"
-                            variant="outline"
-                            size="xs"
-                            onClick={() => void importFiles()}
-                        >
-                            <ImagePlus />
-                            {t("gallery.import")}
-                        </Button>
-                        {/* 选择模式用开关而非按钮：状态一目了然，也免去「选择/退出选择」两态文案切换 */}
-                        <span className="flex items-center gap-1.5">
-                            <Switch
-                                id="gallery-select-mode"
-                                checked={selectMode}
-                                onCheckedChange={(v) => (v ? setSelectMode(true) : exitSelectMode())}
-                            />
-                            <label
-                                htmlFor="gallery-select-mode"
-                                className="cursor-pointer text-[12px] text-muted-foreground"
-                            >
-                                {t("gallery.select.mode")}
-                            </label>
-                        </span>
-                    </ToolbarGroup>
-                    <ToolbarSeparator />
-                    <ToolbarSearch
-                        type="text"
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        spellCheck={false}
-                        placeholder={t("gallery.searchPlaceholder")}
-                        aria-label={t("gallery.searchPlaceholder")}
-                        className="w-44"
-                    />
-                    <ToolbarGroup>
-                        <Select
-                            value={query.sort}
-                            onValueChange={(v) => setQuery((q) => ({ ...q, sort: v as SortId }))}
-                        >
-                            {/* h-6 必须 !：SelectTrigger 内部 data-[size=sm]:h-8 带属性选择器，普通 h-6 压不过 */}
-                            <SelectTrigger size="sm" className="h-6! w-28 px-2 text-[12px]">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {SORTS.map((s) => (
-                                    <SelectItem key={s.id} value={s.id}>
-                                        {t(s.key)}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </ToolbarGroup>
-                    {/* 画廊视图专属：放映（空画廊置灰；放映层自取画廊快照，不受当前搜索/排序影响） */}
-                    {query.group === "wall" && (
-                        <ToolbarGroup>
-                            <Button
-                                type="button"
-                                appearance="standard"
-                                variant="outline"
-                                size="xs"
-                                disabled={wallCount === 0}
-                                onClick={() => setSlideshow(true)}
-                            >
-                                <Play />
-                                {t("gallery.wall.play")}
-                            </Button>
-                        </ToolbarGroup>
-                    )}
-                </Toolbar>
-
-                {/* 导入进度 */}
-                {importing && (
-                    <div className="flex flex-none items-center gap-2 px-2 pb-1.5">
-                        <span className="flex-none text-[11px] text-dim-foreground">
-                            {fmt(t("gallery.importing"), { done: importing.done, total: importing.total })}
-                        </span>
-                        <Progress
-                            value={importing.total ? (importing.done / importing.total) * 100 : 0}
-                            className="h-0.5 min-w-8 flex-1"
+            <Toolbar className="gan-no-drag h-auto min-h-(--size-toolbar) flex-none flex-wrap gap-1.5 px-2 py-1.5">
+                <ToolbarGroup>
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="outline"
+                        size="xs"
+                        onClick={() => void importFiles()}
+                    >
+                        <ImagePlus />
+                        {t("gallery.import")}
+                    </Button>
+                    <Button type="button" appearance="standard" variant="outline" size="xs" onClick={openUrlImport}>
+                        <Globe />
+                        {t("gallery.urlImport")}
+                    </Button>
+                </ToolbarGroup>
+                <ToolbarGroup>
+                    {/* 选择模式用开关而非按钮：状态一目了然，也免去「选择/退出选择」两态文案切换 */}
+                    <span className="flex items-center gap-1.5">
+                        <Switch
+                            id="gallery-select-mode"
+                            checked={selectMode}
+                            onCheckedChange={(v) => (v ? setSelectMode(true) : exitSelectMode())}
                         />
-                        <Button
-                            type="button"
-                            appearance="standard"
-                            variant="outline"
-                            size="xs"
-                            onClick={() => (cancelImport.current = true)}
+                        <label
+                            htmlFor="gallery-select-mode"
+                            className="cursor-pointer text-[12px] text-muted-foreground"
                         >
-                            {t("gallery.cancelImport")}
-                        </Button>
-                    </div>
-                )}
-
-                <ImageGrid
-                    items={items}
-                    status={status}
-                    visibleCount={visibleCount}
-                    selectedIds={selectedIds}
-                    selectMode={selectMode}
-                    groups={groups ?? []}
-                    menuIds={menuIds}
-                    wallView={query.group === "wall"}
-                    onWall={() => (query.group === "wall" ? void wallRemoveMenu() : void wallAddMenu())}
-                    resetKey={resetKey}
-                    dropHint={dragOver}
-                    onOpen={(i) => {
-                        anchorRef.current = i;
-                        setViewerIndex(i);
-                    }}
-                    onSelect={(i, mode) => {
-                        if (mode === "toggle") toggleSelect(i);
-                        else if (mode === "range") rangeSelect(i);
-                        else selectSingle(i);
-                    }}
-                    onClearSelection={() => {
-                        setSelectedIds(new Set());
-                        anchorRef.current = null;
-                    }}
-                    onMenuIds={setMenuIds}
-                    onLoadMore={() => loadMoreRef.current()}
-                    onView={() => {
-                        const idx = items.findIndex((it) => it.id === menuIds[0]);
-                        if (idx >= 0) setViewerIndex(idx);
-                    }}
-                    onMove={(gid) => void moveMenuTo(gid)}
-                    onAddTags={() => {
-                        // 单选直接开编辑框（chip 可 × 删除），多选保持批量添加（并集）
-                        if (menuIds.length === 1) {
-                            const img = items.find((it) => it.id === menuIds[0]);
-                            if (img) {
-                                setTagTarget({ mode: "image", image: img });
-                                return;
-                            }
-                        }
-                        setTagTarget({ mode: "batch", ids: [...menuIds] });
-                    }}
-                    onOpenSingle={() => void openSingle()}
-                    onRevealSingle={() => void revealSingle()}
-                    onDelete={askDeleteMenu}
-                    onImportCta={() => void importFiles()}
+                            {t("gallery.select.mode")}
+                        </label>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                        <Switch
+                            id={favoriteSwitchId}
+                            checked={query.favoriteOnly}
+                            onCheckedChange={(favoriteOnly) => setQuery((q) => ({ ...q, favoriteOnly }))}
+                        />
+                        <label htmlFor={favoriteSwitchId} className="cursor-pointer text-[12px] text-muted-foreground">
+                            {t("gallery.favorite.only")}
+                        </label>
+                    </span>
+                </ToolbarGroup>
+                <ToolbarSeparator />
+                <ToolbarSearch
+                    type="text"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    spellCheck={false}
+                    placeholder={t("gallery.searchPlaceholder")}
+                    aria-label={t("gallery.searchPlaceholder")}
+                    className="w-44"
                 />
+                <ToolbarGroup>
+                    <Select value={query.sort} onValueChange={(v) => setQuery((q) => ({ ...q, sort: v as SortId }))}>
+                        {/* h-6 必须 !：SelectTrigger 内部 data-[size=sm]:h-8 带属性选择器，普通 h-6 压不过 */}
+                        <SelectTrigger size="sm" className="h-6! w-28 px-2 text-[12px]">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {SORTS.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                    {t(s.key)}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </ToolbarGroup>
+            </Toolbar>
 
-                {/* 底部统计 */}
-                <StatusBar className="gap-3 px-2.5">
-                    <StatusBarItem className="text-[11px] text-dim-foreground">
-                        {fmt(t("gallery.total"), { n: total })}
-                    </StatusBarItem>
-                    {selectedIds.size > 0 && (
+            {/* 导入进度 */}
+            {importing && (
+                <div className="flex flex-none items-center gap-2 px-2 pb-1.5">
+                    <span className="flex-none text-[11px] text-dim-foreground">
+                        {fmt(t("gallery.importing"), { done: importing.done, total: importing.total })}
+                    </span>
+                    <Progress
+                        value={importing.total ? (importing.done / importing.total) * 100 : 0}
+                        className="h-0.5 min-w-8 flex-1"
+                    />
+                    <Button
+                        type="button"
+                        appearance="standard"
+                        variant="outline"
+                        size="xs"
+                        onClick={() => (cancelImport.current = true)}
+                    >
+                        {t("gallery.cancelImport")}
+                    </Button>
+                </div>
+            )}
+
+            <div className="flex min-h-0 flex-1">
+                <GroupSidebar
+                    groups={groups}
+                    allCount={allCount}
+                    active={query.group}
+                    dropHint={dragOver === "groups"}
+                    onTogglePrivate={togglePrivate}
+                    pwSet={pwSet}
+                    locked={unlocked == null}
+                    onLockClick={() => (unlocked == null ? setPwTarget({ mode: "unlock" }) : lockLibrary())}
+                    allTags={allTags}
+                    activeTags={query.tags}
+                    onToggleTag={toggleTagFilter}
+                    onTagDelete={(tag) => setConfirmTarget({ kind: "tag", tag })}
+                    onSelect={(g) => setQuery((q) => ({ ...q, group: g }))}
+                    creating={creatingGroup}
+                    onCreatingChange={setCreatingGroup}
+                    onCreate={createGroup}
+                    onRename={renameGroup}
+                    onDelete={askDeleteGroup}
+                />
+                <section className="flex min-w-0 flex-1 flex-col">
+                    <ImageGrid
+                        items={items}
+                        status={status}
+                        visibleCount={visibleCount}
+                        selectedIds={selectedIds}
+                        selectMode={selectMode}
+                        empty={emptyState()}
+                        groups={groups ?? []}
+                        menuIds={menuIds}
+                        resetKey={resetKey}
+                        dropHint={dragOver === "grid"}
+                        onOpen={(i) => {
+                            anchorRef.current = i;
+                            setViewerId(items[i]?.id ?? null);
+                        }}
+                        onSelect={(i, mode) => {
+                            if (mode === "toggle") toggleSelect(i);
+                            else if (mode === "range") rangeSelect(i);
+                            else selectSingle(i);
+                        }}
+                        onClearSelection={() => {
+                            setSelectedIds(new Set());
+                            anchorRef.current = null;
+                        }}
+                        onMenuIds={setMenuIds}
+                        onLoadMore={() => loadMoreRef.current()}
+                        onView={() => {
+                            if (items.some((it) => it.id === menuIds[0])) setViewerId(menuIds[0]);
+                        }}
+                        onMove={(gid) => void moveImagesTo(menuIds, gid)}
+                        onAddTags={() => {
+                            // 单选直接开编辑框（chip 可 × 删除），多选保持批量添加（并集）
+                            if (menuIds.length === 1) {
+                                const img = items.find((it) => it.id === menuIds[0]);
+                                if (img) {
+                                    setTagTarget({ mode: "image", image: img });
+                                    return;
+                                }
+                            }
+                            setTagTarget({ mode: "batch", ids: [...menuIds] });
+                        }}
+                        onOpenSingle={() => void openSingle()}
+                        onRevealSingle={() => void revealSingle()}
+                        onDelete={askDeleteMenu}
+                    />
+
+                    {/* 底部统计 */}
+                    <StatusBar className="gap-3 px-2.5">
                         <StatusBarItem className="text-[11px] text-dim-foreground">
-                            {fmt(t("gallery.selectedCount"), { m: selectedIds.size })}
+                            {fmt(t("gallery.total"), { n: total })}
                         </StatusBarItem>
-                    )}
-                </StatusBar>
-            </section>
+                        {selectMode && selectedIds.size > 0 && (
+                            <div className="ml-auto flex items-center gap-2">
+                                <StatusBarItem emphasis className="text-[11px]">
+                                    {fmt(t("gallery.selectedCount"), { m: selectedIds.size })}
+                                </StatusBarItem>
+                                <MenuTrigger align="end" disabled={moveGroups.length === 0}>
+                                    <Button
+                                        type="button"
+                                        appearance="standard"
+                                        variant="outline"
+                                        size="xs"
+                                        disabled={moveGroups.length === 0}
+                                    >
+                                        {t("gallery.menu.moveTo")}
+                                        <ChevronDown />
+                                    </Button>
+                                    <MenuContent className="max-h-[50vh] max-w-72 overflow-auto">
+                                        {moveGroups.map((group) => (
+                                            <MenuItem
+                                                key={group.id}
+                                                onSelect={() => void moveImagesTo([...selectedIds], group.id)}
+                                            >
+                                                <span className="truncate">{group.name}</span>
+                                            </MenuItem>
+                                        ))}
+                                    </MenuContent>
+                                </MenuTrigger>
+                                <Button
+                                    type="button"
+                                    appearance="standard"
+                                    variant="outline"
+                                    size="xs"
+                                    onClick={() => setTagTarget({ mode: "batch", ids: [...selectedIds] })}
+                                >
+                                    {t("gallery.menu.addTags")}
+                                </Button>
+                            </div>
+                        )}
+                    </StatusBar>
+                </section>
+            </div>
 
-            {viewerIndex != null && items[viewerIndex] && (
+            {viewerIndex >= 0 && (
                 <Viewer
                     items={items}
                     index={viewerIndex}
                     groups={groups ?? []}
-                    onNav={setViewerIndex}
-                    onClose={() => setViewerIndex(null)}
+                    onNav={(i) => setViewerId(items[i]?.id ?? null)}
+                    onClose={() => setViewerId(null)}
+                    onSetFavorite={(img, favorite) => void setFavorite(img, favorite)}
                     onEditTags={(img) => setTagTarget({ mode: "image", image: img })}
-                    // 画廊视图打开的查看器不带删除（策展面禁删，与网格右键菜单同规）
-                    onDelete={
-                        query.group === "wall"
-                            ? undefined
-                            : (img) => setConfirmTarget({ kind: "images", ids: [img.id], fromViewer: true })
-                    }
+                    onDelete={(img) => setConfirmTarget({ kind: "images", ids: [img.id], fromViewer: true })}
                 />
             )}
 
@@ -917,15 +1038,9 @@ export default function GalleryTool() {
                 />
             )}
 
-            {urlImport && (
-                <UrlImport
-                    password={unlocked ?? undefined}
-                    onClose={() => setUrlImport(false)}
-                    onImported={refreshAll}
-                />
+            {urlImportGroup !== null && (
+                <UrlImport group={urlImportGroup} onClose={() => setUrlImportGroup(null)} onImported={refreshAll} />
             )}
-
-            {slideshow && <Slideshow password={unlocked ?? undefined} onClose={() => setSlideshow(false)} />}
 
             <ConfirmDialog
                 open={confirmTarget !== null}

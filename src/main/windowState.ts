@@ -1,4 +1,4 @@
-import { BrowserWindow } from "electron";
+import { screen, type BrowserWindow } from "electron";
 import { getSetting, setSetting } from "./server/util/settings";
 
 // ── 窗口状态记忆（记住上次位置/尺寸/是否最大化）──
@@ -16,23 +16,22 @@ export type WinState = {
 /** 首次启动默认 1180×760（v2.2 起为三区布局：侧栏 + 工具 + 终端） */
 const DEFAULT: WinState = { width: 1180, height: 760, maximized: false };
 const KEY = "window_state";
+export const MIN_WINDOW_WIDTH = 840;
+export const MIN_WINDOW_HEIGHT = 520;
 
 function isInt(v: unknown): v is number {
-    return typeof v === "number" && Number.isFinite(v);
+    return typeof v === "number" && Number.isInteger(v);
 }
 
-export function loadWindowState(): WinState {
+function loadWindowState(): WinState {
     const raw = getSetting(KEY, "");
     if (!raw) return DEFAULT;
     try {
         const s = JSON.parse(raw) as Partial<WinState>;
         if (!isInt(s.width) || !isInt(s.height)) return DEFAULT;
         return {
-            // 下限 = 最小窗口尺寸（app.ts 的 minWidth/minHeight）：老版本存下的
-            // 更小值装不下两区布局，统一抬到已验证最小值
-            width: Math.max(s.width, 840),
-            height: Math.max(s.height, 520),
-            // 负坐标合法（多显示器左侧屏），但原屏幕可能已拔掉——交给 Electron 钳制
+            width: Math.max(s.width, MIN_WINDOW_WIDTH),
+            height: Math.max(s.height, MIN_WINDOW_HEIGHT),
             x: isInt(s.x) ? s.x : undefined,
             y: isInt(s.y) ? s.y : undefined,
             maximized: s.maximized === true,
@@ -40,6 +39,33 @@ export function loadWindowState(): WinState {
     } catch {
         return DEFAULT;
     }
+}
+
+/** 返回启动时可显示在当前屏幕上的窗口状态。 */
+export function restoreWindowState(): WinState {
+    const state = loadWindowState();
+    const { x, y } = state;
+
+    // 屏幕可以位于主屏左边或上方。检查顶栏是否有足够空间露在屏幕上，避免只剩一条边可见。
+    if (x !== undefined && y !== undefined) {
+        const titleBarVisible = screen.getAllDisplays().some(({ workArea }) => {
+            const left = Math.max(x, workArea.x);
+            const right = Math.min(x + state.width, workArea.x + workArea.width);
+            return right - left >= 100 && y >= workArea.y && y + 24 <= workArea.y + workArea.height;
+        });
+        if (titleBarVisible) return state;
+    }
+
+    const area = screen.getPrimaryDisplay().workArea;
+    const width = Math.max(MIN_WINDOW_WIDTH, Math.min(state.width, area.width));
+    const height = Math.max(MIN_WINDOW_HEIGHT, Math.min(state.height, area.height));
+    return {
+        x: area.x + Math.floor(Math.max(0, area.width - width) / 2),
+        y: area.y + Math.floor(Math.max(0, area.height - height) / 2),
+        width,
+        height,
+        maximized: state.maximized,
+    };
 }
 
 // 被跟踪窗口的模块级引用：changeDataDir 迁移时要取「当前」bounds 补写进新库

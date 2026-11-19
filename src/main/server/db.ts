@@ -68,11 +68,9 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS gallery_groups (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT    NOT NULL,
-    inbox      INTEGER NOT NULL DEFAULT 0,   -- 1 = 内置收件箱（不可删/改名/打 tag）
     private    INTEGER NOT NULL DEFAULT 0,   -- 1 = 私密分组：图库锁定（未携有效密码）时不随列表下发
     created_at INTEGER NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS idx_gallery_groups_inbox ON gallery_groups(inbox, id);
 
   CREATE TABLE IF NOT EXISTS gallery_images (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,7 +83,8 @@ db.exec(`
     height      INTEGER NOT NULL DEFAULT 0,
     format      TEXT    NOT NULL,            -- 归一小写；jpeg 归一为 jpg
     source_path TEXT    NOT NULL DEFAULT '', -- 导入来源路径（图片信息展示用）
-    created_at  INTEGER NOT NULL             -- 导入时间戳 ms
+    created_at  INTEGER NOT NULL,            -- 导入时间戳 ms
+    favorite    INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1))
   );
   CREATE INDEX IF NOT EXISTS idx_gallery_images_group ON gallery_images(group_id, id);
   CREATE INDEX IF NOT EXISTS idx_gallery_images_created ON gallery_images(created_at);
@@ -96,14 +95,6 @@ db.exec(`
     PRIMARY KEY (image_id, tag)
   );
   CREATE INDEX IF NOT EXISTS idx_gallery_tags_tag ON gallery_tags(tag);
-
-  -- 画廊（放映墙）：跨分组的成员籍叠加——图片仍属原分组，这里只记「在不在画廊」。
-  -- position = 加入顺序（放映顺序，同批按入参顺序递增）；图片删除时 FK 级联自动移出
-  CREATE TABLE IF NOT EXISTS gallery_wall (
-    image_id INTEGER PRIMARY KEY REFERENCES gallery_images(id) ON DELETE CASCADE,
-    position INTEGER NOT NULL,
-    added_at INTEGER NOT NULL
-  );
 
   -- 便签（工具 notes）：每个工作区一份，删工作区时外键级联删行（图片文件由 server/notes.ts 另行清理）。
   -- 图片文件在数据目录 notes/<图片id>.<format>，与图库完全分开，经 mpimg://note/<图片id> 读取。
@@ -161,6 +152,27 @@ if (!galleryGroupCols.some((c) => c.name === "private")) {
         `);
     }
 }
+
+// 默认值让原有图片在补列后直接视为未收藏，无需逐条更新。
+const galleryImageCols = db.prepare("PRAGMA table_info(gallery_images)").all() as { name: string }[];
+if (!galleryImageCols.some((c) => c.name === "favorite")) {
+    db.exec("ALTER TABLE gallery_images ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1))");
+}
+
+db.transaction(() => {
+    db.exec("DROP TABLE IF EXISTS gallery_wall");
+    if (galleryGroupCols.some((c) => c.name === "inbox")) {
+        // 只清理空收件箱；有图的保留分组编号和文件路径，避免触发图片外键级联。
+        db.exec(`
+          DELETE FROM gallery_groups WHERE inbox = 1 AND NOT EXISTS (
+            SELECT 1 FROM gallery_images WHERE group_id = gallery_groups.id
+          );
+          UPDATE gallery_groups SET name = '待整理' WHERE inbox = 1;
+          DROP INDEX IF EXISTS idx_gallery_groups_inbox;
+          ALTER TABLE gallery_groups DROP COLUMN inbox;
+        `);
+    }
+})();
 
 // 存量库幂等迁移：启动器条目从「分组 → 条目」两层结构改成扁平列表，items 不再有
 // group_id/position 两列。SQLite 删列要重建表（标准做法：建新表 → 拷数据 → 删旧表 →

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
     ChevronLeft,
@@ -8,7 +8,9 @@ import {
     FolderOpen,
     Info,
     Maximize,
+    MoreHorizontal,
     RotateCw,
+    Star,
     Tag,
     Trash2,
     X,
@@ -17,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ActionBar, ActionBarGroup, ActionBarSeparator } from "@/components/ui/action-bar";
+import { MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { api, type GalleryGroup, type GalleryImage } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import { TipActionButton } from "../TipButton";
@@ -28,10 +31,11 @@ type Props = {
     groups: GalleryGroup[];
     onNav: (index: number) => void;
     onClose: () => void;
+    /** 保存当前图片的指定收藏状态。 */
+    onSetFavorite: (img: GalleryImage, favorite: boolean) => void;
     onEditTags: (img: GalleryImage) => void;
-    /** 删除走父组件的确认弹窗（顺带处理列表移除与相邻跳转）。
-     *  不传 = 该入口禁删（画廊视图打开时：策展面不做库级删除，与网格右键菜单同规） */
-    onDelete?: (img: GalleryImage) => void;
+    /** 由父组件确认删除、更新列表和切换相邻图片。 */
+    onDelete: (img: GalleryImage) => void;
 };
 
 const MIN_SCALE = 0.05;
@@ -41,7 +45,7 @@ const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 // 大图查看器挂到窗口根层，盖住停靠区、左侧栏和顶栏，同时给标签和删除确认弹窗留出更高层。
 // transform = translate(px,py) scale(s) rotate(deg)：translate 在 scale 之前，
 // 平移量直接用屏幕像素，不用除以缩放。缩放一律以画面中心为锚。
-export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDelete }: Props) {
+export function Viewer({ items, index, groups, onNav, onClose, onSetFavorite, onEditTags, onDelete }: Props) {
     const { t } = useI18n();
     const img = items[index];
     const rootRef = useRef<HTMLDivElement>(null);
@@ -62,15 +66,15 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
         rootRef.current?.focus();
     }, []);
 
-    // 翻图即复位：尺寸等新图 onLoad 给出后再适应
-    useEffect(() => {
+    // 在缓存图片的加载事件前复位，避免清掉新图刚测出的尺寸。
+    useLayoutEffect(() => {
         setNat(null);
         setFailed(false);
         setRot(0);
         setTx(0);
         setTy(0);
         setScale(1);
-    }, [index]);
+    }, [img?.id]);
 
     function fitScale(w: number, h: number): number {
         const el = stageRef.current;
@@ -109,6 +113,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
     function onKeyDown(e: React.KeyboardEvent) {
         // 查看器开着时按键全部先吃掉，不落到工具层
         e.stopPropagation();
+        if (e.defaultPrevented || (e.target as HTMLElement).closest('[role="menu"]')) return;
         switch (e.key) {
             case "Escape":
                 e.preventDefault();
@@ -121,6 +126,13 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
             case "ArrowRight":
                 e.preventDefault();
                 if (index < items.length - 1) onNav(index + 1);
+                break;
+            case "ArrowUp":
+            case "ArrowDown":
+                if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) break;
+                e.preventDefault();
+                // 长按取消收藏时，翻到相邻图片后必须重新按键才能继续取消。
+                if (!e.repeat) onSetFavorite(img, e.key === "ArrowUp");
                 break;
             case "+":
             case "=":
@@ -193,7 +205,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
     }
 
     const g = groups.find((x) => x.id === img.groupId);
-    const groupName = g ? (g.inbox ? t("gallery.inbox") : g.name) : "—";
+    const groupName = g?.name ?? "—";
     const infoRows: [string, string][] = [
         [t("gallery.info.name"), img.title],
         [t("gallery.info.size"), img.width > 0 ? `${img.width}×${img.height}` : "—"],
@@ -224,14 +236,28 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
             className="app-no-drag fixed inset-0 z-40 flex flex-col bg-black/90 outline-none"
         >
             <div className="relative min-h-0 flex-1">
-                {/* 顶条：文件名 + 序号 */}
-                <div className="pointer-events-none absolute left-1/2 top-3 max-w-[80%] -translate-x-1/2 truncate text-[12px] text-white/70">
-                    {img.title} ({index + 1}/{items.length})
+                {/* 标题和关闭按钮常驻图台上层，原图铺满时仍然可见。 */}
+                <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start justify-center px-10">
+                    <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-panel px-3 py-1.5 text-xs shadow-overlay">
+                        <span className="truncate text-foreground">{img.title}</span>
+                        <span className="flex-none font-mono text-muted-foreground">
+                            {index + 1}/{items.length}
+                        </span>
+                    </div>
+                    <TipActionButton
+                        {...actionButton}
+                        className={`${actionButton.className} pointer-events-auto absolute right-0 top-0 border border-border bg-panel shadow-overlay`}
+                        label={t("common.close")}
+                        aria-label={t("common.close")}
+                        onClick={onClose}
+                    >
+                        <X />
+                    </TipActionButton>
                 </div>
 
                 {/* 信息浮层：主题面板材质（表面/文字/边框随深浅主题） */}
                 {info && (
-                    <div className="absolute right-3 top-3 flex max-h-[calc(100%-1.5rem)] w-72 flex-col gap-1.5 overflow-auto rounded-md border border-border bg-panel p-3 text-[11.5px] text-foreground shadow-[var(--shadow-toast)]">
+                    <div className="absolute right-3 top-12 z-10 flex max-h-[calc(100%-7rem)] w-72 flex-col gap-1.5 overflow-auto rounded-md border border-border bg-panel p-3 text-[11.5px] text-foreground shadow-overlay">
                         {infoRows.map(([k, v]) => (
                             <div key={k} className="flex gap-2">
                                 <span className="w-16 flex-none text-dim-foreground">{k}</span>
@@ -252,7 +278,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                     onPointerUp={endPan}
                     onPointerCancel={endPan}
                     onDoubleClick={onDoubleClick}
-                    className={`flex h-full w-full select-none items-center justify-center overflow-hidden ${
+                    className={`relative z-0 flex h-full w-full select-none items-center justify-center overflow-hidden ${
                         panning ? "cursor-grabbing" : pannable ? "cursor-grab" : "cursor-default"
                     }`}
                 >
@@ -291,17 +317,9 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
             </div>
 
             {/* 底部工具条：ActionBar 药丸形态（className 覆写回 panel 材质、小圆角与 28px 图标按钮） */}
-            <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
                 <ActionBar className="pointer-events-auto flex-nowrap gap-0.5! rounded-md border border-border bg-panel! bg-none! p-(--space-xs)! shadow-[var(--shadow-toast)]!">
                     <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
-                        <TipActionButton
-                            {...actionButton}
-                            label={t("common.close")}
-                            aria-label={t("common.close")}
-                            onClick={onClose}
-                        >
-                            <X />
-                        </TipActionButton>
                         <TipActionButton
                             {...actionButton}
                             label={t("gallery.view.prev")}
@@ -350,17 +368,19 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                         <TipActionButton {...actionButton} label="1:1" className={textButtonClass} onClick={oneToOne}>
                             1:1
                         </TipActionButton>
-                        <TipActionButton
-                            {...actionButton}
-                            label={t("gallery.view.rotate")}
-                            aria-label={t("gallery.view.rotate")}
-                            onClick={() => setRot((r) => (r + 90) % 360)}
-                        >
-                            <RotateCw />
-                        </TipActionButton>
                     </ActionBarGroup>
                     <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
                     <ActionBarGroup className="gap-0.5 overflow-visible rounded-md bg-transparent">
+                        <TipActionButton
+                            {...actionButton}
+                            active={img.favorite}
+                            aria-label={t("gallery.favorite.action")}
+                            aria-pressed={img.favorite}
+                            label={t("gallery.favorite.shortcuts")}
+                            onClick={() => onSetFavorite(img, !img.favorite)}
+                        >
+                            <Star className={img.favorite ? "fill-current text-yellow-400" : undefined} />
+                        </TipActionButton>
                         <TipActionButton
                             {...actionButton}
                             active={info}
@@ -370,50 +390,44 @@ export function Viewer({ items, index, groups, onNav, onClose, onEditTags, onDel
                         >
                             <Info />
                         </TipActionButton>
-                        <TipActionButton
-                            {...actionButton}
-                            label={t("gallery.view.copy")}
-                            aria-label={t("gallery.view.copy")}
-                            onClick={() => void copyImage()}
-                        >
-                            <Copy />
-                        </TipActionButton>
-                        <TipActionButton
-                            {...actionButton}
-                            label={t("gallery.view.openWith")}
-                            aria-label={t("gallery.view.openWith")}
-                            onClick={() => void openWith()}
-                        >
-                            <ExternalLink />
-                        </TipActionButton>
-                        <TipActionButton
-                            {...actionButton}
-                            label={t("gallery.view.reveal")}
-                            aria-label={t("gallery.view.reveal")}
-                            onClick={() => void reveal()}
-                        >
-                            <FolderOpen />
-                        </TipActionButton>
-                        <TipActionButton
-                            {...actionButton}
-                            label={t("gallery.view.tags")}
-                            aria-label={t("gallery.view.tags")}
-                            onClick={() => onEditTags(img)}
-                        >
-                            <Tag />
-                        </TipActionButton>
-                        {onDelete && (
-                            <TipActionButton
-                                {...actionButton}
-                                label={t("gallery.view.delete")}
-                                aria-label={t("gallery.view.delete")}
-                                className={`${actionButton.className} enabled:hover:text-destructive`}
-                                onClick={() => onDelete(img)}
-                            >
-                                <Trash2 />
-                            </TipActionButton>
-                        )}
                     </ActionBarGroup>
+                    <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />
+                    <MenuTrigger align="end">
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.more")}
+                            aria-label={t("gallery.view.more")}
+                        >
+                            <MoreHorizontal />
+                        </TipActionButton>
+                        <MenuContent className="app-no-drag">
+                            <MenuItem onSelect={() => setRot((r) => (r + 90) % 360)}>
+                                <RotateCw />
+                                {t("gallery.view.rotate")}
+                            </MenuItem>
+                            <MenuItem onSelect={() => void copyImage()}>
+                                <Copy />
+                                {t("gallery.view.copy")}
+                            </MenuItem>
+                            <MenuItem onSelect={() => void openWith()}>
+                                <ExternalLink />
+                                {t("gallery.view.openWith")}
+                            </MenuItem>
+                            <MenuItem onSelect={() => void reveal()}>
+                                <FolderOpen />
+                                {t("gallery.view.reveal")}
+                            </MenuItem>
+                            <MenuItem onSelect={() => onEditTags(img)}>
+                                <Tag />
+                                {t("gallery.view.tags")}
+                            </MenuItem>
+                            <MenuSeparator />
+                            <MenuItem className="text-destructive" onSelect={() => onDelete(img)}>
+                                <Trash2 />
+                                {t("gallery.view.delete")}
+                            </MenuItem>
+                        </MenuContent>
+                    </MenuTrigger>
                 </ActionBar>
             </div>
         </div>,

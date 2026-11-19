@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import {
     ContextMenu,
     ContextMenuContent,
@@ -17,6 +17,23 @@ import type { GalleryGroup, GalleryImage } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import { requestThumb } from "./thumbQueue";
 
+/** 图库按当前分组和筛选条件提供的空态内容。 */
+export type GridEmptyState = {
+    /** 无图原因。 */
+    title: string;
+    /** 提示如何继续操作。 */
+    description?: string;
+    /** 可在网格内直接执行的操作。 */
+    action?: {
+        /** 按钮文案。 */
+        label: string;
+        /** 执行操作。 */
+        onClick: () => void;
+        /** 操作是否暂不可用。 */
+        disabled?: boolean;
+    };
+};
+
 type Props = {
     items: GalleryImage[];
     status: "loading" | "done";
@@ -25,13 +42,11 @@ type Props = {
     selectedIds: ReadonlySet<number>;
     /** 选择模式：点击=勾选（配合方框标记）；关闭时点击=直接打开查看器 */
     selectMode: boolean;
+    /** 分组未读到时不提前显示空态。 */
+    empty: GridEmptyState | null;
     groups: GalleryGroup[];
     /** 右键菜单的作用目标（选中集或单图），父组件据此执行批量动作 */
     menuIds: number[];
-    /** 当前是否画廊视图：右键出「从画廊移除」（普通视图出「加入画廊」，单选目标已在册则置灰） */
-    wallView: boolean;
-    /** 右键「加入画廊/从画廊移除」（父组件按 wallView 分派） */
-    onWall: () => void;
     /** 变化时把滚动位置归零（查询切换/刷新） */
     resetKey: string;
     /** 根容器正在拖文件悬停：网格区给个底色反馈 */
@@ -50,7 +65,6 @@ type Props = {
     onOpenSingle: () => void;
     onRevealSingle: () => void;
     onDelete: () => void;
-    onImportCta: () => void;
 };
 
 function NameBlock({ img }: { img: GalleryImage }) {
@@ -108,11 +122,14 @@ const Cell = memo(function Cell({
     index,
     selected,
     selectMode,
+    favoriteLabel,
 }: {
     img: GalleryImage;
     index: number;
     selected: boolean;
     selectMode: boolean;
+    /** 已收藏标记的无障碍名称。 */
+    favoriteLabel: string;
 }) {
     return (
         <div
@@ -125,6 +142,15 @@ const Cell = memo(function Cell({
             style={{ contentVisibility: "auto", containIntrinsicSize: "auto 132px" }}
         >
             <Thumb img={img} />
+            {img.favorite && (
+                <span
+                    role="img"
+                    aria-label={favoriteLabel}
+                    className="pointer-events-none absolute right-1 top-1 grid size-5 place-items-center rounded-sm bg-black/70 text-yellow-400"
+                >
+                    <Star aria-hidden className="size-3 fill-current" />
+                </span>
+            )}
             {selectMode && (
                 // 左上角方框勾选标记：未勾=半透明空框（压在图上要可读），勾=强调色实底打勾
                 <span
@@ -146,10 +172,9 @@ export function ImageGrid({
     visibleCount,
     selectedIds,
     selectMode,
+    empty,
     groups,
     menuIds,
-    wallView,
-    onWall,
     resetKey,
     dropHint,
     onOpen,
@@ -163,9 +188,9 @@ export function ImageGrid({
     onOpenSingle,
     onRevealSingle,
     onDelete,
-    onImportCta,
 }: Props) {
     const { t } = useI18n();
+    const favoriteLabel = t("gallery.favorite.saved");
     const scrollRef = useRef<HTMLDivElement>(null);
     const sentinelRef = useRef<HTMLDivElement>(null);
     // 哨兵回调走 ref：IntersectionObserver 只建一次，永远调最新的 loadMore 闭包
@@ -246,24 +271,23 @@ export function ImageGrid({
                         </div>
                     )}
 
-                    {status === "done" && items.length === 0 && (
+                    {status === "done" && items.length === 0 && empty && (
                         <Empty className="h-full justify-center">
                             <EmptyHeader>
-                                <EmptyTitle>{t("gallery.empty")}</EmptyTitle>
-                                <EmptyDescription className="text-[11.5px] text-dim-foreground">
-                                    {t(wallView ? "gallery.wall.emptyHint" : "gallery.emptyHint")}
-                                </EmptyDescription>
+                                <EmptyTitle>{empty.title}</EmptyTitle>
+                                {empty.description && <EmptyDescription>{empty.description}</EmptyDescription>}
                             </EmptyHeader>
-                            {!wallView && (
+                            {empty.action && (
                                 <EmptyContent>
                                     <Button
                                         type="button"
                                         appearance="standard"
                                         variant="primary"
                                         size="sm"
-                                        onClick={onImportCta}
+                                        disabled={empty.action.disabled}
+                                        onClick={empty.action.onClick}
                                     >
-                                        {t("gallery.import")}
+                                        {empty.action.label}
                                     </Button>
                                 </EmptyContent>
                             )}
@@ -281,6 +305,7 @@ export function ImageGrid({
                                 index={i}
                                 selected={selectedIds.has(img.id)}
                                 selectMode={selectMode}
+                                favoriteLabel={favoriteLabel}
                             />
                         ))}
                     </div>
@@ -300,7 +325,7 @@ export function ImageGrid({
                                 disabled={sameGroup && targets[0].groupId === g.id}
                                 onClick={() => onMove(g.id)}
                             >
-                                {g.inbox ? t("gallery.inbox") : g.name}
+                                {g.name}
                                 <span className="ml-auto pl-3 text-[11px] text-dim-foreground">{g.count}</span>
                             </ContextMenuItem>
                         ))}
@@ -309,31 +334,17 @@ export function ImageGrid({
                 <ContextMenuItem onClick={onAddTags}>
                     {menuIds.length === 1 ? t("gallery.menu.editTags") : t("gallery.menu.addTags")}
                 </ContextMenuItem>
-                {/* 单选且已在册 → 置灰（比点了没反应诚实）；多选混合态保持可点，后端幂等跳过 */}
-                <ContextMenuItem
-                    disabled={!wallView && menuIds.length === 1 && targets[0]?.inWall === true}
-                    onClick={onWall}
-                >
-                    {wallView ? t("gallery.wall.remove") : t("gallery.wall.add")}
-                    {!wallView && menuIds.length > 1 ? ` (${menuIds.length})` : ""}
-                </ContextMenuItem>
                 <ContextMenuItem disabled={menuIds.length !== 1} onClick={onOpenSingle}>
                     {t("gallery.menu.openWith")}
                 </ContextMenuItem>
                 <ContextMenuItem disabled={menuIds.length !== 1} onClick={onRevealSingle}>
                     {t("gallery.menu.reveal")}
                 </ContextMenuItem>
-                {/* 画廊视图是策展面：只有「移出」，库级删除（破坏性）不在此提供，
-                    防整理放映内容时顺手误删原图——要删去分组视图删 */}
-                {!wallView && (
-                    <>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem variant="destructive" onClick={onDelete}>
-                            {t("gallery.menu.delete")}
-                            {menuIds.length > 1 ? ` (${menuIds.length})` : ""}
-                        </ContextMenuItem>
-                    </>
-                )}
+                <ContextMenuSeparator />
+                <ContextMenuItem variant="destructive" onClick={onDelete}>
+                    {t("gallery.menu.delete")}
+                    {menuIds.length > 1 ? ` (${menuIds.length})` : ""}
+                </ContextMenuItem>
             </ContextMenuContent>
         </ContextMenu>
     );

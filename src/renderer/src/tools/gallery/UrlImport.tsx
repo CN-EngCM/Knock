@@ -1,13 +1,13 @@
-import { useMemo, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { api, type GalleryCandidate } from "@/api/client";
+import { api, type GalleryCandidate, type GalleryGroup } from "@/api/client";
 import { useI18n } from "@/i18n/useI18n";
 import type { MessageKey } from "@/i18n/zh";
 import { fmt, fmtBytes } from "./util";
@@ -15,7 +15,7 @@ import { fmt, fmtBytes } from "./util";
 // 从网址导入：翻页收集候选 URL → 统一分批下载探尺寸 → 候选网格（尺寸过滤+勾选）→ 入库。
 // 翻页/下载循环由渲染端驱动——进度就是 state，取消就是停止循环，不需要事件通道；
 // 导入集 = 勾选 ∩ 过滤后可见：过滤是主要取舍手段，滤掉即不导入。
-// 确认导入时自动单独成组（域名命名、同名复用），不落当前视图的分组。
+// 候选图片导入到打开弹窗时选中的分组。
 // 参数（含尺寸/体积过滤值）记忆在 localStorage（TOOL_SPEC §5：只有界面记得住的进 localStorage）。
 
 const LS_KEY = "mypage-gallery-url-import";
@@ -71,18 +71,13 @@ function num(v: string, fallback: number): number {
 type Phase = "form" | "collecting" | "grid" | "importing";
 type Progress = { stage: "page"; page: number; found: number } | { stage: "download"; done: number; total: number };
 
-// 表单里的参数字段（label 的 i18n 键）；min* 同时是网格阶段的实时过滤控件，同一份 state
-const FIELDS: readonly { key: keyof Params; label: MessageKey }[] = [
+// 抓取参数在高级设置中调整，尺寸和体积筛选留在候选图页。
+const FETCH_FIELDS: readonly { key: keyof Params; label: MessageKey }[] = [
     { key: "pages", label: "gallery.url.pages" },
     { key: "maxCandidates", label: "gallery.url.maxCandidates" },
     { key: "maxBytesMb", label: "gallery.url.maxBytesMb" },
     { key: "concurrency", label: "gallery.url.concurrency" },
     { key: "timeoutSec", label: "gallery.url.timeoutSec" },
-    { key: "minW", label: "gallery.url.minW" },
-    { key: "minH", label: "gallery.url.minH" },
-    { key: "minKb", label: "gallery.url.minKb" },
-    { key: "minDw", label: "gallery.url.minDw" },
-    { key: "minDh", label: "gallery.url.minDh" },
 ];
 
 // 网格工具条只摆过滤字段（体积下限滤小文件，显示下限滤页面上的缩略图元素）
@@ -114,18 +109,18 @@ function CandThumb({ index }: { index: number }) {
 }
 
 type Props = {
-    /** 解锁密码：组名查重按解锁视角查组——否则已存在同名私密组在锁定视角不可见，
-     *  会建出第二个同名普通组 */
-    password?: string;
+    /** 打开弹窗时确定的目标分组。 */
+    group: Pick<GalleryGroup, "id" | "name">;
     onClose: () => void;
     onImported: () => void;
 };
 
-export function UrlImport({ password, onClose, onImported }: Props) {
+export function UrlImport({ group, onClose, onImported }: Props) {
     const { t } = useI18n();
     const [phase, setPhase] = useState<Phase>("form");
     const [url, setUrl] = useState("");
     const [params, setParams] = useState<Params>(loadParams);
+    const [advancedOpen, setAdvancedOpen] = useState(false);
     const [progress, setProgress] = useState<Progress | null>(null);
     const [candidates, setCandidates] = useState<GalleryCandidate[]>([]);
     const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -137,8 +132,15 @@ export function UrlImport({ password, onClose, onImported }: Props) {
     const [clearArmed, setClearArmed] = useState(false);
     const cancelRef = useRef(false);
     const importBusy = useRef(false);
-    // 首页 <title>（服务端已清洗截断）：导入单独成组时的组名首选；仅导入用，不参与渲染
-    const titleRef = useRef<string | null>(null);
+
+    // 候选图阶段调整的筛选值也用于下次导入。
+    useEffect(() => {
+        try {
+            localStorage.setItem(LS_KEY, JSON.stringify(params));
+        } catch {
+            /* 无法写入时仅在本次导入中生效 */
+        }
+    }, [params]);
 
     const minW = parseInt(params.minW, 10) || 0;
     const minH = parseInt(params.minH, 10) || 0;
@@ -186,19 +188,19 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         const u = url.trim();
         const pages = num(params.pages, 10);
         const maxCandidates = num(params.maxCandidates, 200);
-        try {
-            localStorage.setItem(LS_KEY, JSON.stringify(params));
-        } catch {
-            /* 存不进就算了，下次回落默认 */
-        }
+        cancelRef.current = false;
+        setProgress(null);
+        setPhase("collecting");
         const r0 = await api.galleryCollectReset();
-        if (!r0.ok) {
-            toast.error(t("toast.error"));
+        if (cancelRef.current) {
+            setPhase("form");
             return;
         }
-        cancelRef.current = false;
-        titleRef.current = null;
-        setPhase("collecting");
+        if (!r0.ok) {
+            toast.error(t("toast.error"));
+            setPhase("form");
+            return;
+        }
         // 先探一次首页：URL 本身是图片直链就是单张候选，无翻页语义；探测失败不算错，照样走渲染。
         // 其余全走渲染收集（隐藏窗口真实加载后的 DOM 是全量，SPA 站如 pixiv 的作品图靠 JS 插入）。
         // 同 host 主进程已保证，这里管页数/数量上限、URL 去重与循环防护（指回已抓页 = 到底）
@@ -224,7 +226,6 @@ export function UrlImport({ password, onClose, onImported }: Props) {
             }
             const page = r.data;
             visited.add(next);
-            if (!titleRef.current && page.title) titleRef.current = page.title; // 组名用首页标题
             for (const img of page.imageUrls) {
                 if (seen.has(img)) continue;
                 seen.add(img);
@@ -337,34 +338,9 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         toast(t("gallery.url.toast.cleared"));
     }
 
-    /** 确认导入时解析落点分组：单独成组——组名首选网页 <title>，后备站点域名（去 www.），
-     *  均限长 50 对齐 schema；已有同名组则复用（同站多次导入归拢一组，配合 sha 去重不收重图）；
-     *  解析失败返回 null。兜底名是固定串（i18n 文案入库，切语言后同站会对不上名） */
-    async function resolveGroupId(): Promise<number | null> {
-        let name = titleRef.current ?? "";
-        if (!name) {
-            try {
-                name = new URL(url.trim()).hostname.replace(/^www\./, "");
-            } catch {
-                /* 表单已校验 http(s)，走兜底名 */
-            }
-        }
-        name = name.slice(0, 50) || "Imported";
-        const gs = await api.galleryGroups(password);
-        const existing = gs.ok ? gs.data.find((g) => !g.inbox && g.name === name) : undefined;
-        if (existing) return existing.id;
-        const r = await api.galleryCreateGroup(name);
-        return r.ok ? r.data.id : null; // 建组失败（超长等）由调用方报错
-    }
-
     async function importSelected() {
         const indices = importIndices;
         if (indices.length === 0 || importBusy.current) return;
-        const gid = await resolveGroupId();
-        if (gid == null) {
-            toast.error(t("toast.error"));
-            return;
-        }
         importBusy.current = true;
         cancelRef.current = false;
         let imported = 0;
@@ -373,7 +349,10 @@ export function UrlImport({ password, onClose, onImported }: Props) {
         setImporting({ done: 0, total: indices.length });
         for (let i = 0; i < indices.length; i += IMPORT_BATCH) {
             if (cancelRef.current) break; // 取消：已导入的保留
-            const r = await api.galleryImportCandidates({ indices: indices.slice(i, i + IMPORT_BATCH), groupId: gid });
+            const r = await api.galleryImportCandidates({
+                indices: indices.slice(i, i + IMPORT_BATCH),
+                groupId: group.id,
+            });
             if (!r.ok) {
                 ok = false;
                 toast.error(t("toast.error"));
@@ -400,92 +379,130 @@ export function UrlImport({ password, onClose, onImported }: Props) {
 
     return (
         <Dialog open onOpenChange={(o) => !o && requestClose()}>
-            <DialogContent className="flex h-[82vh] max-h-[88vh] flex-col gap-3 sm:max-w-[1080px]">
-                <DialogHeader>
+            <DialogContent
+                closeLabel={t("common.close")}
+                className={`flex max-h-[88vh] flex-col gap-3 ${phase === "grid" ? "h-[82vh] sm:max-w-[1080px]" : "sm:max-w-lg"}`}
+            >
+                <DialogHeader className="flex-none pe-6">
                     <DialogTitle>{t("gallery.url.title")}</DialogTitle>
+                    <DialogDescription className="break-all">
+                        {fmt(t("gallery.url.target"), { name: group.name })}
+                    </DialogDescription>
                 </DialogHeader>
 
                 {phase === "form" && (
-                    <div className="flex flex-col gap-4 px-1">
-                        <Field orientation="horizontal" className="gap-2 text-[12px] text-muted-foreground">
-                            <FieldLabel
-                                htmlFor="gallery-url"
-                                className="w-10 flex-none! justify-end font-normal text-muted-foreground"
-                            >
-                                {t("gallery.url.url")}
-                            </FieldLabel>
-                            <Input
-                                id="gallery-url"
-                                value={url}
-                                onChange={(e) => setUrl(e.target.value)}
-                                spellCheck={false}
-                                placeholder="https://…"
-                                autoFocus
-                                className="h-7 flex-1"
-                            />
-                        </Field>
-                        <div className="flex flex-wrap gap-x-5 gap-y-2">
-                            {FIELDS.map((f) => (
-                                <Field
-                                    key={f.key}
-                                    orientation="horizontal"
-                                    className="w-auto gap-1.5 text-[11.5px] text-dim-foreground"
+                    <form
+                        className="flex min-h-0 flex-col gap-3 overflow-y-auto p-1"
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (canStart) void startCollect();
+                        }}
+                    >
+                        <Field className="gap-1.5">
+                            <FieldLabel htmlFor="gallery-url">{t("gallery.url.url")}</FieldLabel>
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    id="gallery-url"
+                                    value={url}
+                                    onChange={(e) => setUrl(e.target.value)}
+                                    spellCheck={false}
+                                    placeholder="https://…"
+                                    autoFocus
+                                    className="h-7 min-w-0 flex-1"
+                                />
+                                <Button
+                                    type="submit"
+                                    appearance="standard"
+                                    variant="primary"
+                                    size="sm"
+                                    className="h-7 shrink-0"
+                                    disabled={!canStart}
                                 >
-                                    <FieldLabel
-                                        htmlFor={`url-param-${f.key}`}
-                                        className="flex-none! font-normal text-dim-foreground"
-                                    >
-                                        {t(f.label)}
-                                    </FieldLabel>
-                                    <Input
-                                        id={`url-param-${f.key}`}
-                                        value={params[f.key]}
-                                        onChange={(e) => setParam(f.key, e.target.value)}
-                                        inputMode="numeric"
-                                        className="h-6 w-16"
-                                    />
-                                </Field>
-                            ))}
-                        </div>
-                        <div className="flex items-center gap-2 text-[11.5px] text-dim-foreground">
-                            <span>{t("gallery.url.loginHint")}</span>
-                            <Button
-                                type="button"
-                                appearance="standard"
-                                variant="outline"
-                                size="xs"
-                                disabled={!canStart || loginBusy}
-                                onClick={() => void openChrome()}
-                            >
-                                {t("gallery.url.chromeLogin")}
-                            </Button>
-                            <Button
-                                type="button"
-                                appearance="standard"
-                                variant="outline"
-                                size="xs"
-                                disabled={!canStart || syncBusy}
-                                onClick={() => void syncLogin()}
-                            >
-                                {t("gallery.url.chromeSync")}
-                            </Button>
-                            <Button
-                                type="button"
-                                appearance="standard"
-                                variant="outline"
-                                size="xs"
-                                className="ml-auto"
-                                disabled={clearBusy}
-                                onClick={() => void clearLogin()}
-                            >
-                                {clearArmed ? t("gallery.url.chromeClearConfirm") : t("gallery.url.chromeClear")}
-                            </Button>
-                        </div>
-                    </div>
+                                    {t("gallery.url.start")}
+                                </Button>
+                            </div>
+                        </Field>
+                        <Button
+                            type="button"
+                            appearance="standard"
+                            variant="ghost"
+                            size="sm"
+                            aria-expanded={advancedOpen}
+                            className="self-start"
+                            onClick={() => setAdvancedOpen((open) => !open)}
+                        >
+                            <ChevronDown className={advancedOpen ? "rotate-180" : undefined} />
+                            {t("gallery.url.advanced")}
+                        </Button>
+                        {advancedOpen && (
+                            <div className="flex flex-col gap-3 border-t border-line pt-3">
+                                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                    {FETCH_FIELDS.map((f) => (
+                                        <Field
+                                            key={f.key}
+                                            orientation="horizontal"
+                                            className="w-auto gap-1.5 text-[11.5px] text-dim-foreground"
+                                        >
+                                            <FieldLabel
+                                                htmlFor={`url-param-${f.key}`}
+                                                className="flex-none! font-normal text-dim-foreground"
+                                            >
+                                                {t(f.label)}
+                                            </FieldLabel>
+                                            <Input
+                                                id={`url-param-${f.key}`}
+                                                value={params[f.key]}
+                                                onChange={(e) => setParam(f.key, e.target.value)}
+                                                inputMode="numeric"
+                                                className="h-6 w-16"
+                                            />
+                                        </Field>
+                                    ))}
+                                </div>
+                                <div className="flex flex-col gap-2 text-muted-foreground">
+                                    <span>{t("gallery.url.loginHint")}</span>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            appearance="standard"
+                                            variant="outline"
+                                            size="xs"
+                                            disabled={!canStart || loginBusy}
+                                            onClick={() => void openChrome()}
+                                        >
+                                            {t("gallery.url.chromeLogin")}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            appearance="standard"
+                                            variant="outline"
+                                            size="xs"
+                                            disabled={!canStart || syncBusy}
+                                            onClick={() => void syncLogin()}
+                                        >
+                                            {t("gallery.url.chromeSync")}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            appearance="standard"
+                                            variant="outline"
+                                            size="xs"
+                                            disabled={clearBusy}
+                                            onClick={() => void clearLogin()}
+                                        >
+                                            {clearArmed
+                                                ? t("gallery.url.chromeClearConfirm")
+                                                : t("gallery.url.chromeClear")}
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </form>
                 )}
 
                 {phase === "collecting" && (
-                    <div className="flex flex-1 flex-col items-center justify-center gap-4">
+                    <div className="flex min-h-28 flex-col items-center justify-center gap-4">
                         <span className="text-[13px] text-muted-foreground">
                             {progress?.stage === "page"
                                 ? fmt(t("gallery.url.fetchingPage"), { n: progress.page }) +
@@ -634,25 +651,11 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                     </div>
                 )}
 
-                <div className="mt-auto flex flex-none items-center justify-end gap-2 pt-1">
-                    {(phase === "form" || phase === "grid") && (
+                {phase === "grid" && (
+                    <div className="mt-auto flex flex-none items-center justify-end gap-2 pt-1">
                         <Button type="button" appearance="standard" variant="outline" size="sm" onClick={requestClose}>
                             {t("gallery.url.close")}
                         </Button>
-                    )}
-                    {phase === "form" && (
-                        <Button
-                            type="button"
-                            appearance="standard"
-                            variant="primary"
-                            size="sm"
-                            disabled={!canStart}
-                            onClick={() => void startCollect()}
-                        >
-                            {t("gallery.url.start")}
-                        </Button>
-                    )}
-                    {phase === "grid" && (
                         <Button
                             type="button"
                             appearance="standard"
@@ -663,8 +666,8 @@ export function UrlImport({ password, onClose, onImported }: Props) {
                         >
                             {fmt(t("gallery.url.import"), { n: importIndices.length })}
                         </Button>
-                    )}
-                </div>
+                    </div>
+                )}
             </DialogContent>
         </Dialog>
     );

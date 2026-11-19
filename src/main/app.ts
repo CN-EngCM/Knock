@@ -13,7 +13,7 @@ import { serveCandidate, serveImage } from "./server/gallery";
 import { serveNoteImage } from "./server/notes";
 import { freshClipboardText, startClipWatch } from "./clipWatch";
 import { initHotkey, isBlockedByForeground, shutdownHotkey, unlockForeground } from "./hotkey";
-import { loadWindowState, trackWindowState } from "./windowState";
+import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, restoreWindowState, trackWindowState } from "./windowState";
 import { initPin, isPinned, isTopmost, setPinned, setTopmost } from "./server/pin";
 import { createTray } from "./tray";
 import { guardWebviews, initWebView } from "./webView";
@@ -161,14 +161,14 @@ export function startApp(): void {
 }
 
 function createWindow(): BrowserWindow {
-    const st = loadWindowState();
+    const st = restoreWindowState();
     const w = new BrowserWindow({
         width: st.width,
         height: st.height,
         x: st.x,
         y: st.y,
-        minWidth: 840,
-        minHeight: 520,
+        minWidth: MIN_WINDOW_WIDTH,
+        minHeight: MIN_WINDOW_HEIGHT,
         show: !startHidden, // 隐藏启动：首帧就不可见，等热键呼出
         autoHideMenuBar: true,
         frame: false, // 无边框：顶栏空白处可拖动，交互区域由渲染端排除。

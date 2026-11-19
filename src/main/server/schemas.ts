@@ -351,7 +351,8 @@ export const aiChatStopSchema = z.object({ streamId: z.number().int().positive()
 export const GALLERY_FORMATS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"] as const;
 
 // 分组名：创建与改名共用一套
-export const galleryGroupSchema = z.object({ name: z.string().trim().min(1).max(50) });
+export const GALLERY_GROUP_NAME_MAX = 50;
+export const galleryGroupSchema = z.object({ name: z.string().trim().min(1).max(GALLERY_GROUP_NAME_MAX) });
 
 // 标签集合：图片与分组通用，单个 1–32 字符，一次最多 50 个
 export const galleryTagsSchema = z.object({ tags: z.array(z.string().trim().min(1).max(32)).max(50) });
@@ -359,20 +360,26 @@ export const galleryTagsSchema = z.object({ tags: z.array(z.string().trim().min(
 // 单个标签词（词级删除用，约束同集合里的单条）
 export const galleryTagSchema = z.object({ tag: z.string().trim().min(1).max(32) });
 
-// 图片查询：group 数字 = 限定分组，"all" = 全库（私密图永不混入），"wall" = 画廊成员
-// （私密图仅解锁视角下发——画廊是用户主动策展的，与「全部」的隔离规则不同）；
+// 图片查询：group 数字 = 限定分组，"all" = 全部非私密图片。
 // tags 命中图片自身的标签。password 是图库密码（工具级一个，明文存 settings 表）：
-// 锁定时由渲染端随查询携带，携带正确密码 = 解锁视角（私密分组内容可见），见 server/gallery.ts。
+// 解锁时由渲染端随查询携带，携带正确密码即可查看私密分组内容。
 export const galleryQuerySchema = z.object({
-    group: z.union([z.number().int().positive(), z.literal("all"), z.literal("wall")]),
+    group: z.union([z.number().int().positive(), z.literal("all")]),
     tags: z.array(z.string().trim().min(1).max(32)).max(20),
     search: z.string().trim().max(200),
     sort: z.enum(["time", "name", "size"]),
+    favoriteOnly: z.boolean().optional(),
     limit: z.number().int().min(1).max(200),
     offset: z.number().int().min(0),
     password: z.string().min(1).max(64).optional(),
 });
 export type GalleryQueryInput = z.infer<typeof galleryQuerySchema>;
+
+export const galleryFavoriteSchema = z.object({
+    id: z.number().int().positive(),
+    favorite: z.boolean(),
+    password: z.string().min(1).max(64).optional(),
+});
 
 // 渲染端 Worker 生成的缩略图字节：上限 5MB（320px 长边的缩略图通常几十 KB，这是不信任前端的硬兜底），
 // 空字节拒绝（写成 0 字节文件会让该图的缩略图永远 200 但显示不出来）
@@ -395,6 +402,7 @@ export const galleryImportSchema = z.object({
     files: z.array(z.string().trim().min(1).max(1000)).min(1).max(64),
     groupId: z.number().int().positive(),
 });
+export const galleryImportFolderSchema = z.object({ folder: z.string().min(1) });
 
 // 批量 id（删除/移动共用）；移动另带 groupId，处理器追加 Number.isInteger 兜底
 export const galleryIdsSchema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) });
@@ -428,11 +436,10 @@ export const galleryImportCandidatesSchema = z.object({
 });
 export type GalleryImportCandidatesInput = z.infer<typeof galleryImportCandidatesSchema>;
 
-// 渲染收集结果：title = document.title（服务端已清洗截断），导入单独成组时的组名首选
+// 渲染收集结果：当前页的图片地址与下一页地址
 export type GalleryPageResult = {
     imageUrls: string[];
     nextUrl: string | null;
-    title: string | null;
 };
 
 // 候选条目：ok=false 为失败占位（下载失败/超时/超体积），无暂存编号不可入库
@@ -553,8 +560,6 @@ export const noteIdArgSchema = z.object({ id: noteIdSchema });
 export type GalleryGroup = {
     id: number;
     name: string;
-    /** 1 = 内置收件箱：不可删/改名，展示名走 i18n（DB 名不参与显示） */
-    inbox: boolean;
     /** 私密分组：图库锁定（未携有效密码）时整行不下发——渲染端无需自行过滤 */
     private: boolean;
     count: number;
@@ -574,19 +579,18 @@ export type GalleryImage = {
     sourcePath: string;
     /** 导入时间戳 ms */
     createdAt: number;
+    /** 当前图片是否已收藏 */
+    favorite: boolean;
     tags: string[];
-    /** 是否已在画廊（普通视图右键「加入画廊」的置灰依据；画廊视图里的行恒 true） */
-    inWall: boolean;
 };
 
 export type GalleryImportStats = { imported: number; skipped: number };
 
-/** 图库侧栏一次取全：分组（按密码视角过滤）、标签池、是否已设密码、画廊可见计数 */
+/** 图库侧栏一次取全：分组（按密码视角过滤）、标签池和密码设置状态 */
 export type GalleryOverview = {
     groups: GalleryGroup[];
     tags: string[];
     hasPassword: boolean;
-    wallCount: number;
 };
 
 // ── 便签行类型 ──
