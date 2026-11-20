@@ -247,7 +247,7 @@ export function DockZone({ workspaces, activeId, light, onReady, onOpenTool, onO
                             watermarkComponent={watermark}
                             extendTabContextMenu={extendTabContextMenu}
                             // 组间距参与布局计算，只能走属性；缝的颜色由皮肤 --dock-gap 提供
-                            groupGap={4}
+                            groupGap={0}
                             onReady={(event) => handleReady(event, id)}
                         />
                     </div>
