@@ -28,6 +28,8 @@ import { fmtBytes, fmtDateTime } from "./util";
 type Props = {
     items: GalleryImage[];
     index: number;
+    /** 当前分组和筛选条件下的完整图片数量。 */
+    total: number;
     groups: GalleryGroup[];
     onNav: (index: number) => void;
     onClose: () => void;
@@ -45,7 +47,7 @@ const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 // 大图查看器挂到窗口根层，盖住停靠区、左侧栏和顶栏，同时给标签和删除确认弹窗留出更高层。
 // transform = translate(px,py) scale(s) rotate(deg)：translate 在 scale 之前，
 // 平移量直接用屏幕像素，不用除以缩放。缩放一律以画面中心为锚。
-export function Viewer({ items, index, groups, onNav, onClose, onSetFavorite, onEditTags, onDelete }: Props) {
+export function Viewer({ items, index, total, groups, onNav, onClose, onSetFavorite, onEditTags, onDelete }: Props) {
     const { t } = useI18n();
     const img = items[index];
     const rootRef = useRef<HTMLDivElement>(null);
@@ -241,7 +243,7 @@ export function Viewer({ items, index, groups, onNav, onClose, onSetFavorite, on
                     <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-panel px-3 py-1.5 text-xs shadow-overlay">
                         <span className="truncate text-foreground">{img.title}</span>
                         <span className="flex-none font-mono text-muted-foreground">
-                            {index + 1}/{items.length}
+                            {index + 1}/{total}
                         </span>
                     </div>
                     <TipActionButton
@@ -389,6 +391,14 @@ export function Viewer({ items, index, groups, onNav, onClose, onSetFavorite, on
                             onClick={() => setInfo((v) => !v)}
                         >
                             <Info />
+                        </TipActionButton>
+                        <TipActionButton
+                            {...actionButton}
+                            label={t("gallery.view.openWith")}
+                            aria-label={t("gallery.view.openWith")}
+                            onClick={() => void openWith()}
+                        >
+                            <ExternalLink />
                         </TipActionButton>
                     </ActionBarGroup>
                     <ActionBarSeparator className="mx-0.5! h-4! border-sidebar-border!" />

@@ -21,7 +21,7 @@ import { Viewer } from "./gallery/Viewer";
 import { FORMATS, extOf, fmt } from "./gallery/util";
 
 // 图库：顶部工具栏、左分组栏和右网格。查询状态（分组/标签/收藏/搜索/排序）
-// 是纯组件 state（TOOL_SPEC §5：运行时状态不还原），分页取 200 展 100 增量渲染；
+// 只保存在组件内，每页查询 200 张，网格每批显示 100 张，查看器提前读取下一页；
 // 竞态防护用序号 ref（TranslateTool 同款）：查询变更推进序号，晚归旧包丢弃。
 
 const PAGE = 200; // 每页取回条数（= 后端单次上限）
@@ -187,10 +187,14 @@ export default function GalleryTool() {
         anchorRef.current = null;
     }, [query, reloadTick]);
 
-    // 增量渲染 + 翻页：先扩展示数，取回的不够看且库里还有再取下一页
-    function loadMore() {
+    /**
+     * 按需增加网格显示数量或读取下一页。
+     * @param fetchPage 查看器需要下一页时直接查询，不受网格显示数量限制。
+     */
+    function loadMore(fetchPage = false) {
+        if (status !== "done") return;
         if (query.favoriteOnly && favoritePending.current) return;
-        if (visibleCount < items.length) {
+        if (!fetchPage && visibleCount < items.length) {
             setVisibleCount((c) => Math.min(c + STEP, items.length));
             return;
         }
@@ -216,6 +220,13 @@ export default function GalleryTool() {
     }
     const loadMoreRef = useRef(loadMore);
     loadMoreRef.current = loadMore;
+
+    // 查看器覆盖网格后不会触发滚动，接近已加载列表末尾时主动读取下一页。
+    useEffect(() => {
+        if (viewerIndex >= 0 && viewerIndex >= items.length - STEP && items.length < total) {
+            loadMoreRef.current(true);
+        }
+    }, [viewerIndex, items.length, total, status]);
 
     // ── 多选 ──
     function selectSingle(index: number) {
@@ -1008,6 +1019,7 @@ export default function GalleryTool() {
                 <Viewer
                     items={items}
                     index={viewerIndex}
+                    total={total}
                     groups={groups ?? []}
                     onNav={(i) => setViewerId(items[i]?.id ?? null)}
                     onClose={() => setViewerId(null)}

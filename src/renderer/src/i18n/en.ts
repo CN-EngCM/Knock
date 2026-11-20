@@ -522,7 +522,7 @@ export const en: Record<MessageKey, string> = {
     "gallery.view.copy": "Copy image",
     "gallery.view.copied": "Image copied",
     "gallery.view.copyFailed": "Copy failed",
-    "gallery.view.openWith": "Open with system app",
+    "gallery.view.openWith": "Open with default system app",
     "gallery.view.reveal": "Show in folder",
     "gallery.view.tags": "Tags…",
     "gallery.view.delete": "Delete",

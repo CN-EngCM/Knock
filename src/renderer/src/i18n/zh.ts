@@ -509,7 +509,7 @@ export const zh = {
     "gallery.view.copy": "复制图片",
     "gallery.view.copied": "图片已复制",
     "gallery.view.copyFailed": "复制失败",
-    "gallery.view.openWith": "用系统程序打开",
+    "gallery.view.openWith": "使用系统默认程序打开",
     "gallery.view.reveal": "打开所在文件夹",
     "gallery.view.tags": "标签…",
     "gallery.view.delete": "删除",

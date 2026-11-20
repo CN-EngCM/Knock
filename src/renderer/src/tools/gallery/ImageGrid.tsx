@@ -193,7 +193,7 @@ export function ImageGrid({
     const favoriteLabel = t("gallery.favorite.saved");
     const scrollRef = useRef<HTMLDivElement>(null);
     const sentinelRef = useRef<HTMLDivElement>(null);
-    // 哨兵回调走 ref：IntersectionObserver 只建一次，永远调最新的 loadMore 闭包
+    // 回调走 ref，避免父组件每次渲染都重新订阅。
     const moreRef = useRef(onLoadMore);
     moreRef.current = onLoadMore;
 
@@ -202,6 +202,7 @@ export function ImageGrid({
         scrollRef.current?.scrollTo({ top: 0 });
     }, [resetKey]);
 
+    // 列表填充后哨兵可能仍在预载范围内，重新观察才能继续加载未铺满的网格。
     useEffect(() => {
         const el = sentinelRef.current;
         const root = scrollRef.current;
@@ -215,7 +216,7 @@ export function ImageGrid({
         );
         io.observe(el);
         return () => io.disconnect();
-    }, []);
+    }, [status, visibleCount, items.length]);
 
     const shown = items.slice(0, visibleCount);
     // id → 下标：右键目标的归属查找用，避免每次渲染对 items 线性扫描
